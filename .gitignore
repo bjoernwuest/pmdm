@@ -11,6 +11,7 @@
 /src/migrations/*
 !/src/migrations/AGENTS.md
 /.kilo
+!/.kilo/agent/
 
 # Remove once tests are working
 /tests/
