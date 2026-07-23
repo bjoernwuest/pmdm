@@ -1,0 +1,1 @@
+Contains Drizzle-ORM migrations. Never create files in here. You may add code to `up` and `down` functions in the latest migration files (sorted by timestamp).

@@ -1,0 +1,29 @@
+/* InputField component styles */
+
+.inputfield-container {
+  display: flex;
+  flex-direction: column;
+  gap: 0.25rem;
+}
+
+.inputfield-input-row {
+  display: flex;
+  align-items: center;
+  gap: 0.25rem;
+}
+
+.inputfield-input-row .p-inputtext,
+.inputfield-input-row .p-inputtextarea {
+  flex: 1;
+  min-width: 0;
+}
+
+.inputfield-input-row .p-button {
+  flex-shrink: 0;
+}
+
+.inputfield-hint {
+  color: #6b7280;
+  font-size: 0.8rem;
+  line-height: 1.25;
+}

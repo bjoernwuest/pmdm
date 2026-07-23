@@ -1,0 +1,18 @@
+/dist/
+/node_modules/
+/.idea/
+/.env
+/tests/.env.test
+/bun.lock
+/bun-starter.iml
+/package-lock.json
+/TODO.md
+/debug_analysis/
+*.iml
+/src/migrations/*
+!/src/migrations/AGENTS.md
+/.kilo
+!/.kilo/agent/
+
+# Remove once tests are working
+/tests/

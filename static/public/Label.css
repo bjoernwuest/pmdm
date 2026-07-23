@@ -1,0 +1,45 @@
+/* ==========================================================================
+   Label.css – Styles for the Label component
+   ========================================================================== */
+
+/* ---- Container -------------------------------------------------------- */
+
+.label-container {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+
+/* ---- Main text -------------------------------------------------------- */
+
+.label-text {
+  font-family: inherit;
+  color: var(--at-text-color, #374151);
+  line-height: 1.5;
+}
+
+/* ---- Size variants ---------------------------------------------------- */
+
+.label-container.small .label-text {
+  font-size: 0.8rem;
+  line-height: 1.2;
+}
+
+.label-container.normal .label-text {
+  font-size: 1rem;
+  line-height: 1.5;
+}
+
+.label-container.large .label-text {
+  font-size: 1.25rem;
+  line-height: 1.4;
+}
+
+/* ---- Hint text -------------------------------------------------------- */
+
+.label-hint {
+  font-size: 0.75rem;
+  color: var(--at-text-color-secondary, #6b7280);
+  line-height: 1.3;
+  margin-top: 2px;
+}

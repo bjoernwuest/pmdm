@@ -1,0 +1,243 @@
+<!doctype html>
+<html lang="de">
+<head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width,initial-scale=1" />
+    <title>Loading Application...</title>
+    <style>
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Oxygen, Ubuntu, Cantarell, sans-serif;
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            min-height: 100vh;
+            color: #fff;
+        }
+
+        .loading-container {
+            text-align: center;
+            padding: 2rem;
+            max-width: 400px;
+            width: 90%;
+        }
+
+        h1 {
+            font-size: 1.5rem;
+            margin-bottom: 2rem;
+            font-weight: 300;
+        }
+
+        /* Progress Bar Container */
+        .progress-container {
+            background: rgba(255, 255, 255, 0.2);
+            border-radius: 10px;
+            height: 20px;
+            overflow: hidden;
+            margin-bottom: 1rem;
+        }
+
+        /* Progress Bar Fill */
+        .progress-bar {
+            background: linear-gradient(90deg, #fff 0%, #f0f0f0 100%);
+            height: 100%;
+            width: 0%;
+            transition: width 0.3s ease;
+            border-radius: 10px;
+        }
+
+        /* Progress Text */
+        .progress-text {
+            font-size: 0.9rem;
+            opacity: 0.9;
+        }
+
+        .progress-hint {
+            margin-top: 0.6rem;
+            font-size: 0.74rem;
+            opacity: 0.8;
+        }
+
+        /* Error Message (hidden by default) */
+        .error-message {
+            display: none;
+            background: rgba(255, 0, 0, 0.2);
+            border: 1px solid rgba(255, 0, 0, 0.5);
+            border-radius: 5px;
+            padding: 1rem;
+            margin-top: 1rem;
+        }
+
+        .error-message.show {
+            display: block;
+        }
+
+        .retry-button {
+            background: #fff;
+            color: #667eea;
+            border: none;
+            padding: 0.5rem 1.5rem;
+            border-radius: 5px;
+            cursor: pointer;
+            font-size: 1rem;
+            margin-top: 1rem;
+            transition: transform 0.2s;
+        }
+
+        .retry-button:hover {
+            transform: scale(1.05);
+        }
+
+        .retry-button:active {
+            transform: scale(0.95);
+        }
+    </style>
+</head>
+<body>
+    <div class="loading-container">
+        <h1>Loading application...</h1>
+        <div class="progress-container">
+            <div class="progress-bar" id="progressBar"></div>
+        </div>
+        <div class="progress-text" id="progressText">Preparing...</div>
+        <div class="progress-hint">if application hangs, press F5 to retry</div>
+        <div class="error-message" id="errorMessage">
+            Failed to load the application. Please check your connection.
+            <br>
+            <button class="retry-button" onclick="location.reload()">Retry</button>
+        </div>
+    </div>
+
+    <script>
+        (function() {
+            const progressBar = document.getElementById('progressBar');
+            const progressText = document.getElementById('progressText');
+            const errorMessage = document.getElementById('errorMessage');
+
+            // Get the target URL from query parameter
+            const urlParams = new URLSearchParams(window.location.search);
+            const targetPath = decodeURIComponent(urlParams.get('target') || '');
+            const returnTo = urlParams.get('returnTo') || '/';
+
+            // Determine which bundle to load and where to redirect based on the current path
+            const currentPath = window.location.pathname;
+            let bundleUrl = '/login/client.js'; // Default to login bundle
+            let redirectPath = '/login'; // Default redirect to login page
+
+            if (currentPath.includes('/ui/')) {
+                bundleUrl = '/ui/client.js';
+                redirectPath = targetPath || returnTo; // After loading app bundle, go to target
+            } else if (currentPath.includes('/login/loading')) {
+                // Preserve returnTo parameter when redirecting to login
+                bundleUrl = '/login/client.js';
+                redirectPath = '/login?returnTo=' + encodeURIComponent(returnTo);
+            }
+
+            let progress = 0;
+            let downloadStarted = false;
+
+            // Simulate initial preparation progress
+            const preparationInterval = setInterval(() => {
+                if (!downloadStarted && progress < 10) {
+                    progress += 2;
+                    updateProgress(progress, 'Preparing...');
+                }
+            }, 100);
+
+            // Function to update progress bar and text
+            function updateProgress(percent, text) {
+                progressBar.style.width = percent + '%';
+                progressText.textContent = text || `Loading... ${Math.round(percent)}%`;
+            }
+
+            // Function to show error
+            function showError() {
+                clearInterval(preparationInterval);
+                errorMessage.classList.add('show');
+                progressText.textContent = 'Loading failed';
+            }
+
+            // Start loading the client bundle
+            const xhr = new XMLHttpRequest();
+
+            xhr.open('GET', bundleUrl, true);
+            xhr.responseType = 'blob';
+
+            xhr.onloadstart = function() {
+                clearInterval(preparationInterval);
+                downloadStarted = true;
+                progress = 10;
+                updateProgress(progress, 'Downloading...');
+            };
+
+            xhr.onprogress = function(event) {
+                if (event.lengthComputable) {
+                    // Progress from 10% to 90% during download
+                    progress = 10 + (event.loaded / event.total * 80);
+                    updateProgress(progress, `Downloading... ${Math.round(progress)}%`);
+                } else {
+                    // If we can't compute progress, animate between 10-50%
+                    if (progress < 50) {
+                        progress += 0.5;
+                        updateProgress(progress, 'Downloading...');
+                    }
+                }
+            };
+
+            xhr.onload = function() {
+                if (xhr.status === 200) {
+                    progress = 90;
+                    updateProgress(progress, 'Initializing...');
+
+                    // Create blob URL and inject script
+                    const blob = xhr.response;
+                    const blobUrl = URL.createObjectURL(blob);
+
+                    const script = document.createElement('script');
+                    script.type = 'module';
+                    script.src = blobUrl;
+
+                    script.onload = function() {
+                        progress = 100;
+                        updateProgress(progress, 'Complete!');
+
+                        // Small delay before redirect to show completion
+                        setTimeout(() => {
+                            // Redirect to the appropriate page
+                            window.location.href = redirectPath;
+                        }, 500);
+                    };
+
+                    script.onerror = function() {
+                        showError();
+                    };
+
+                    document.head.appendChild(script);
+                } else {
+                    showError();
+                }
+            };
+
+            xhr.onerror = function() {
+                showError();
+            };
+
+            xhr.ontimeout = function() {
+                showError();
+            };
+
+            // Set timeout to 30 seconds
+            xhr.timeout = 30000;
+
+            // Start the download
+            xhr.send();
+        })();
+    </script>
+</body>
+</html>

@@ -1,0 +1,1 @@
+Random utility files that are used across the project. Somehow, the "other" category for things that are useful but don't fit into the other categories. This is a good place to put things like utility functions, constants, and other miscellaneous code that doesn't belong in a specific module or service.

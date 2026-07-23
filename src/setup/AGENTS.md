@@ -1,0 +1,1 @@
+This is the setup application. Started whenever upon application start a configuration entry (`ConfigEntry.mandatoryForStart=true`) is found but not in the database. It shows a "setup key" on the console that is required for authentication. After setup, the application starts (`/src/apps/api.ts`. `/src/apps/login.ts` and `/src/apps/ui.ts`).
