@@ -1,0 +1,1 @@
+Publicly (i.e. without authorization) available static content like CSS, images, fonts, icons, etc..

@@ -1,0 +1,94 @@
+<html lang="en">
+    <head>
+        <meta charset="utf-8" />
+        <meta name="viewport" content="width=device-width,initial-scale=1" />
+        <title>bun-starter Template</title>
+        <link rel="stylesheet" href="/static/public/theme/theme.css" />
+        <link rel="stylesheet" href="/static/public/primereact.min.css" />
+        <link rel="stylesheet" href="/static/public/primeicons.css" />
+        <link rel="stylesheet" href="/static/public/styles.css" />
+        <link rel="stylesheet" href="/static/public/InputField.css" />
+        <link rel="stylesheet" href="/static/public/Toggle.css" />
+        <link rel="stylesheet" href="/static/public/Label.css" />
+
+        <style>
+            .initial-loader {
+                min-height: 100vh;
+                display: flex;
+                align-items: center;
+                justify-content: center;
+                background: linear-gradient(180deg, #f8fafc 0%, #eef2ff 100%);
+                color: #0f172a;
+                font-family: "Inter var", "Inter", ui-sans-serif, system-ui, -apple-system, "Segoe UI", sans-serif;
+            }
+            .initial-loader-panel {
+                width: min(560px, 92vw);
+                padding: 2rem;
+                border-radius: 18px;
+                background: rgba(255, 255, 255, 0.86);
+                border: 1px solid rgba(148, 163, 184, 0.3);
+                box-shadow: 0 20px 42px -26px rgba(15, 23, 42, 0.45);
+                text-align: center;
+            }
+            .initial-loader-title {
+                margin: 0 0 1rem;
+                font-size: 1.35rem;
+                font-weight: 700;
+                letter-spacing: 0.01em;
+            }
+            .initial-loader-track {
+                width: 100%;
+                height: 12px;
+                border-radius: 999px;
+                background: #e2e8f0;
+                overflow: hidden;
+            }
+            .initial-loader-fill {
+                width: 8%;
+                height: 100%;
+                border-radius: inherit;
+                background: linear-gradient(90deg, #6366f1 0%, #3b82f6 100%);
+                transition: width 0.2s ease;
+            }
+            .initial-loader-progress {
+                margin-top: 0.75rem;
+                font-size: 0.86rem;
+                color: #475569;
+            }
+            .initial-loader-hint {
+                margin: 0.6rem 0 0;
+                font-size: 0.76rem;
+                color: #64748b;
+            }
+        </style>
+    </head>
+    <body>
+    <div id="root">
+        <div class="initial-loader">
+            <div class="initial-loader-panel">
+                <h1 class="initial-loader-title">Loading application...</h1>
+                <div class="initial-loader-track"><div class="initial-loader-fill" id="initialLoaderFill"></div></div>
+                <div class="initial-loader-progress" id="initialLoaderProgress">8%</div>
+                <p class="initial-loader-hint">if application hangs, press F5 to retry</p>
+            </div>
+        </div>
+    </div>
+
+    <script>
+        (function() {
+            var fill = document.getElementById("initialLoaderFill");
+            var text = document.getElementById("initialLoaderProgress");
+            var progress = 8;
+
+            setInterval(function() {
+                progress = Math.min(95, progress + Math.max(0.8, (100 - progress) * 0.05));
+                if (fill) fill.style.width = Math.round(progress) + "%";
+                if (text) text.textContent = Math.round(progress) + "%";
+            }, 140);
+        })();
+    </script>
+
+    <script type="module" src="/ui/client.js"></script>
+
+    </body>
+</html>

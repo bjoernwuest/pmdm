@@ -1,0 +1,1 @@
+This is the "Login" application. It is responsible to trigger user authentication via OIDC and the load `/src/apps/ui.ts`.
