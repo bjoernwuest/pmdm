@@ -123,7 +123,12 @@ export default function register(app: ApiInstance) {
         const authz = await authorize(context.dbClient, claims, [FP_EDIT_FUNCTIONAL_PERMISSION_ASSIGNMENTS]);
         if (!authz.some(p => p.identifier === FP_EDIT_FUNCTIONAL_PERMISSION_ASSIGNMENTS.identifier)) return status(403, `Permission denied. Required: ${FP_EDIT_FUNCTIONAL_PERMISSION_ASSIGNMENTS.functionalPermissionName}`);
 
-        const user = await getLoggedinUserObject(context.dbClient, claims) ?? await getSystemUser(context.dbClient);
+        let user;
+        try {
+            user = await getLoggedinUserObject(context.dbClient, claims) ?? await getSystemUser(context.dbClient);
+        } catch (_err) {
+            return status(500, {error: "Could not resolve user", message: _err});
+        }
         const result = await runInTransaction(context.dbClient, async (_tx) => {
             const groups = await getGroups(_tx, context.body.groupIdentifiers.map(id => ({identifier: id})));
             for (const group of groups) {
@@ -164,7 +169,12 @@ export default function register(app: ApiInstance) {
         const authz = await authorize(context.dbClient, claims, [FP_EDIT_FUNCTIONAL_PERMISSION_ASSIGNMENTS]);
         if (!authz.some(p => p.identifier === FP_EDIT_FUNCTIONAL_PERMISSION_ASSIGNMENTS.identifier)) return status(403, `Permission denied. Required: ${FP_EDIT_FUNCTIONAL_PERMISSION_ASSIGNMENTS.functionalPermissionName}`);
 
-        const user = await getLoggedinUserObject(context.dbClient, claims) ?? await getSystemUser(context.dbClient);
+        let user;
+        try {
+            user = await getLoggedinUserObject(context.dbClient, claims) ?? await getSystemUser(context.dbClient);
+        } catch (_err) {
+            return status(500, {error: "Could not resolve user", message: _err});
+        }
         const result = await runInTransaction(context.dbClient, async (_tx) => {
             const groups = await getGroups(_tx, context.body.groupIdentifiers.map(id => ({identifier: id})));
             for (const group of groups) {
