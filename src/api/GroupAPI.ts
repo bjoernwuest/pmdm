@@ -175,7 +175,7 @@ export default function register(app: ApiInstance) {
         if (!authz.some(p => p.identifier === FP_EDIT_FUNCTIONAL_PERMISSION_ASSIGNMENTS.identifier)) return status(403, `Permission denied. Required: ${FP_EDIT_FUNCTIONAL_PERMISSION_ASSIGNMENTS.functionalPermissionName}`);
 
         const user = await getLoggedinUserObject(context.dbClient, claims) ?? await getSystemUser(context.dbClient);
-        try { await grantFunctionalPermissionToGroup(context.dbClient, user, {identifier: context.params.groupid}, context.body.permissionIdentifiers.map(id => ({identifier: id}))); }
+        try { await runInTransaction(context.dbClient, async (_tx) => { await grantFunctionalPermissionToGroup(_tx, user, {identifier: context.params.groupid}, context.body.permissionIdentifiers.map(id => ({identifier: id}))); }); }
         catch (_err) { return status(404, {error: "Could not grant", message: _err}); }
         return { success: true };
     }, {
@@ -209,7 +209,8 @@ export default function register(app: ApiInstance) {
         const authz = await authorize(context.dbClient, claims, [FP_EDIT_FUNCTIONAL_PERMISSION_ASSIGNMENTS]);
         if (!authz.some(p => p.identifier === FP_EDIT_FUNCTIONAL_PERMISSION_ASSIGNMENTS.identifier)) return status(403, `Permission denied. Required: ${FP_EDIT_FUNCTIONAL_PERMISSION_ASSIGNMENTS.functionalPermissionName}`);
 
-        try { await revokeFunctionalPermissionFromGroup(context.dbClient, await getLoggedinUserObject(context.dbClient, claims) ?? await getSystemUser(context.dbClient), {identifier: context.params.groupid}, context.body.permissionIdentifiers.map(id => ({identifier: id}))); }
+        const user = await getLoggedinUserObject(context.dbClient, claims) ?? await getSystemUser(context.dbClient);
+        try { await runInTransaction(context.dbClient, async (_tx) => { await revokeFunctionalPermissionFromGroup(_tx, user, {identifier: context.params.groupid}, context.body.permissionIdentifiers.map(id => ({identifier: id}))); }); }
         catch (_err) { return status(404, {error: "Could not revoke", message: _err}); }
         return { success: true };
     }, {
