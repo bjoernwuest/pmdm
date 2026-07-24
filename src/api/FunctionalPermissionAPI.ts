@@ -118,14 +118,15 @@ export default function register(app: ApiInstance) {
         const authz = await authorize(context.dbClient, claims, [FP_EDIT_FUNCTIONAL_PERMISSION_ASSIGNMENTS]);
         if (!authz.some(p => p.identifier === FP_EDIT_FUNCTIONAL_PERMISSION_ASSIGNMENTS.identifier)) return status(403, `Permission denied. Required: ${FP_EDIT_FUNCTIONAL_PERMISSION_ASSIGNMENTS.functionalPermissionName}`);
 
-        await runInTransaction(context.dbClient, async (_tx) => {
-            const user = await getLoggedinUserObject(context.dbClient, claims) ?? await getSystemUser(context.dbClient);
-            const groups = await getGroups(context.dbClient, context.body.groupIdentifiers.map(id => ({identifier: id})));
+        const user = await getLoggedinUserObject(context.dbClient, claims) ?? await getSystemUser(context.dbClient);
+        const result = await runInTransaction(context.dbClient, async (_tx) => {
+            const groups = await getGroups(_tx, context.body.groupIdentifiers.map(id => ({identifier: id})));
             for (const group of groups) {
-                try { await grantFunctionalPermissionToGroup(context.dbClient, user, group, [{identifier: context.params.functionalpermissionid}]); }
+                try { await grantFunctionalPermissionToGroup(_tx, user, group, [{identifier: context.params.functionalpermissionid}]); }
                 catch (_err) { return status(404, {error: "Could not grant", message: _err}); }
             }
         });
+        if (result && typeof result === "object" && "status" in result) return result;
         return { success: true };
     }, {
         response: {200: SuccessResponseSchema, 401: Type.String(), 403: Type.String(), 404: ErrorSchema},
@@ -158,13 +159,15 @@ export default function register(app: ApiInstance) {
         const authz = await authorize(context.dbClient, claims, [FP_EDIT_FUNCTIONAL_PERMISSION_ASSIGNMENTS]);
         if (!authz.some(p => p.identifier === FP_EDIT_FUNCTIONAL_PERMISSION_ASSIGNMENTS.identifier)) return status(403, `Permission denied. Required: ${FP_EDIT_FUNCTIONAL_PERMISSION_ASSIGNMENTS.functionalPermissionName}`);
 
-        await runInTransaction(context.dbClient, async (_tx) => {
-            const groups = await getGroups(context.dbClient, context.body.groupIdentifiers.map(id => ({identifier: id})));
+        const user = await getLoggedinUserObject(context.dbClient, claims) ?? await getSystemUser(context.dbClient);
+        const result = await runInTransaction(context.dbClient, async (_tx) => {
+            const groups = await getGroups(_tx, context.body.groupIdentifiers.map(id => ({identifier: id})));
             for (const group of groups) {
-                try { await revokeFunctionalPermissionFromGroup(context.dbClient, (await getLoggedinUserObject(context.dbClient, claims)) ?? await getSystemUser(context.dbClient), group, [{identifier: context.params.functionalpermissionid}]); }
+                try { await revokeFunctionalPermissionFromGroup(_tx, user, group, [{identifier: context.params.functionalpermissionid}]); }
                 catch (_err) { return status(404, {error: "Could not revoke", message: _err}); }
             }
         });
+        if (result && typeof result === "object" && "status" in result) return result;
         return { success: true };
     }, {
         response: {200: SuccessResponseSchema, 401: Type.String(), 403: Type.String(), 404: ErrorSchema},
