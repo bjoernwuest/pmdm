@@ -18,6 +18,7 @@ import {
     DataTypeGroupRoles
 } from "@/types/_DataTypeType.ts";
 import {TAG_CREATE, TAG_DISABLE, TAG_GRANT, TAG_REVOKE, TAG_UPDATE, type Tag} from "./PubSubType";
+import {BusinessDomainsSelectSchema} from "./BusinessDomainType.ts";
 
 export * from './_DataTypeType.ts';
 
@@ -201,6 +202,13 @@ export const DataTypeSchemaSelectSchema = Type.Composite([
     Type.Object({ config: configSchema }),
 ]);
 export type DataTypeSchemaSelectType = Static<typeof DataTypeSchemaSelectSchema>;
+
+/** Wrapper schema for list and detail endpoints that return data type with joined owner. */
+export const DataTypeListEntitySchema = Type.Object({
+    dataType: DataTypeSchemaSelectSchema,
+    owner: Type.Optional(BusinessDomainsSelectSchema),
+});
+export type DataTypeListEntityType = Static<typeof DataTypeListEntitySchema>;
 
 export const DataTypeSchemaInsertSchema = Type.Composite([
     Type.Omit(_DataTypeSchemaInsertSchema, ['config', 'mandatory', 'requestorCanEdit']),

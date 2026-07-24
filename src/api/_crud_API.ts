@@ -85,6 +85,14 @@ export type RegisterConfigurationEntityRoutesOptions<
      * with sub-entity statistics) that differ from the detail row shape.
      */
     listEntitySchema?: unknown;
+    /**
+     * Optional OpenAPI schema for one entity row in the detail (single-item) response.
+     *
+     * When omitted, defaults to {@link entitySchema}. Set to a different schema
+     * when the repo's `getByIdentifier` function returns enriched rows that differ
+     * from the entity schema shape.
+     */
+    detailEntitySchema?: unknown;
     /** Functional permission required to read rows. */
     viewPermission: FunctionalPermissionSelectType;
     /**
@@ -240,7 +248,7 @@ export function registerConfigurationEntityRoutes<
     }, {
         params: t.Object({ [options.routeParam]: t.String({ format: "uuid" }) } as any),
         response: {
-            200: t.Object({ [options.detailResponseKey]: options.entitySchema } as any),
+            200: t.Object({ [options.detailResponseKey]: (options.detailEntitySchema ?? options.entitySchema) as any }),
             401: t.String(),
             403: t.String(),
             404: t.String(),

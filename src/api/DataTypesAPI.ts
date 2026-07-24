@@ -17,6 +17,7 @@ import {Group} from "@/schema/UserSchema.ts";
 import {
     type DataTypeGroupRoles,
     type DataTypeKind, DataTypeSchemaInsertSchema, DataTypeSchemaSelectSchema, type DataTypeSchemaInsertType,
+    DataTypeListEntitySchema,
     message_CreateDataType,
     message_DisableDataType,
     message_UpdateDataType, UpdateDataTypeBodySchema
@@ -49,6 +50,8 @@ export default function register(app: ApiInstance): void {
         listResponseKey: "dataTypes",
         detailResponseKey: "dataType",
         entitySchema: DataTypeSchemaSelectSchema,
+        listEntitySchema: DataTypeListEntitySchema,
+        detailEntitySchema: DataTypeListEntitySchema,
         viewPermission: FP_VIEW_DATA_TYPES,
         managePermission: FP_MANAGE_DATA_TYPES,
         repo: DataTypeRepo as any,
