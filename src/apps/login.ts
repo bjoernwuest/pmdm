@@ -2,12 +2,13 @@ import { Elysia } from "elysia";
 import { ClientBundleService } from "@/services/ClientBuilder.ts";
 import { buildDeleteCookieHeader, deleteSession, getCookie, getSession, startAuth, finishAuth, logout } from "@/services/Auth.ts";
 import { devMode } from "@/devmode.ts";
+import { proxyHeadersDerive } from "@/utils/ProxyHeaders.ts";
 
 
 import type {DBClient} from "@/services/DatabaseDriver.ts";
 
 if (devMode) console.log("Login: ⚡ Start login application...");
-export const app = new Elysia().decorate("dbClient", {} as DBClient);
+export const app = new Elysia().derive(proxyHeadersDerive).decorate("dbClient", {} as DBClient);
 
 if (devMode) console.log("Login: ...⚡ Initializing login client bundle...");
 const loginClientBundle = await ClientBundleService.create("src/login", ["./src/login/index.tsx"]);
@@ -25,10 +26,10 @@ function redirectWithCookies(url: string, cookies: string[]): Response {
 if (devMode) console.log("Login: ...⚡ Mount login endpoints...");
 
 // POST /login -> Start OIDC auth flow
-app.post("/login", async ({ request, dbClient }) => {
+app.post("/login", async ({ request, publicUrl, dbClient }) => {
     try {
         // Parse returnTo from query or body
-        const url = new URL(request.url);
+        const url = new URL(publicUrl);
         let returnTo = url.searchParams.get("returnTo") || "/";
 
         // Try to get returnTo from form body
@@ -43,7 +44,7 @@ app.post("/login", async ({ request, dbClient }) => {
             if (devMode) console.error("POST /login: failed to parse body", e);
         }
 
-        const result = await startAuth(dbClient, request.url, returnTo);
+        const result = await startAuth(dbClient, publicUrl, returnTo);
         return redirectWithCookies(result.redirectUrl, result.cookies);
     } catch (e) {
         if (devMode) console.error("POST /login error:", e);
@@ -52,9 +53,9 @@ app.post("/login", async ({ request, dbClient }) => {
 });
 
 // GET /login/oauth2/code/entraid -> OIDC callback
-app.get("/login/oauth2/code/entraid", async ({ request, dbClient }) => {
+app.get("/login/oauth2/code/entraid", async ({ request, publicUrl, dbClient }) => {
     try {
-        const result = await finishAuth(dbClient, request, "/ui/loading");
+        const result = await finishAuth(dbClient, new Request(publicUrl, request), "/ui/loading");
         return redirectWithCookies(result.redirectUrl, result.cookies);
     } catch (e) {
         if (devMode) console.error("OIDC callback error:", e);
@@ -63,9 +64,9 @@ app.get("/login/oauth2/code/entraid", async ({ request, dbClient }) => {
 });
 
 // GET /login/logout -> Logout
-app.get("/login/logout", async ({ request, dbClient }) => {
+app.get("/login/logout", async ({ request, publicUrl, dbClient }) => {
     try {
-        const result = await logout(dbClient, request);
+        const result = await logout(dbClient, new Request(publicUrl, request));
         return redirectWithCookies(result.redirectUrl, result.cookies);
     } catch (e) {
         if (devMode) console.error("Logout error:", e);
