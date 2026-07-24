@@ -95,11 +95,11 @@ export default function register(app: ApiInstance) {
         if (!authz.some(p => p.identifier === FP_READ_GROUPS.identifier)) return status(403, `Permission denied. Required: ${FP_READ_GROUPS.functionalPermissionName}`);
 
         return await runInTransaction(context.dbClient, async (_tx) => {
-            const groups = await getGroup(context.dbClient, {identifier: context.params.groupid});
+            const groups = await getGroup(_tx, {identifier: context.params.groupid});
 
             if (0 < groups.length) {
                 const group = groups[0]!;
-                const functionalPermissions = authz.some(p => p.identifier === FP_READ_GROUP_FUNCTIONAL_PERMISSIONS.identifier) ? await getFunctionalPermissionsOfGroup(context.dbClient, group) : [];
+                const functionalPermissions = authz.some(p => p.identifier === FP_READ_GROUP_FUNCTIONAL_PERMISSIONS.identifier) ? await getFunctionalPermissionsOfGroup(_tx, group) : [];
 
                 return {
                     group: group,
@@ -169,12 +169,17 @@ export default function register(app: ApiInstance) {
         const authz = await authorize(context.dbClient, claims, [FP_EDIT_FUNCTIONAL_PERMISSION_ASSIGNMENTS]);
         if (!authz.some(p => p.identifier === FP_EDIT_FUNCTIONAL_PERMISSION_ASSIGNMENTS.identifier)) return status(403, `Permission denied. Required: ${FP_EDIT_FUNCTIONAL_PERMISSION_ASSIGNMENTS.functionalPermissionName}`);
 
-        const user = await getLoggedinUserObject(context.dbClient, claims) ?? await getSystemUser(context.dbClient);
+        let user;
+        try {
+            user = await getLoggedinUserObject(context.dbClient, claims) ?? await getSystemUser(context.dbClient);
+        } catch (_err) {
+            return status(500, {error: "Could not resolve user", message: _err});
+        }
         try { await runInTransaction(context.dbClient, async (_tx) => { await grantFunctionalPermissionToGroup(_tx, user, {identifier: context.params.groupid}, context.body.permissionIdentifiers.map(id => ({identifier: id}))); }); }
         catch (_err) { return status(404, {error: "Could not grant", message: _err}); }
         return { success: true };
     }, {
-        response: {200: SuccessResponseSchema, 401: Type.String(), 403: Type.String(), 404: ErrorSchema},
+        response: {200: SuccessResponseSchema, 401: Type.String(), 403: Type.String(), 404: ErrorSchema, 500: Type.String()},
         body: PermissionIdentifiersBodySchema,
         detail: {
             tags: ["Users & Groups"],

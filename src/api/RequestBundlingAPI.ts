@@ -132,7 +132,9 @@ export default function register(app: ApiInstance) {
             return toJsonResponse(400, { error: "requests must be a non-empty array of valid request bundling items" });
         }
 
-        const origin = new URL(request.url).origin;
+        const serverPort = Number(process.env.PORT) || 8000;
+        const localOrigin = `http://localhost:${serverPort}`;
+        const origin = devMode ? localOrigin : (process.env.INTERNAL_API_BASE_URL || localOrigin);
         const authorizationHeader = request.headers.get("Authorization") ?? undefined;
         const apiKeyHeader = request.headers.get("X-API-Key") ?? undefined;
         const cookieHeader = request.headers.get("Cookie") ?? undefined;
