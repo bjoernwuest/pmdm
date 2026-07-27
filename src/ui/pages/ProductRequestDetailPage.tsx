@@ -453,6 +453,9 @@ export function Component() {
         if (!id) return;
         pendOwnAction(dataTypeIdentifier);
 
+        const currentValueRow = requestRef.current?.values?.find((v: any) => v.dataType === dataTypeIdentifier);
+        const knownUpdatedAt: string | undefined = (currentValueRow as any)?.updatedAt;
+
         // Pend own actions for on_change calculated data types whose scripts
         // will be recalculated by the server, so the PubSub handler skips the
         // redundant fetchDetail() — the API response already carries the new values.
@@ -478,7 +481,18 @@ export function Component() {
         }
 
         try {
-            const result = await updateProductRequestValue(id, dataTypeIdentifier, newValue);
+            if (!knownUpdatedAt) {
+                toast.current?.show({ severity: "error", summary: "Error", detail: "Cannot save: value state not available. Please reload the page.", life: 5000 });
+                pendingOwnActionRef.current.delete(dataTypeIdentifier);
+                return;
+            }
+            const result = await updateProductRequestValue(id, dataTypeIdentifier, newValue, knownUpdatedAt);
+            if (result === null) {
+                toast.current?.show({ severity: "error", summary: "Conflict", detail: "Value was modified by another user", life: 5000 });
+                pendingOwnActionRef.current.delete(dataTypeIdentifier);
+                fetchDetail();
+                return;
+            }
             toast.current?.show({ severity: "success", summary: "Saved", detail: "Value updated", life: 2000 });
             const respValue = result.value as any;
             const savedVal = respValue.value;
@@ -547,8 +561,21 @@ export function Component() {
     const handleApprove = useCallback(async (dataTypeIdentifier: string) => {
         if (!id) return;
         pendOwnAction(dataTypeIdentifier);
+        const currentValueRow = requestRef.current?.values?.find((v: any) => v.dataType === dataTypeIdentifier);
+        const knownUpdatedAt: string | undefined = (currentValueRow as any)?.updatedAt;
         try {
-            const result = await approveProductRequestValue(id, dataTypeIdentifier);
+            if (!knownUpdatedAt) {
+                toast.current?.show({ severity: "error", summary: "Error", detail: "Cannot approve: value state not available. Please reload the page.", life: 5000 });
+                pendingOwnActionRef.current.delete(dataTypeIdentifier);
+                return;
+            }
+            const result = await approveProductRequestValue(id, dataTypeIdentifier, knownUpdatedAt);
+            if (result === null) {
+                toast.current?.show({ severity: "error", summary: "Conflict", detail: "Value was modified by another user", life: 5000 });
+                pendingOwnActionRef.current.delete(dataTypeIdentifier);
+                fetchDetail();
+                return;
+            }
             if (result.allApproved) {
                 pendingOwnActionRef.current.delete(dataTypeIdentifier);
                 toast.current?.show({
@@ -571,6 +598,7 @@ export function Component() {
                                     ...v,
                                     approvedAt: respValue.approvedAt,
                                     approvedBy: respValue.approvedBy,
+                                    updatedAt: respValue.updatedAt,
                                 }
                                 : v,
                         ),
@@ -586,14 +614,40 @@ export function Component() {
     const handleApproveAll = useCallback(async () => {
         if (!id) return;
         try {
-            const result = await approveAllProductRequestValues(id);
-            if (result.allApproved) {
+            const knownValues: Record<string, string> = {};
+            for (const v of requestRef.current?.values ?? []) {
+                if ((v as any).updatedAt) knownValues[v.dataType] = (v as any).updatedAt;
+            }
+            const result = await approveAllProductRequestValues(id, knownValues);
+            if (result.skippedDataTypeIdentifiers.length > 0) {
+                const skippedSet = new Set(result.skippedDataTypeIdentifiers);
+                toast.current?.show({
+                    severity: "warn",
+                    summary: "Partial approval",
+                    detail: `Approved ${result.approvedCount} value(s), skipped ${result.skippedDataTypeIdentifiers.length} due to concurrent modifications`,
+                    life: 5000,
+                });
+                const fresh = await getProductRequest(id);
+                setRequest((prev: any) => {
+                    if (!prev || !fresh) return fresh;
+                    return {
+                        ...fresh,
+                        values: (prev.values ?? []).map((v: any) =>
+                            skippedSet.has(v.dataType)
+                                ? (fresh.values ?? []).find((fv: any) => fv.dataType === v.dataType) ?? v
+                                : v,
+                        ),
+                    };
+                });
+                setError(null);
+            } else if (result.allApproved) {
                 toast.current?.show({
                     severity: "success",
                     summary: "All approved",
                     detail: `Approved ${result.approvedCount} value(s) — request moved to importing`,
                     life: 5000,
                 });
+                fetchDetail();
             } else {
                 toast.current?.show({
                     severity: "success",
@@ -601,8 +655,8 @@ export function Component() {
                     detail: `Approved ${result.approvedCount} value(s)`,
                     life: 3000,
                 });
+                fetchDetail();
             }
-            fetchDetail();
         } catch (e: any) {
             toast.current?.show({ severity: "error", summary: "Error", detail: e.message, life: 5000 });
         }

@@ -28,7 +28,7 @@ import type { ProductRequestsValuesSelectType as ProductRequestsValuesType } fro
 import type { UserSelectType as UserType } from "@/types/_UserType.ts";
 import type { UUIDType } from "@/types/helpers.ts";
 import { PermissionDeniedError, FilterScriptError } from "@/types/errors.ts";
-import { and, asc, desc, eq, ilike, inArray, isNotNull, or, sql, type SQL } from "drizzle-orm";
+import { and, asc, desc, eq, ilike, inArray, isNotNull, isNull, or, sql, type SQL } from "drizzle-orm";
 import PubSub from "@/services/PubSub.ts";
 import { getLoggedinUserObject } from "@/services/Auth.ts";
 import { createProductExportRows } from "@/repo/ProductExportRepo.ts";
@@ -1375,7 +1375,8 @@ export async function updateProductRequestValue(
     requestId: string,
     dataTypeIdentifier: string,
     value: unknown,
-): Promise<{ value: ProductRequestsValuesType; recalculated: ProductRequestsValuesType[] }> {
+    knownUpdatedAt: string,
+): Promise<{ value: ProductRequestsValuesType; recalculated: ProductRequestsValuesType[] } | null> {
     const user = (await getLoggedinUserObject(tx, claims));
     if (!user) throw new Error("User not found");
 
@@ -1553,10 +1554,14 @@ export async function updateProductRequestValue(
         .where(and(
             eq(ProductRequestsValues.productRequest, requestId),
             eq(ProductRequestsValues.dataType, dataTypeIdentifier),
+            or(
+                eq(ProductRequestsValues.updatedAt, knownUpdatedAt),
+                isNull(ProductRequestsValues.updatedAt),
+            ),
         ))
         .returning();
 
-    if (!updated) throw new Error("Product request value not found");
+    if (!updated) return null;
 
     PubSub.publish(message_UpdateProductRequestValue, updated);
 
@@ -2033,7 +2038,8 @@ export async function approveProductRequestValue(
     claims: Record<string, any>,
     requestId: string,
     dataTypeIdentifier: string,
-): Promise<{ value: ProductRequestsValuesType; allApproved: boolean }> {
+    knownUpdatedAt: string,
+): Promise<{ value: ProductRequestsValuesType; allApproved: boolean } | null> {
     const user = (await getLoggedinUserObject(tx, claims));
     if (!user) throw new Error("User not found");
 
@@ -2119,14 +2125,20 @@ export async function approveProductRequestValue(
         .set({
             approvedBy: user.identifier,
             approvedAt: sql`now()`,
+            updatedBy: user.identifier,
+            updatedAt: sql`now()`,
         } as any)
         .where(and(
             eq(ProductRequestsValues.productRequest, requestId),
             eq(ProductRequestsValues.dataType, dataTypeIdentifier),
+            or(
+                eq(ProductRequestsValues.updatedAt, knownUpdatedAt),
+                isNull(ProductRequestsValues.updatedAt),
+            ),
         ))
         .returning();
 
-    if (!updated) throw new Error("Failed to approve value");
+    if (!updated) return null;
 
     PubSub.publish(message_ApproveProductRequestValue, updated);
 
@@ -2143,7 +2155,8 @@ export async function approveAllProductRequestValues(
     tx: DBClient,
     claims: Record<string, any>,
     requestId: string,
-): Promise<{ approvedCount: number; allApproved: boolean }> {
+    knownValues: Record<string, string>,
+): Promise<{ approvedCount: number; skippedDataTypeIdentifiers: string[]; allApproved: boolean }> {
     const user = (await getLoggedinUserObject(tx, claims));
     if (!user) throw new Error("User not found");
 
@@ -2170,6 +2183,7 @@ export async function approveAllProductRequestValues(
             value: ProductRequestsValues.value,
             defaultValue: ProductRequestsValues.defaultValue,
             approvedBy: ProductRequestsValues.approvedBy,
+            updatedAt: ProductRequestsValues.updatedAt,
             dataTypeKind: DataTypeSchema.kind,
             dataTypeConfig: DataTypeSchema.config,
             dataTypeMandatory: DataTypeSchema.mandatory,
@@ -2186,6 +2200,7 @@ export async function approveAllProductRequestValues(
         .where(eq(ProductRequestsValues.productRequest, requestId));
 
     let approvedCount = 0;
+    const skippedDataTypeIdentifiers: string[] = [];
 
     // Build a script context once for all mandatory script evaluations.
     const approveAllCtx = ScriptEngine.buildContext(tx, {
@@ -2225,6 +2240,13 @@ export async function approveAllProductRequestValues(
             continue;
         }
 
+        // Check optimistic locking: skip if knownUpdatedAt doesn't match
+        const knownUpdatedAt = knownValues[v.dataType!];
+        if (knownUpdatedAt && v.updatedAt !== null && v.updatedAt !== knownUpdatedAt) {
+            skippedDataTypeIdentifiers.push(v.dataType!);
+            continue;
+        }
+
         // Approve (also update last-editor audit fields)
         await tx
             .update(ProductRequestsValues)
@@ -2247,7 +2269,7 @@ export async function approveAllProductRequestValues(
     }
 
     const allApproved = await checkAllApproved(tx, requestId);
-    return { approvedCount, allApproved };
+    return { approvedCount, skippedDataTypeIdentifiers, allApproved };
 }
 
 // ---------------------------------------------------------------------------

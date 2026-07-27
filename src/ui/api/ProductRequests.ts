@@ -38,6 +38,7 @@ export type ApproveProductRequestValueResponse = {
 
 export type ApproveAllProductRequestValuesResponse = {
     approvedCount: number;
+    skippedDataTypeIdentifiers: string[];
     allApproved: boolean;
 };
 
@@ -102,10 +103,11 @@ export async function updateProductRequestValue(
     requestId: string,
     dataTypeIdentifier: string,
     value: unknown,
-): Promise<UpdateProductRequestValueResponse> {
+    knownUpdatedAt: string,
+): Promise<UpdateProductRequestValueResponse | null> {
     return apiPut<UpdateProductRequestValueResponse>(
         `${BASE}/${encodeURIComponent(requestId)}/values/${encodeURIComponent(dataTypeIdentifier)}`,
-        { value },
+        { value, knownUpdatedAt },
     );
 }
 
@@ -113,20 +115,22 @@ export async function updateProductRequestValue(
 export async function approveProductRequestValue(
     requestId: string,
     dataTypeIdentifier: string,
-): Promise<ApproveProductRequestValueResponse> {
+    knownUpdatedAt: string,
+): Promise<ApproveProductRequestValueResponse | null> {
     return apiPost<ApproveProductRequestValueResponse>(
         `${BASE}/${encodeURIComponent(requestId)}/approve/${encodeURIComponent(dataTypeIdentifier)}`,
-        {},
+        { knownUpdatedAt },
     );
 }
 
 /** Approves all unapproved values the current user can approve. */
 export async function approveAllProductRequestValues(
     requestId: string,
+    knownValues: Record<string, string>,
 ): Promise<ApproveAllProductRequestValuesResponse> {
     return apiPost<ApproveAllProductRequestValuesResponse>(
         `${BASE}/${encodeURIComponent(requestId)}/approve-all`,
-        {},
+        { knownValues },
     );
 }
 

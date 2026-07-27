@@ -234,10 +234,11 @@ export default function register(app: ApiInstance): void {
     app.post("/product-requests/:id/approve-all", async (context) => {
         const claims = context.session?.idTokenClaims ?? context.tokenClaims ?? {};
         const requestId = context.params.id as string;
+        const body = context.body as { knownValues: Record<string, string> };
 
         try {
             const result = await runInTransaction(context.dbClient, async (tx) => {
-                return approveAllProductRequestValues(tx, claims, requestId);
+                return approveAllProductRequestValues(tx, claims, requestId, body.knownValues);
             });
 
             return result;
@@ -246,17 +247,24 @@ export default function register(app: ApiInstance): void {
         }
     }, {
         params: t.Object({ id: t.String({ format: "uuid" }) }),
+        body: t.Object({
+            knownValues: t.Record(t.String(), t.String()),
+        }),
         detail: {
             tags: ["Product Requests"],
             summary: "Approve all values on a product request",
             description:
-                "Approves all unapproved data type values that the current user has Approver role for. Returns the count of approved values and whether the request progressed to importing.",
+                "Approves all unapproved data type values that the current user has Approver role for. Returns the count of approved values, identifiers of skipped data types, and whether the request progressed to importing. Values with a stale `updatedAt` (concurrent modification) are skipped.",
             parameters: [
                 { name: "X-API-Key", in: "header", description: "API key for authentication", schema: { type: "string" }, required: false },
             ],
         },
         response: {
-            200: t.Any(),
+            200: t.Object({
+                approvedCount: t.Number(),
+                skippedDataTypeIdentifiers: t.Array(t.String()),
+                allApproved: t.Boolean(),
+            }),
             400: t.Object({ error: t.String() }),
             401: t.String(),
         },
@@ -456,13 +464,14 @@ export default function register(app: ApiInstance): void {
         const claims = context.session?.idTokenClaims ?? context.tokenClaims ?? {};
         const requestId = context.params.id as string;
         const dataTypeIdentifier = context.params.dataTypeIdentifier as string;
-        const body = context.body as { value: unknown };
+        const body = context.body as { value: unknown; knownUpdatedAt: string };
 
         try {
             const result = await runInTransaction(context.dbClient, async (tx) => {
-                return updateProductRequestValue(tx, claims, requestId, dataTypeIdentifier, body.value);
+                return updateProductRequestValue(tx, claims, requestId, dataTypeIdentifier, body.value, body.knownUpdatedAt);
             });
 
+            if (result === null) return status(409, { error: "Value was modified by another user" });
             return { value: result.value, recalculated: result.recalculated };
         } catch (e: any) {
             if (e instanceof PermissionDeniedError) {
@@ -477,12 +486,13 @@ export default function register(app: ApiInstance): void {
         }),
         body: t.Object({
             value: t.Unknown(),
+            knownUpdatedAt: t.String(),
         }),
         detail: {
             tags: ["Product Requests"],
             summary: "Update a data type value on a product request",
             description:
-                "Updates the value for a specific data type on an open product request. Requires Writer role or requestorCanEdit permission.",
+                "Updates the value for a specific data type on an open product request. Requires Writer role or requestorCanEdit permission. Uses optimistic locking via knownUpdatedAt — returns 409 if the value was modified by another user.",
             parameters: [
                 { name: "X-API-Key", in: "header", description: "API key for authentication", schema: { type: "string" }, required: false },
             ],
@@ -495,6 +505,7 @@ export default function register(app: ApiInstance): void {
             400: t.Object({ error: t.String() }),
             401: t.Object({ error: t.String() }),
             403: t.Object({ error: t.String() }),
+            409: t.Object({ error: t.String() }),
         },
     });
 
@@ -505,12 +516,14 @@ export default function register(app: ApiInstance): void {
         const claims = context.session?.idTokenClaims ?? context.tokenClaims ?? {};
         const requestId = context.params.id as string;
         const dataTypeIdentifier = context.params.dataTypeIdentifier as string;
+        const body = context.body as { knownUpdatedAt: string };
 
         try {
             const result = await runInTransaction(context.dbClient, async (tx) => {
-                return approveProductRequestValue(tx, claims, requestId, dataTypeIdentifier);
+                return approveProductRequestValue(tx, claims, requestId, dataTypeIdentifier, body.knownUpdatedAt);
             });
 
+            if (result === null) return status(409, { error: "Value was modified by another user" });
             return result;
         } catch (e: any) {
             if (e instanceof PermissionDeniedError) {
@@ -523,11 +536,14 @@ export default function register(app: ApiInstance): void {
             id: t.String({ format: "uuid" }),
             dataTypeIdentifier: t.String({ format: "uuid" }),
         }),
+        body: t.Object({
+            knownUpdatedAt: t.String(),
+        }),
         detail: {
             tags: ["Product Requests"],
             summary: "Approve a single data type value",
             description:
-                "Approves a specific data type value on an open product request. Requires Approver role. Returns whether the request progressed to importing.",
+                "Approves a specific data type value on an open product request. Requires Approver role. Uses optimistic locking via knownUpdatedAt — returns 409 if the value was modified by another user. Returns whether the request progressed to importing.",
             parameters: [
                 { name: "X-API-Key", in: "header", description: "API key for authentication", schema: { type: "string" }, required: false },
             ],
@@ -537,6 +553,7 @@ export default function register(app: ApiInstance): void {
             400: t.Object({ error: t.String() }),
             401: t.Object({ error: t.String() }),
             403: t.Object({ error: t.String() }),
+            409: t.Object({ error: t.String() }),
         },
     });
 
