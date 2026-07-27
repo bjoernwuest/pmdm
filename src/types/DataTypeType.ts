@@ -106,6 +106,8 @@ export type ConfigString = DefaultProvider<string> & Validator & {
     max: number | undefined,
     // Defaults to `false`. When set to `true` then multi-line text is supported (i.e. use TextArea instead of Input)
     multi: boolean | undefined, // Must be set for DataType, may be overwritten by ProductTypesDataTypes
+    // Browser-side input validation regex. When set, the value must match this pattern.
+    inputValidation: string | undefined,
 }
 
 /** Configuration payload for lookup-backed data types. */
@@ -159,6 +161,7 @@ export const ConfigStringSchema = Type.Object({
     min: Type.Optional(Type.Number()),
     max: Type.Optional(Type.Number()),
     multi: Type.Optional(Type.Boolean()),
+    inputValidation: Type.Optional(Type.String()),
 }, { additionalProperties: false });
 
 export const ConfigLookupSchema = Type.Object({

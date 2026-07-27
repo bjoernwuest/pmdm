@@ -1223,6 +1223,18 @@ export function Component() {
                                         <span>Multi-line</span>
                                     </label>
                                     <label>
+                                        Input Validation Regex
+                                        <InputText
+                                            type="text"
+                                            value={String(editConfig["inputValidation"] ?? "")}
+                                            placeholder="e.g. ^[A-Z]{2}\d{4}$"
+                                            onChange={(e) => setField("inputValidation", e.target.value || undefined)}
+                                            onBlur={() => saveConfigImmediate(editConfig)}
+                                            onKeyDown={(e) => { if (e.key === 'Enter') saveConfigImmediate(editConfig); }}
+                                            style={{ width: "100%" }}
+                                        />
+                                    </label>
+                                    <label>
                                         Default Provider Mode
                                         <select
                                             value={String(editConfig["mode"] ?? DefaultValueCalculationMode.OnCreate)}

@@ -1,0 +1,1 @@
+ALTER TABLE "config" ADD COLUMN "format" text DEFAULT '^[\s\S]*$' NOT NULL;

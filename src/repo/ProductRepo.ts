@@ -700,6 +700,17 @@ function validateDataTypeValue(
             const max = config?.max;
             if (min !== undefined && strVal.length < min) return `String is shorter than minimum ${min} characters`;
             if (max !== undefined && strVal.length > max) return `String is longer than maximum ${max} characters`;
+            const inputValidation = config?.inputValidation;
+            if (inputValidation && strVal.length > 0) {
+                try {
+                    const regex = new RegExp(inputValidation);
+                    if (!regex.test(strVal)) {
+                        return `Input does not match the required format`;
+                    }
+                } catch (_) {
+                    // Invalid regex — skip
+                }
+            }
             return null;
         }
         case "lookup":

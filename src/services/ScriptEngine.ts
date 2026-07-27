@@ -216,9 +216,9 @@ export class ScriptApi {
 
     readonly lookups = {
         get: async (identifier: string) =>
-            (LookupRepo as any).getByIdentifier(this.db, identifier, true),
+            LookupRepo.LookupRepo.getByIdentifier(this.db, identifier, true),
         getValues: async (identifier: string, _filters?: Record<string, unknown>) => {
-            const lookup = await (LookupRepo as any).getByIdentifier(this.db, identifier, true);
+            const lookup = await LookupRepo.LookupRepo.getByIdentifier(this.db, identifier, true);
             if (!lookup) return [];
             return LookupRepo.getValue(this.db, lookup, true);
         },
@@ -226,9 +226,9 @@ export class ScriptApi {
 
     readonly consumables = {
         get: async (identifier: string) =>
-            (ConsumableRepo as any).getByIdentifier(this.db, identifier, true),
+            ConsumableRepo.ConsumableRepo.getByIdentifier(this.db, identifier, true),
         getValues: async (identifier: string, _filters?: Record<string, unknown>) => {
-            const consumable = await (ConsumableRepo as any).getByIdentifier(this.db, identifier, true);
+            const consumable = await ConsumableRepo.ConsumableRepo.getByIdentifier(this.db, identifier, true);
             if (!consumable) return [];
             return ConsumableRepo.getValue(this.db, consumable, true, false);
         },
@@ -248,8 +248,8 @@ export class ScriptApi {
 
     readonly productTypes = {
         get: async (identifier: string) =>
-            (ProductTypeRepo as any).getByIdentifier(this.db, identifier, true),
-        list: async () => (ProductTypeRepo as any).get(this.db, true),
+            ProductTypeRepo.ProductTypeRepo.getByIdentifier(this.db, identifier, true),
+        list: async () => ProductTypeRepo.ProductTypeRepo.get(this.db, true),
     };
 
     readonly permissions = {

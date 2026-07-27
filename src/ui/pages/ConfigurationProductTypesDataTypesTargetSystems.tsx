@@ -1340,6 +1340,19 @@ export function Component() {
                                         <ResetBtn field="multi" />
                                     </label>
                                     <label>
+                                        Input Validation Regex
+                                        <ResetBtn field="inputValidation" />
+                                        <InputText
+                                            type="text"
+                                            value={String(displayValue("inputValidation") ?? "")}
+                                            placeholder="e.g. ^[A-Z]{2}\d{4}$"
+                                            onChange={(e) => setField("inputValidation", e.target.value || undefined)}
+                                            onBlur={() => saveConfigImmediate(editConfig)}
+                                            onKeyDown={(e) => { if (e.key === 'Enter') saveConfigImmediate(editConfig); }}
+                                            style={{ width: "100%" }}
+                                        />
+                                    </label>
+                                    <label>
                                         Default Provider Mode
                                         <ResetBtn field="mode" />
                                         <select

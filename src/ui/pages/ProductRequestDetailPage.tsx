@@ -1390,6 +1390,7 @@ function InlineEditField({
     const [editValue, setEditValue] = useState<any>(value);
     const [saving, setSaving] = useState(false);
     const [validationError, setValidationError] = useState<string | null>(null);
+    const [validationWarning, setValidationWarning] = useState<string | null>(null);
 
     const isActive = activeEditField === dataTypeId;
     const prevActiveRef = useRef(isActive);
@@ -1402,6 +1403,7 @@ function InlineEditField({
         if (!isActive) {
             setEditValue(value);
             setValidationError(null);
+            setValidationWarning(null);
         }
     }, [value, isActive]);
 
@@ -1449,12 +1451,31 @@ function InlineEditField({
         [type, config],
     );
 
+    // --- Regex input validation (warning only, not blocking) ---
+    const computeRegexWarning = useCallback(
+        (val: any): string | null => {
+            if (type !== "text" && type !== "textarea") return null;
+            const str = (val ?? "") as string;
+            if (!str) return null;
+            const inputValidation = config?.inputValidation as string | undefined;
+            if (!inputValidation) return null;
+            try {
+                if (!new RegExp(inputValidation).test(str)) {
+                    return `Input does not match the required format`;
+                }
+            } catch (_) {}
+            return null;
+        },
+        [type, config],
+    );
+
     // Re-validate whenever editValue changes while active
     useEffect(() => {
         if (isActive) {
             setValidationError(validate(editValue));
+            setValidationWarning(computeRegexWarning(editValue));
         }
-    }, [editValue, isActive, validate]);
+    }, [editValue, isActive, validate, computeRegexWarning]);
 
     // --- Auto-save / revert on deactivation (Task 4) ---
     useEffect(() => {
@@ -1466,6 +1487,7 @@ function InlineEditField({
                 // An explicit save is in flight; just reset local state
                 setEditValue(origValueRef.current);
                 setValidationError(null);
+                setValidationWarning(null);
                 savingRef.current = false;
             } else {
                 const changed = JSON.stringify(editValue) !== JSON.stringify(origValueRef.current);
@@ -1476,6 +1498,7 @@ function InlineEditField({
                     // Revert invalid changes
                     setEditValue(origValueRef.current);
                     setValidationError(null);
+                    setValidationWarning(null);
                 }
             }
         }
@@ -1529,8 +1552,14 @@ function InlineEditField({
             setValidationError(err);
             return;
         }
+        const warn = computeRegexWarning(editValue);
+        if (warn) {
+            setValidationError(warn);
+            setValidationWarning(null);
+            return;
+        }
         void performSave(editValue);
-    }, [editValue, validate, performSave]);
+    }, [editValue, validate, computeRegexWarning, performSave]);
 
     /** Set on mousedown so handleBlur can see the intent before click fires. */
     const handleSaveMouseDown = useCallback(() => {
@@ -1545,6 +1574,7 @@ function InlineEditField({
     const handleCancel = useCallback(() => {
         setEditValue(origValueRef.current);
         setValidationError(null);
+        setValidationWarning(null);
     }, []);
 
     const handleClear = useCallback(async () => {
@@ -1554,6 +1584,7 @@ function InlineEditField({
             await onSave(null);
             setEditValue(null);
             setValidationError(null);
+            setValidationWarning(null);
         } catch (_) {
             // Error handled by parent toast
         } finally {
@@ -1768,6 +1799,11 @@ function InlineEditField({
             {validationError && (
                 <small style={{ color: "var(--red-500)", display: "block", marginTop: "0.25rem" }}>
                     {validationError}
+                </small>
+            )}
+            {!validationError && validationWarning && (
+                <small style={{ color: "var(--orange-500)", display: "block", marginTop: "0.25rem" }}>
+                    {validationWarning}
                 </small>
             )}
         </div>

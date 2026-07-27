@@ -258,10 +258,8 @@ export function Component() {
                                                 <td style={{ fontSize: "0.85rem", wordBreak: "break-word" }}>
                                                     {entry.message}
                                                 </td>
-                                                <td style={{ fontSize: "0.75rem", fontFamily: "monospace" }}>
-                                                    {entry.dataTypeIdentifier
-                                                        ? `${entry.dataTypeIdentifier.slice(0, 8)}...`
-                                                        : "-"}
+                                                <td style={{ fontSize: "0.75rem", fontFamily: "monospace", wordBreak: "break-all" }}>
+                                                    {entry.dataTypeIdentifier ?? "-"}
                                                 </td>
                                             </tr>
                                         );

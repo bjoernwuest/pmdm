@@ -1477,6 +1477,16 @@ export async function updateProductRequestValue(
             if (strConfig?.max !== null && strConfig?.max !== undefined && (value as string).length > strConfig.max) {
                 throw new Error(`Must be at most ${strConfig.max} characters`);
             }
+            if (value && strConfig?.inputValidation) {
+                try {
+                    const regex = new RegExp(strConfig.inputValidation);
+                    if (!regex.test(value as string)) {
+                        throw new Error(`Input does not match the required format`);
+                    }
+                } catch (_) {
+                    // Invalid regex in config — skip validation
+                }
+            }
             break;
         }
         case DataTypeKind.Boolean: {
