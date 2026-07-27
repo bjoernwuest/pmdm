@@ -4,7 +4,9 @@ import { ProductTypes, ProductTypesDataTypes, ProductTypesDataTypePermission } f
 import { DataTypeSchema, DataTypePermission } from "@/schema/DataTypeSchema.ts";
 import { DataTypeKind } from "@/types/DataTypeType.ts";
 import { User, UserGroup, Group } from "@/schema/UserSchema.ts";
-import { eq, and, inArray, isNull, sql } from "drizzle-orm";
+import { eq, and, inArray, sql } from "drizzle-orm";
+
+import { isEmptyValue } from "@/repo/ProductRequestRepo.ts";
 
 export type AwaitingItem = {
     requestId: string;
@@ -86,9 +88,15 @@ export async function getAwaitingPerUser(
                 value: ProductRequestsValues.value,
                 approvedBy: ProductRequestsValues.approvedBy,
                 dataTypeKind: DataTypeSchema.kind,
+                dataTypeConfig: DataTypeSchema.config,
+                ptConfig: ProductTypesDataTypes.config,
             })
             .from(ProductRequestsValues)
             .innerJoin(DataTypeSchema, eq(ProductRequestsValues.dataType, DataTypeSchema.identifier))
+            .leftJoin(ProductTypesDataTypes, and(
+                eq(ProductTypesDataTypes.productType, pr.productType!),
+                eq(ProductTypesDataTypes.dataType, ProductRequestsValues.dataType),
+            ))
             .where(eq(ProductRequestsValues.productRequest, pr.requestId!));
 
         const isUpdateRequest = !!pr.productToUpdate;
@@ -99,12 +107,10 @@ export async function getAwaitingPerUser(
             const writerUserIds = await resolveUsersWithRole(db, pr.productType!, dtId, "writer");
             const approverUserIds = await resolveUsersWithRole(db, pr.productType!, dtId, "approver");
 
-            const isTriStateBoolean =
-                v.dataTypeKind === DataTypeKind.Boolean &&
-                v.value === null;
+            const resolvedConfig = { ...((v.dataTypeConfig ?? {}) as Record<string, unknown>), ...((v.ptConfig ?? {}) as Record<string, unknown>) };
 
             for (const userId of writerUserIds) {
-                if (v.value === null && !isTriStateBoolean) {
+                if (isEmptyValue(v.value, v.dataTypeKind!, resolvedConfig)) {
                     addToResult(result, userId, "awaitingProvide", {
                         requestId: pr.requestId!,
                         productNumber: pr.productNumber,

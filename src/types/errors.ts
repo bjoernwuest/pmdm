@@ -19,3 +19,14 @@ export class ValidationError extends Error {
         this.name = "ValidationError";
     }
 }
+
+/**
+ * Thrown when a `filter` script fails (throw/timeout) or returns a non-array.
+ * Mapped to HTTP 500 by the dropdown endpoints (fail-hard).
+ */
+export class FilterScriptError extends Error {
+    constructor(message: string) {
+        super(message);
+        this.name = "FilterScriptError";
+    }
+}

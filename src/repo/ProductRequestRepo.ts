@@ -2,7 +2,7 @@ import type { DBClient } from "@/services/DatabaseDriver.ts";
 import { ProductRequests, ProductRequestsValues, ProductNumberState, ProductRequestStatus } from "@/schema/ProductRequestSchema.ts";
 import { ProductTypes, ProductTypesDataTypes, ProductTypesDataTypePermission, ProductTypesDataTypePreviousApproval, ProductTypesPermission } from "@/schema/ProductTypeSchema.ts";
 import { DataTypeSchema, DataTypePermission, type DataTypeGroupRoles } from "@/schema/DataTypeSchema.ts";
-import { DataTypeKind, YesNoScript, type YesNoScriptType, type ConfigNumeric, type ConfigString, type ConfigBoolean, type ConfigLookup, type ConfigConsumable, type ConfigProduct, CalculatedCalculationMode, type ConfigCalculated } from "@/types/DataTypeType.ts";
+import { DataTypeKind, YesNoScript, type YesNoScriptType, type ConfigNumeric, type ConfigString, type ConfigBoolean, type ConfigLookup, type ConfigConsumable, type ConfigProduct, CalculatedCalculationMode, DefaultValueCalculationMode, type ConfigCalculated } from "@/types/DataTypeType.ts";
 import { BusinessDomains } from "@/schema/BusinessDomainSchema.ts";
 import {Group, User, UserGroup} from "@/schema/UserSchema.ts";
 import { Products, ProductsValues } from "@/schema/ProductSchema.ts";
@@ -17,6 +17,7 @@ import {
     message_ApproveProductRequestValue,
     message_CancelProductRequest,
     message_ImportingProductRequest,
+    message_MandatoryAndRequestorCanEditUpdated,
     type ProductRequestListRow,
     type ProductRequestDetail,
     type ProductRequestValueEnriched,
@@ -26,11 +27,15 @@ import type { ProductRequestsValuesInsertType as ProductRequestsValuesInsert } f
 import type { ProductRequestsValuesSelectType as ProductRequestsValuesType } from "@/types/_ProductRequestType.ts";
 import type { UserSelectType as UserType } from "@/types/_UserType.ts";
 import type { UUIDType } from "@/types/helpers.ts";
-import { PermissionDeniedError } from "@/types/errors.ts";
+import { PermissionDeniedError, FilterScriptError } from "@/types/errors.ts";
 import { and, asc, desc, eq, ilike, inArray, isNotNull, or, sql, type SQL } from "drizzle-orm";
 import PubSub from "@/services/PubSub.ts";
 import { getLoggedinUserObject } from "@/services/Auth.ts";
 import { createProductExportRows } from "@/repo/ProductExportRepo.ts";
+import * as ProductRepo from "@/repo/ProductRepo.ts";
+import * as ScriptEngine from "@/services/ScriptEngine.ts";
+import { ScriptCategory, type ScriptExecutionContext } from "@/types/ScriptEngineType.ts";
+import { devMode } from "@/devmode.ts";
 
 // ---------------------------------------------------------------------------
 // Product Number Generation
@@ -365,18 +370,51 @@ function resolveConfig(
 }
 
 /**
+ * Returns `true` when the value represents an empty / no-value state for the
+ * given data type kind.  Tri-state booleans (kind "boolean" with
+ * `config.permitEmpty === true`) treat `null` as a valid value and return
+ * `false`.  The function is used by the approval gates,
+ * `computeActionableSummary`, and notification digests.
+ */
+export function isEmptyValue(value: unknown, kind: string, config?: Record<string, unknown> | null): boolean {
+    if (value === null) {
+        if (kind === "boolean" && (config as { permitEmpty?: boolean } | null | undefined)?.permitEmpty) {
+            return false;
+        }
+        return true;
+    }
+    if (value === "") return true;
+    if (Array.isArray(value) && value.length === 0) return true;
+    return false;
+}
+
+/**
  * Converts a YesNoScript value (+ optional script) to a boolean or null.
  * - null          → null (inherit from parent)
  * - "Yes"          → true
  * - "No"           → false
  * - "Script"       → evaluate the script, cast to boolean; null if script is missing
+ *
+ * When a script is present it executes via the ScriptEngine with the supplied
+ * context (scoped to `dataTypeIdentifier` when provided).
  */
-function resolveYesNoScript(value: string | null, script: string | null): boolean | null {
+async function resolveYesNoScript(
+    db: DBClient,
+    value: string | null,
+    script: string | null,
+    ctx: ScriptExecutionContext | null,
+    category: ScriptCategory,
+    dataTypeIdentifier?: string,
+): Promise<boolean | null> {
     if (value === null) return null;
     if (value === YesNoScript.Yes) return true;
     if (value === YesNoScript.No) return false;
     if (value === YesNoScript.Script) {
-        if (script) return Boolean(executeScript(script, "yesnoscript"));
+        if (script && ctx) {
+            const scoped = dataTypeIdentifier ? ScriptEngine.forDataType(ctx, dataTypeIdentifier) : ctx;
+            const result = await ScriptEngine.execute(db, script, scoped, category);
+            return Boolean(result);
+        }
         return null;
     }
     return null;
@@ -386,14 +424,17 @@ function resolveYesNoScript(value: string | null, script: string | null): boolea
  * Resolves a mandatory flag: ProductTypesDataTypes.mandatory > DataType.mandatory > false.
  * Expects raw YesNoScriptType column values and their associated script columns.
  */
-function resolveMandatory(
+async function resolveMandatory(
+    db: DBClient,
     dtMandatory: string,
     dtMandatoryScript: string | null,
     ptMandatory: string | null,
     ptMandatoryScript: string | null,
-): boolean {
-    const dtBool = resolveYesNoScript(dtMandatory, dtMandatoryScript);
-    const ptBool = resolveYesNoScript(ptMandatory, ptMandatoryScript);
+    ctx: ScriptExecutionContext | null,
+    dataTypeIdentifier?: string,
+): Promise<boolean> {
+    const dtBool = await resolveYesNoScript(db, dtMandatory, dtMandatoryScript, ctx, ScriptCategory.MandatoryScript, dataTypeIdentifier);
+    const ptBool = await resolveYesNoScript(db, ptMandatory, ptMandatoryScript, ctx, ScriptCategory.MandatoryScript, dataTypeIdentifier);
     return ptBool ?? dtBool ?? false;
 }
 
@@ -401,14 +442,17 @@ function resolveMandatory(
  * Resolves requestorCanEdit: ProductTypesDataTypes.requestorCanEdit > DataType.requestorCanEdit > true.
  * Expects raw YesNoScriptType column values and their associated script columns.
  */
-function resolveRequestorCanEdit(
+async function resolveRequestorCanEdit(
+    db: DBClient,
     dtRequestorCanEdit: string,
     dtRequestorCanEditScript: string | null,
     ptRequestorCanEdit: string | null,
     ptRequestorCanEditScript: string | null,
-): boolean {
-    const dtBool = resolveYesNoScript(dtRequestorCanEdit, dtRequestorCanEditScript);
-    const ptBool = resolveYesNoScript(ptRequestorCanEdit, ptRequestorCanEditScript);
+    ctx: ScriptExecutionContext | null,
+    dataTypeIdentifier?: string,
+): Promise<boolean> {
+    const dtBool = await resolveYesNoScript(db, dtRequestorCanEdit, dtRequestorCanEditScript, ctx, ScriptCategory.RequestorCanEditScript, dataTypeIdentifier);
+    const ptBool = await resolveYesNoScript(db, ptRequestorCanEdit, ptRequestorCanEditScript, ctx, ScriptCategory.RequestorCanEditScript, dataTypeIdentifier);
     return ptBool ?? dtBool ?? true;
 }
 
@@ -577,6 +621,14 @@ export async function createProductRequest(
         }
     }
 
+    // Build a script context once for all calculation/defaultProvider scripts
+    // evaluated during creation. The creating user is the principal.
+    const createCtx = ScriptEngine.buildContext(tx, {
+        cause: "product_request_create",
+        productRequestIdentifier: created.identifier!,
+        principal: { userId: user.identifier ?? null, apiKeyIdentifier: null, isApiKey: false },
+    });
+
     // Create values for each data type
     for (const assignment of dataTypeAssignments) {
         const resolvedConfig = resolveConfig(
@@ -597,11 +649,12 @@ export async function createProductRequest(
             if (mode !== CalculatedCalculationMode.OnExport) {
                 // Execute non-on_export calculation scripts at creation time.
                 // on_export scripts are deferred until status → importing.
-                try {
-                    value = executeScript(resolvedConfig.script as string, "calculation");
-                } catch (_) {
-                    value = null;
-                }
+                value = await ScriptEngine.execute(
+                    tx,
+                    resolvedConfig.script as string,
+                    ScriptEngine.forDataType(createCtx, assignment.dataTypeIdentifier),
+                    ScriptCategory.Calculation,
+                );
             }
         } else if (input.sourceProductNumber) {
             // Copy from source product
@@ -610,7 +663,12 @@ export async function createProductRequest(
                 value = sourceVal;
             } else if (resolvedConfig.defaultProvider) {
                 value = null;
-                defaultValue = executeScript(resolvedConfig.defaultProvider as string, "defaultProvider");
+                defaultValue = await ScriptEngine.execute(
+                    tx,
+                    resolvedConfig.defaultProvider as string,
+                    ScriptEngine.forDataType(createCtx, assignment.dataTypeIdentifier),
+                    ScriptCategory.DefaultProvider,
+                );
             }
         } else if (isUpdateRequest && !assignment.editableOnUpdate) {
             // For update requests with editableOnUpdate=false: use existing product value
@@ -625,7 +683,12 @@ export async function createProductRequest(
             // New or update request (editable)
             value = null;
             if (resolvedConfig.defaultProvider) {
-                defaultValue = executeScript(resolvedConfig.defaultProvider as string, "defaultProvider");
+                defaultValue = await ScriptEngine.execute(
+                    tx,
+                    resolvedConfig.defaultProvider as string,
+                    ScriptEngine.forDataType(createCtx, assignment.dataTypeIdentifier),
+                    ScriptCategory.DefaultProvider,
+                );
             }
         }
 
@@ -650,6 +713,38 @@ export async function createProductRequest(
 // ---------------------------------------------------------------------------
 // Lookup / Consumable Value Resolution (product-request scoped)
 // ---------------------------------------------------------------------------
+
+/**
+ * Executes a data type's `filter` script against the candidate option rows and
+ * returns the filtered subset. Fail-hard: a script error/timeout or a
+ * non-array return propagates as an exception (the API layer maps it to 500).
+ */
+async function applyFilterScript<T>(
+    db: DBClient,
+    filterScript: string,
+    user: UserType,
+    requestId: string,
+    dataTypeIdentifier: string,
+    options: T[],
+): Promise<T[]> {
+    const filterCtx = ScriptEngine.buildContext(db, {
+        cause: "product_request_update",
+        productRequestIdentifier: requestId,
+        dataTypeIdentifier,
+        options: options as unknown[],
+        principal: { userId: user.identifier ?? null, apiKeyIdentifier: null, isApiKey: false },
+    });
+    let result: unknown;
+    try {
+        result = await ScriptEngine.execute(db, filterScript, filterCtx, ScriptCategory.Filter, { throwOnError: true });
+    } catch (e) {
+        throw new FilterScriptError(e instanceof Error ? e.message : String(e));
+    }
+    if (!Array.isArray(result)) {
+        throw new FilterScriptError("Filter script did not return an array");
+    }
+    return result as T[];
+}
 
 /**
  * Returns all lookup values for the lookup backing a lookup-kind data type,
@@ -696,7 +791,11 @@ export async function getProductRequestLookupValues(
     const lookup = await LookupRepo.getByIdentifier(db, config.source);
     if (!lookup) throw new Error("Lookup not found");
 
-    return getLookupValueRows(db, lookup, true);
+    const values = await getLookupValueRows(db, lookup, true);
+    if (config.filter) {
+        return applyFilterScript(db, config.filter as unknown as string, user, requestId, dataTypeIdentifier, values);
+    }
+    return values;
 }
 
 /**
@@ -745,7 +844,89 @@ export async function getProductRequestConsumableValues(
     // includeDisabled=true, unusedOnly=false — return ALL values (including
     // used ones) so a currently-assigned value always resolves to its name
     // and remains selectable/unselectable in the UI.
-    return getConsumableValueRows(db, consumable, true, false);
+    const values = await getConsumableValueRows(db, consumable, true, false);
+    if (config.filter) {
+        return applyFilterScript(db, config.filter as unknown as string, user, requestId, dataTypeIdentifier, values);
+    }
+    return values;
+}
+
+/**
+ * Returns the candidate products for a product-kind data type, scoped to a
+ * product request, with the data type's `filter` script applied.
+ *
+ * Access is governed by the same data-type-level Viewer/Writer/Approver role
+ * model used by {@link getProductRequest}. Mirrors the lookup/consumable
+ * endpoints so all three dropdown kinds behave consistently.
+ *
+ * Candidates are all non-disabled products, plus any currently-selected
+ * products (so a selection always resolves to a label even if it has since
+ * been disabled or filtered out).
+ */
+export async function getProductRequestProductValues(
+    db: DBClient,
+    claims: Record<string, any>,
+    requestId: string,
+    dataTypeIdentifier: string,
+): Promise<{ productNumber: string; productTypeName: string | null; disabled: boolean }[]> {
+    const user = await getLoggedinUserObject(db, claims);
+    if (!user) throw new Error("User not found");
+
+    const requestRows = await db
+        .select({ productType: ProductRequests.productType, productToUpdate: ProductRequests.productToUpdate })
+        .from(ProductRequests)
+        .where(eq(ProductRequests.identifier, requestId))
+        .limit(1);
+    if (requestRows.length === 0) throw new Error("Product request not found");
+
+    const perms = await getEffectivePermissions(db, user, requestRows[0]!.productType!, dataTypeIdentifier);
+    if (perms.roles.length === 0) {
+        throw new PermissionDeniedError("Permission denied: you cannot view this data type");
+    }
+
+    const dataTypeRows = await db
+        .select({ kind: DataTypeSchema.kind, config: DataTypeSchema.config })
+        .from(DataTypeSchema)
+        .where(eq(DataTypeSchema.identifier, dataTypeIdentifier))
+        .limit(1);
+    if (dataTypeRows.length === 0) throw new Error("Data type not found");
+    if (dataTypeRows[0]!.kind !== DataTypeKind.Product) throw new Error("Data type is not of kind product");
+
+    const config = dataTypeRows[0]!.config as ConfigProduct;
+
+    // Currently-selected product numbers for this data type on this request,
+    // so they remain resolvable even if disabled or filtered out.
+    const currentRows = await db
+        .select({ value: ProductRequestsValues.value })
+        .from(ProductRequestsValues)
+        .where(and(
+            eq(ProductRequestsValues.productRequest, requestId),
+            eq(ProductRequestsValues.dataType, dataTypeIdentifier),
+        ))
+        .limit(1);
+    const currentValue: unknown = currentRows[0]?.value ?? null;
+    const selectedNumbers = new Set<string>(
+        (Array.isArray(currentValue) ? currentValue : currentValue != null ? [currentValue] : [])
+            .filter((v): v is string => v != null)
+            .map((v) => String(v)),
+    );
+
+    // Candidates: all non-disabled products (a large page to cover the list),
+    // excluding the productToUpdate target unless it is currently selected.
+    const productToUpdate = requestRows[0]!.productToUpdate ?? null;
+    const allProducts = await ProductRepo.getProducts(db, true, undefined, 0, 1000);
+    const candidates = allProducts
+        .filter((p) => !p.disabled && (p.productNumber !== productToUpdate || selectedNumbers.has(p.productNumber)))
+        .map((p) => ({
+            productNumber: p.productNumber,
+            productTypeName: p.productTypeName ?? null,
+            disabled: p.disabled ?? false,
+        }));
+
+    if (config?.filter) {
+        return applyFilterScript(db, config.filter as unknown as string, user, requestId, dataTypeIdentifier, candidates);
+    }
+    return candidates;
 }
 
 /**
@@ -881,6 +1062,14 @@ export async function getProductRequest(
         }
     }
 
+    // Build a script context once for all mandatory/requestorCanEdit script
+    // evaluations in this view. The viewing user is the principal.
+    const viewCtx = ScriptEngine.buildContext(db, {
+        cause: "product_request_update",
+        productRequestIdentifier: requestId,
+        principal: { userId: user.identifier ?? null, apiKeyIdentifier: null, isApiKey: false },
+    });
+
     // Enrich values with permissions and resolve precedence
     const enrichedValues: ProductRequestValueEnriched[] = [];
     for (const v of valueRows) {
@@ -918,8 +1107,8 @@ export async function getProductRequest(
             dataTypeDescription: v.dataTypeDescription,
             dataTypeKind: v.dataTypeKind,
             dataTypeConfig: resolvedConfig,
-            mandatory: resolveMandatory(v.dataTypeMandatory, v.dataTypeMandatoryScript, v.ptMandatory, v.ptMandatoryScript),
-            requestorCanEdit: resolveRequestorCanEdit(v.dataTypeRequestorCanEdit, v.dataTypeRequestorCanEditScript, v.ptRequestorCanEdit, v.ptRequestorCanEditScript),
+            mandatory: await resolveMandatory(db, v.dataTypeMandatory, v.dataTypeMandatoryScript, v.ptMandatory, v.ptMandatoryScript, viewCtx, v.dataType ?? undefined),
+            requestorCanEdit: await resolveRequestorCanEdit(db, v.dataTypeRequestorCanEdit, v.dataTypeRequestorCanEditScript, v.ptRequestorCanEdit, v.ptRequestorCanEditScript, viewCtx, v.dataType ?? undefined),
             editableOnUpdate: v.ptEditableOnUpdate ?? true,
             businessDomainName,
             userRoles: perms.roles,
@@ -1132,6 +1321,13 @@ async function computeActionableSummary(
 
     const isUpdateRequest = !!request[0]?.productToUpdate;
 
+    // Build a script context once for all requestorCanEdit script evaluations.
+    const summaryCtx = ScriptEngine.buildContext(db, {
+        cause: "product_request_update",
+        productRequestIdentifier: requestId,
+        principal: { userId: user.identifier ?? null, apiKeyIdentifier: null, isApiKey: false },
+    });
+
     for (const v of values) {
         const perms = getPerms
             ? getPerms(productTypeIdentifier, v.dataType!)
@@ -1142,7 +1338,7 @@ async function computeActionableSummary(
         // they never need "Provide value" (mirrors the approve-path rule).
         const isCreator = v.createdBy === user.identifier;
         const hasWriterRole = perms.roles.includes("writer" as DataTypeGroupRoles);
-        const reqEdit = resolveRequestorCanEdit(v.requestorCanEdit, v.requestorCanEditScript, v.ptRequestorCanEdit, v.ptRequestorCanEditScript);
+        const reqEdit = await resolveRequestorCanEdit(db, v.requestorCanEdit, v.requestorCanEditScript, v.ptRequestorCanEdit, v.ptRequestorCanEditScript, summaryCtx, v.dataType ?? undefined);
         const canEdit = hasWriterRole || (reqEdit && isCreator);
         const editableOnUpdate = v.ptEditableOnUpdate ?? true;
         const canEditEffective = canEdit && (isUpdateRequest ? editableOnUpdate : true);
@@ -1151,10 +1347,7 @@ async function computeActionableSummary(
             v.dataTypeConfig as Record<string, unknown> | null,
             v.ptConfig as Record<string, unknown> | null,
         );
-        const isTriStateBoolean = v.dataTypeKind === DataTypeKind.Boolean
-            && ((resolvedConfig as ConfigBoolean | undefined)?.permitEmpty ?? false);
-
-        if (canEditEffective && v.value === null && !isTriStateBoolean) {
+        if (canEditEffective && isEmptyValue(v.value, v.dataTypeKind!, resolvedConfig)) {
             needsValue = true;
         }
 
@@ -1316,6 +1509,45 @@ export async function updateProductRequestValue(
             break;
     }
 
+    // Execute the validate script (if configured) AFTER kind-based validation,
+    // so the script only sees structurally-valid values. The candidate value is
+    // passed via ctx.trigger.candidateValue; ctx.api.request.getValue() still
+    // reads the previously persisted value. Fail-closed: a script error/timeout
+    // rejects the update.
+    const validateScript = (config as { validate?: string } | null | undefined)?.validate;
+    if (validateScript && kind !== DataTypeKind.Calculated) {
+        const validateCtx = ScriptEngine.buildContext(tx, {
+            cause: "product_request_update",
+            productRequestIdentifier: requestId,
+            dataTypeIdentifier,
+            candidateValue: value,
+            principal: { userId: user.identifier ?? null, apiKeyIdentifier: null, isApiKey: false },
+        });
+        let rawResult: unknown;
+        try {
+            rawResult = await ScriptEngine.execute(tx, validateScript, validateCtx, ScriptCategory.Validate, { throwOnError: true });
+        } catch (e) {
+            throw new Error(`Validation script error: ${e instanceof Error ? e.message : String(e)}`);
+        }
+        // Coerce the result defensively into the ValidateScriptResult contract.
+        let valid: boolean;
+        let message: string | undefined;
+        if (rawResult !== null && typeof rawResult === "object") {
+            const r = rawResult as { valid?: unknown; message?: unknown };
+            valid = r.valid === true;
+            message = typeof r.message === "string" ? r.message : undefined;
+            if (r.valid === undefined) {
+                valid = false;
+                message = message ?? "Invalid validator return";
+            }
+        } else {
+            valid = Boolean(rawResult);
+        }
+        if (!valid) {
+            throw new Error(message ?? "Validation failed");
+        }
+    }
+
     // Load current value BEFORE the update so we can detect removed consumable IDs
     const currentValueRows = await tx
         .select({ value: ProductRequestsValues.value })
@@ -1367,10 +1599,36 @@ export async function updateProductRequestValue(
         }
     }
 
-    // Recalculate on_change calculated data types when a non-calculated value changes.
-    const recalculated = kind !== DataTypeKind.Calculated
-        ? await recalculateOnChangeCalculatedValues(tx, user.identifier!, requestId)
-        : [];
+    // Recalculate on_change calculated data types and defaultProvider values
+    // when a non-calculated value changes. Build the script context once and
+    // share it across both recalculation passes.
+    let recalculated: ProductRequestsValuesType[] = [];
+    if (kind !== DataTypeKind.Calculated) {
+        const updateCtx = ScriptEngine.buildContext(tx, {
+            cause: "product_request_update",
+            productRequestIdentifier: requestId,
+            dataTypeIdentifier,
+            principal: { userId: user.identifier ?? null, apiKeyIdentifier: null, isApiKey: false },
+        });
+        recalculated = await recalculateOnChangeCalculatedValues(tx, user.identifier!, requestId, updateCtx);
+        await recalculateDefaultValues(tx, user.identifier!, requestId, updateCtx);
+    }
+
+    // Re-evaluate mandatory & requestorCanEdit scripts for all values.
+    // Run unconditionally — these scripts only read data, no mutation cascade.
+    try {
+        const statuses = await reevaluateMandatoryAndRequestorCanEdit(tx, requestId, user.identifier!);
+        PubSub.publish(message_MandatoryAndRequestorCanEditUpdated, {
+            productRequest: requestId,
+            mandatory: statuses.mandatory,
+            requestorCanEdit: statuses.requestorCanEdit,
+        });
+        for (const inv of statuses.invalidatedApprovals) {
+            PubSub.publish(message_ApproveProductRequestValue, inv);
+        }
+    } catch (e: unknown) {
+        if (devMode) console.error("Mandatory/requestorCanEdit re-evaluation failed:", e);
+    }
 
     return { value: updated as ProductRequestsValuesType, recalculated };
 }
@@ -1390,6 +1648,7 @@ async function recalculateOnChangeCalculatedValues(
     tx: DBClient,
     updatedBy: string,
     requestId: string,
+    ctx: ScriptExecutionContext,
 ): Promise<ProductRequestsValuesType[]> {
     const calculatedRows = await tx
         .select({
@@ -1409,6 +1668,11 @@ async function recalculateOnChangeCalculatedValues(
             eq(DataTypeSchema.kind, DataTypeKind.Calculated),
         ));
 
+    if (devMode) {
+        console.log("[recalculateOnChangeCalculatedValues] request=%s found=%d calculated data types",
+            requestId, calculatedRows.length);
+    }
+
     const results: ProductRequestsValuesType[] = [];
 
     for (const row of calculatedRows) {
@@ -1416,16 +1680,38 @@ async function recalculateOnChangeCalculatedValues(
             row.dtConfig as Record<string, unknown> | null,
             row.ptConfig as Record<string, unknown> | null,
         );
-        const mode = resolvedConfig.mode as string | undefined;
+        const mode = (resolvedConfig.mode as string | undefined) ?? CalculatedCalculationMode.OnExport;
         const script = resolvedConfig.script as string | undefined;
 
-        if (mode !== CalculatedCalculationMode.OnChange || !script) continue;
+        if (mode !== CalculatedCalculationMode.OnChange || !script) {
+            if (devMode) {
+                const appliedDefault = resolvedConfig.mode == null;
+                const reason = mode !== CalculatedCalculationMode.OnChange
+                    ? (appliedDefault
+                        ? `mode unset (defaulted to "on_export")`
+                        : `mode=${String(mode)} (expected "on_change")`)
+                    : "script is empty";
+                console.log("[recalculateOnChangeCalculatedValues] request=%s dt=%s skipped: %s",
+                    requestId, row.dataType, reason);
+            }
+            continue;
+        }
 
-        let value: unknown;
-        try {
-            value = executeScript(script, "calculation");
-        } catch (_) {
-            value = null;
+        if (devMode) {
+            console.log("[recalculateOnChangeCalculatedValues] request=%s dt=%s executing calculation script",
+                requestId, row.dataType);
+        }
+
+        const value = await ScriptEngine.execute(
+            tx,
+            script,
+            ScriptEngine.forDataType(ctx, row.dataType!),
+            ScriptCategory.Calculation,
+        );
+
+        if (value === null && devMode) {
+            console.warn("[recalculateOnChangeCalculatedValues] request=%s dt=%s script returned null (may indicate error or intentional null)",
+                requestId, row.dataType);
         }
 
         const [updated] = await tx
@@ -1452,7 +1738,155 @@ async function recalculateOnChangeCalculatedValues(
         });
     }
 
+    if (devMode) {
+        console.log("[recalculateOnChangeCalculatedValues] request=%s executed=%d scripts",
+            requestId, results.length);
+    }
+
     return results;
+}
+
+/**
+ * Recalculates the `defaultValue` of all non-calculated data types on the
+ * given product request that have a `defaultProvider` script with mode
+ * `on_change` or `on_change_no_value`.
+ *
+ * Mode semantics (design/scripting_engine.md §5.2):
+ * - `on_change_no_value`: only recalculates while the data type has no
+ *   user-assigned value (`value IS NULL`) and is not approved
+ *   (`approvedAt IS NULL`). Writes to `defaultValue`.
+ * - `on_change`: always recalculates; writes to `defaultValue` AND clears any
+ *   existing approval (`approvedBy`/`approvedAt` → null).
+ *
+ * The `value` column is never overwritten by a defaultProvider.
+ */
+async function recalculateDefaultValues(
+    tx: DBClient,
+    updatedBy: string,
+    requestId: string,
+    ctx: ScriptExecutionContext,
+): Promise<void> {
+    const rows = await tx
+        .select({
+            dataType: ProductRequestsValues.dataType,
+            value: ProductRequestsValues.value,
+            approvedAt: ProductRequestsValues.approvedAt,
+            dtConfig: DataTypeSchema.config,
+            ptConfig: ProductTypesDataTypes.config,
+        })
+        .from(ProductRequestsValues)
+        .innerJoin(ProductRequests, eq(ProductRequestsValues.productRequest, ProductRequests.identifier))
+        .innerJoin(DataTypeSchema, eq(ProductRequestsValues.dataType, DataTypeSchema.identifier))
+        .leftJoin(ProductTypesDataTypes, and(
+            eq(ProductTypesDataTypes.productType, ProductRequests.productType),
+            eq(ProductTypesDataTypes.dataType, ProductRequestsValues.dataType),
+        ))
+        .where(and(
+            eq(ProductRequestsValues.productRequest, requestId),
+            // defaultProvider does not apply to calculated data types
+            sql`${DataTypeSchema.kind} <> ${DataTypeKind.Calculated}`,
+        ));
+
+    if (devMode) {
+        const withDefaultProvider = rows.filter((r) => {
+            const cfg = resolveConfig(
+                r.dtConfig as Record<string, unknown> | null,
+                r.ptConfig as Record<string, unknown> | null,
+            );
+            return !!cfg.defaultProvider;
+        }).length;
+        console.log("[recalculateDefaultValues] request=%s total=%d withDefaultProvider=%d",
+            requestId, rows.length, withDefaultProvider);
+    }
+
+    let executedCount = 0;
+
+    for (const row of rows) {
+        const resolvedConfig = resolveConfig(
+            row.dtConfig as Record<string, unknown> | null,
+            row.ptConfig as Record<string, unknown> | null,
+        );
+        const script = resolvedConfig.defaultProvider as string | undefined;
+        const mode = (resolvedConfig.mode as string | undefined) ?? DefaultValueCalculationMode.OnCreate;
+
+        if (!script) continue;
+
+        const hasValue = row.value !== null;
+        const isApproved = row.approvedAt !== null;
+
+        if (mode === "on_change_no_value") {
+            if (hasValue || isApproved) {
+                if (devMode) {
+                    const reason = hasValue && isApproved ? "has value and is approved"
+                        : hasValue ? "has value" : "is approved";
+                    console.log("[recalculateDefaultValues] request=%s dt=%s skipped on_change_no_value: %s",
+                        requestId, row.dataType, reason);
+                }
+                continue;
+            }
+        } else if (mode === "on_change") {
+            // Always recalculate (falls through)
+        } else {
+            if (devMode && script) {
+                const appliedDefault = resolvedConfig.mode == null;
+                console.log("[recalculateDefaultValues] request=%s dt=%s skipped: %s",
+                    requestId, row.dataType,
+                    appliedDefault
+                        ? `mode unset (defaulted to "on_create")`
+                        : `mode=${String(mode)} (expected on_change or on_change_no_value)`);
+            }
+            continue;
+        }
+
+        if (devMode) {
+            console.log("[recalculateDefaultValues] request=%s dt=%s executing defaultProvider script mode=%s",
+                requestId, row.dataType, mode);
+        }
+
+        const defaultValue = await ScriptEngine.execute(
+            tx,
+            script,
+            ScriptEngine.forDataType(ctx, row.dataType!),
+            ScriptCategory.DefaultProvider,
+        );
+
+        if (defaultValue === null && devMode) {
+            console.warn("[recalculateDefaultValues] request=%s dt=%s script returned null (may indicate error or intentional null)",
+                requestId, row.dataType);
+        }
+
+        const setClause: Record<string, unknown> = {
+            defaultValue: defaultValue as any,
+            updatedBy,
+            updatedAt: sql`now()`,
+        };
+        if (mode === "on_change") {
+            // Break approval
+            setClause.approvedBy = null;
+            setClause.approvedAt = null;
+        }
+
+        await tx
+            .update(ProductRequestsValues)
+            .set(setClause as any)
+            .where(and(
+                eq(ProductRequestsValues.productRequest, requestId),
+                eq(ProductRequestsValues.dataType, row.dataType!),
+            ));
+
+        executedCount++;
+
+        PubSub.publish(message_UpdateProductRequestValue, {
+            productRequest: requestId,
+            dataType: row.dataType!,
+            defaultValue,
+        });
+    }
+
+    if (devMode) {
+        console.log("[recalculateDefaultValues] request=%s executed=%d scripts",
+            requestId, executedCount);
+    }
 }
 
 /**
@@ -1465,6 +1899,7 @@ async function recalculateOnChangeCalculatedValues(
 async function recalculateOnExportCalculatedValues(
     tx: DBClient,
     requestId: string,
+    ctx: ScriptExecutionContext,
 ): Promise<void> {
     const calculatedRows = await tx
         .select({
@@ -1494,12 +1929,12 @@ async function recalculateOnExportCalculatedValues(
 
         if (mode !== CalculatedCalculationMode.OnExport || !script) continue;
 
-        let value: unknown;
-        try {
-            value = executeScript(script, "calculation");
-        } catch (_) {
-            value = null;
-        }
+        const value = await ScriptEngine.execute(
+            tx,
+            script,
+            ScriptEngine.forDataType(ctx, row.dataType!),
+            ScriptCategory.Calculation,
+        );
 
         await tx
             .update(ProductRequestsValues)
@@ -1512,6 +1947,96 @@ async function recalculateOnExportCalculatedValues(
                 eq(ProductRequestsValues.dataType, row.dataType!),
             ));
     }
+}
+
+/**
+ * Re-evaluates mandatory and requestorCanEdit scripts for every value on a
+ * product request. Used after a value change to push updated flags to the UI
+ * via PubSub without a full detail refetch.
+ */
+async function reevaluateMandatoryAndRequestorCanEdit(
+    tx: DBClient,
+    requestId: string,
+    userId: string,
+): Promise<{
+    mandatory: Record<string, boolean>;
+    requestorCanEdit: Record<string, boolean>;
+    invalidatedApprovals: ProductRequestsValuesType[];
+}> {
+    const rows = await tx
+        .select({
+            dataType: ProductRequestsValues.dataType,
+            value: ProductRequestsValues.value,
+            defaultValue: ProductRequestsValues.defaultValue,
+            approvedBy: ProductRequestsValues.approvedBy,
+            dataTypeKind: DataTypeSchema.kind,
+            dtConfig: DataTypeSchema.config,
+            dtMandatory: DataTypeSchema.mandatory,
+            dtMandatoryScript: DataTypeSchema.mandatory_script,
+            dtRequestorCanEdit: DataTypeSchema.requestorCanEdit,
+            dtRequestorCanEditScript: DataTypeSchema.requestorCanEdit_script,
+            ptConfig: ProductTypesDataTypes.config,
+            ptMandatory: ProductTypesDataTypes.mandatory,
+            ptMandatoryScript: ProductTypesDataTypes.mandatory_script,
+            ptRequestorCanEdit: ProductTypesDataTypes.requestorCanEdit,
+            ptRequestorCanEditScript: ProductTypesDataTypes.requestorCanEdit_script,
+        })
+        .from(ProductRequestsValues)
+        .innerJoin(ProductRequests, eq(ProductRequestsValues.productRequest, ProductRequests.identifier))
+        .innerJoin(DataTypeSchema, eq(ProductRequestsValues.dataType, DataTypeSchema.identifier))
+        .leftJoin(ProductTypesDataTypes, and(
+            eq(ProductTypesDataTypes.productType, ProductRequests.productType),
+            eq(ProductTypesDataTypes.dataType, ProductRequestsValues.dataType),
+        ))
+        .where(eq(ProductRequestsValues.productRequest, requestId));
+
+    const ctx = ScriptEngine.buildContext(tx, {
+        cause: "product_request_update",
+        productRequestIdentifier: requestId,
+        principal: { userId, apiKeyIdentifier: null, isApiKey: false },
+    });
+
+    const mandatory: Record<string, boolean> = {};
+    const requestorCanEdit: Record<string, boolean> = {};
+    const invalidatedApprovals: ProductRequestsValuesType[] = [];
+
+    for (const row of rows) {
+        if (!row.dataType) continue;
+        mandatory[row.dataType] = await resolveMandatory(
+            tx,
+            row.dtMandatory, row.dtMandatoryScript,
+            row.ptMandatory ?? null, row.ptMandatoryScript ?? null,
+            ctx, row.dataType,
+        );
+        requestorCanEdit[row.dataType] = await resolveRequestorCanEdit(
+            tx,
+            row.dtRequestorCanEdit, row.dtRequestorCanEditScript,
+            row.ptRequestorCanEdit ?? null, row.ptRequestorCanEditScript ?? null,
+            ctx, row.dataType,
+        );
+
+        // Invalidate an approval that is now mandatory but has no value
+        // (e.g. a dependency field changed, making this field mandatory
+        // after the value was already approved).
+        if (mandatory[row.dataType] && row.approvedBy !== null
+            && isEmptyValue(row.value, row.dataTypeKind, resolveConfig(
+                row.dtConfig as Record<string, unknown> | null,
+                row.ptConfig as Record<string, unknown> | null,
+            ))
+            && (row.defaultValue === null || row.defaultValue === "null")) {
+            const [invalidated] = await tx
+                .update(ProductRequestsValues)
+                .set({ approvedBy: null, approvedAt: null } as any)
+                .where(and(
+                    eq(ProductRequestsValues.productRequest, requestId),
+                    eq(ProductRequestsValues.dataType, row.dataType),
+                ))
+                .returning();
+            if (invalidated) invalidatedApprovals.push(invalidated as ProductRequestsValuesType);
+        }
+    }
+
+    return { mandatory, requestorCanEdit, invalidatedApprovals };
 }
 
 // ---------------------------------------------------------------------------
@@ -1586,16 +2111,22 @@ export async function approveProductRequestValue(
 
     // Resolve mandatory: only require a value when the field is mandatory
     const row = existing[0]!;
-    const isMandatory = resolveMandatory(
+    const approveCtx = ScriptEngine.buildContext(tx, {
+        cause: "product_request_approve",
+        productRequestIdentifier: requestId,
+        dataTypeIdentifier,
+        principal: { userId: user.identifier ?? null, apiKeyIdentifier: null, isApiKey: false },
+    });
+    const isMandatory = await resolveMandatory(
+        tx,
         row.dataTypeMandatory, row.dataTypeMandatoryScript,
         row.ptMandatory, row.ptMandatoryScript,
+        approveCtx,
+        dataTypeIdentifier,
     );
-    if (isMandatory && row.value === null && (row.defaultValue === null || row.defaultValue === "null")) {
-        const isTriStateBoolean = row.dataTypeKind === DataTypeKind.Boolean
-            && ((row.dataTypeConfig as ConfigBoolean | undefined)?.permitEmpty ?? false);
-        if (!isTriStateBoolean) {
-            throw new Error("Cannot approve: mandatory field has no value");
-        }
+    if (isMandatory && isEmptyValue(row.value, row.dataTypeKind, row.dataTypeConfig as Record<string, unknown> | null)
+        && (row.defaultValue === null || row.defaultValue === "null")) {
+        throw new Error("Cannot approve: mandatory field has no value");
     }
 
     // Validate previous-approval prerequisites
@@ -1675,20 +2206,29 @@ export async function approveAllProductRequestValues(
 
     let approvedCount = 0;
 
+    // Build a script context once for all mandatory script evaluations.
+    const approveAllCtx = ScriptEngine.buildContext(tx, {
+        cause: "product_request_approve",
+        productRequestIdentifier: requestId,
+        principal: { userId: user.identifier ?? null, apiKeyIdentifier: null, isApiKey: false },
+    });
+
     for (const v of values) {
         // Skip already approved
         if (v.approvedBy !== null) continue;
         // Skip calculated (auto-approved)
         if (v.dataTypeKind === DataTypeKind.Calculated) continue;
         // Resolve mandatory; only require a value for mandatory fields
-        const isMandatory = resolveMandatory(
+        const isMandatory = await resolveMandatory(
+            tx,
             v.dataTypeMandatory, v.dataTypeMandatoryScript,
             v.ptMandatory, v.ptMandatoryScript,
+            approveAllCtx,
+            v.dataType ?? undefined,
         );
-        if (isMandatory && v.value === null && (v.defaultValue === null || v.defaultValue === "null")) {
-            const isTriStateBoolean = v.dataTypeKind === DataTypeKind.Boolean
-                && ((v.dataTypeConfig as ConfigBoolean | undefined)?.permitEmpty ?? false);
-            if (!isTriStateBoolean) continue;
+        if (isMandatory && isEmptyValue(v.value, v.dataTypeKind, v.dataTypeConfig as Record<string, unknown> | null)
+            && (v.defaultValue === null || v.defaultValue === "null")) {
+            continue;
         }
 
         // Check user has Approver role
@@ -1947,7 +2487,13 @@ export async function checkAllApproved(
         // Calculate on_export values before creating export rows so the
         // computed results are persisted and available for export.
         try {
-            await recalculateOnExportCalculatedValues(tx, requestId);
+            // System-driven transition: no user principal.
+            const importCtx = ScriptEngine.buildContext(tx, {
+                cause: "product_request_importing",
+                productRequestIdentifier: requestId,
+                principal: { userId: null, apiKeyIdentifier: null, isApiKey: false },
+            });
+            await recalculateOnExportCalculatedValues(tx, requestId, importCtx);
         } catch (e) {
             console.error("recalculateOnExportCalculatedValues failed:", e);
         }
@@ -2044,26 +2590,86 @@ export async function cancelProductRequest(
 }
 
 // ---------------------------------------------------------------------------
-// Script Execution Helpers (stubs for defaultProvider / calculation scripts)
+// Script-facing read helpers (used by the ScriptEngine's ScriptApi)
 // ---------------------------------------------------------------------------
 
 /**
- * Executes a JavaScript expression/function-body and returns its result.
- *
- * In production, this should run in a sandboxed environment. For now, a basic
- * eval-based implementation suffices.
- *
- * @param script The JavaScript expression to evaluate.
- * @param label  Human-readable label used in error logging (e.g. "defaultProvider").
+ * Returns the value of a single data type on a product request, or null when
+ * the row does not exist. Read-only; no permission checks (script API reads
+ * run with the caller's already-established authority).
  */
-function executeScript(script: string, label: string): unknown {
-    try {
-        const body = label === "calculation" ? script : `return (${script})`;
-        // eslint-disable-next-line no-new-func
-        const fn = new Function(`"use strict"; ${body}`);
-        return fn();
-    } catch (e) {
-        console.error(`Error executing ${label} script:`, e);
-        return null;
+export async function getRequestValueForScript(
+    db: DBClient,
+    requestId: string,
+    dataTypeIdentifier: string,
+): Promise<unknown> {
+    const rows = await db
+        .select({ value: ProductRequestsValues.value })
+        .from(ProductRequestsValues)
+        .where(and(
+            eq(ProductRequestsValues.productRequest, requestId),
+            eq(ProductRequestsValues.dataType, dataTypeIdentifier),
+        ))
+        .limit(1);
+    return rows.length === 0 ? null : rows[0]!.value;
+}
+
+/**
+ * Returns all values on a product request as `{ dataTypeIdentifier: value }`.
+ */
+export async function getRequestAllValuesForScript(
+    db: DBClient,
+    requestId: string,
+): Promise<Record<string, unknown>> {
+    const rows = await db
+        .select({
+            dataType: ProductRequestsValues.dataType,
+            value: ProductRequestsValues.value,
+        })
+        .from(ProductRequestsValues)
+        .where(eq(ProductRequestsValues.productRequest, requestId));
+    const out: Record<string, unknown> = {};
+    for (const r of rows) {
+        if (r.dataType) out[r.dataType] = r.value;
     }
+    return out;
+}
+
+/**
+ * Returns metadata about a product request for script consumption.
+ */
+export async function getRequestMetaForScript(
+    db: DBClient,
+    requestId: string,
+): Promise<{
+    identifier: string;
+    status: string;
+    productTypeIdentifier: string | null;
+    productTypeName: string | null;
+    productNumber: string;
+    createdBy: string | null;
+} | null> {
+    const rows = await db
+        .select({
+            identifier: ProductRequests.identifier,
+            status: ProductRequests.status,
+            productTypeIdentifier: ProductRequests.productType,
+            productTypeName: ProductTypes.name,
+            productNumber: ProductRequests.productNumber,
+            createdBy: ProductRequests.createdBy,
+        })
+        .from(ProductRequests)
+        .leftJoin(ProductTypes, eq(ProductRequests.productType, ProductTypes.identifier))
+        .where(eq(ProductRequests.identifier, requestId))
+        .limit(1);
+    if (rows.length === 0) return null;
+    const r = rows[0]!;
+    return {
+        identifier: r.identifier!,
+        status: r.status as string,
+        productTypeIdentifier: r.productTypeIdentifier ?? null,
+        productTypeName: r.productTypeName ?? null,
+        productNumber: r.productNumber!,
+        createdBy: r.createdBy ?? null,
+    };
 }

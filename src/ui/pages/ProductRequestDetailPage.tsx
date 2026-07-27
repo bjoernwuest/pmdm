@@ -8,13 +8,15 @@ import {
     cancelProductRequest,
     getProductRequestLookupValues,
     getProductRequestConsumableValues,
+    getProductRequestProductValues,
 } from "@/ui/api/ProductRequests.ts";
-import { getProducts } from "@/ui/api/Products.ts";
 import {
     message_UpdateProductRequestValue,
     message_ApproveProductRequestValue,
     message_CancelProductRequest,
     message_ImportingProductRequest,
+    message_MandatoryAndRequestorCanEditUpdated,
+    type MandatoryAndRequestorCanEditPayload,
 } from "@/types/ProductRequestType.ts";
 import React, { useEffect, useState, useCallback, useRef } from "react";
 import { useParams, useNavigate } from "react-router-dom";
@@ -167,7 +169,9 @@ export function Component() {
     // Dropdown data caches
     const [lookupOptions, setLookupOptions] = useState<Record<string, DropdownOption[]>>({});
     const [consumableOptions, setConsumableOptions] = useState<Record<string, DropdownOption[]>>({});
-    const [productOptions, setProductOptions] = useState<DropdownOption[]>([]);
+    // Product options are keyed by dataType (like consumableOptions) so each
+    // product-kind data type gets its own server-side-filtered option list.
+    const [productOptions, setProductOptions] = useState<Record<string, DropdownOption[]>>({});
 
     // Confirm cancel dialog
     const [showCancelConfirm, setShowCancelConfirm] = useState(false);
@@ -231,41 +235,40 @@ export function Component() {
     const reloadConsumableOptionsRef = useRef(reloadConsumableOptions);
     reloadConsumableOptionsRef.current = reloadConsumableOptions;
 
-    // Product option reload (same pattern as consumable, but for product-kind
-    // data types which share a single flat option list).
+    // Product option reload (same per-dataType pattern as consumable). The
+    // server already includes currently-selected products in the candidate
+    // list, so a fresh selection always resolves to a label.
     const reloadProductOptions = useCallback(async (extraProductNumbers?: string[]) => {
         const req = requestRef.current;
         if (!id || !req) return;
-        const hasProductKind = req.values?.some((v: any) => v.dataTypeKind === "product");
-        if (!hasProductKind) return;
-        productsLoadedRef.current = false; // allow reload
-        try {
-            // Coerce to String(): the jsonb "value" column round-trips
-            // through drizzle-orm's double JSON-parsing (postgres driver
-            // already parses jsonb, then drizzle parses the resulting string
-            // again), which silently turns digit-only productNumbers (e.g.
-            // "2") into numbers. Lookup/Consumable identifiers are UUIDs and
-            // never hit this, since JSON.parse() on a UUID throws and falls
-            // back to the original string — that's why only Product is
-            // affected. Stringify defensively so comparisons against
-            // productOptions (always genuine strings) succeed.
-            const selectedProductNumbers = new Set(
-                (req.values ?? [])
-                    .filter((rv: any) => rv.dataTypeKind === "product" && rv.value != null)
-                    .flatMap((rv: any) => Array.isArray(rv.value) ? rv.value.map((x: any) => String(x)) : [String(rv.value)]),
-            );
-            if (extraProductNumbers) for (const n of extraProductNumbers) selectedProductNumbers.add(String(n));
-            const result = await getProducts(0, 1000, false);
-            setProductOptions(
-                result.products
-                    .filter((p: any) => !p.disabled && (p.productNumber !== req.productToUpdate || selectedProductNumbers.has(p.productNumber)))
-                    .map((p: any) => ({ label: p.productNumber, value: p.productNumber })),
-            );
-            productsLoadedRef.current = true;
-        } catch (e: any) {
-            productsLoadedRef.current = true; // prevent retry loops
-            console.error("reloadProductOptions failed:", e);
+        const productDataTypeIds: string[] = [];
+        for (const v of req.values ?? []) {
+            if (v.dataTypeKind === "product" && v.dataType) {
+                productDataTypeIds.push(v.dataType as string);
+            }
         }
+        if (productDataTypeIds.length === 0) return;
+
+        await Promise.all(productDataTypeIds.map(async (dtId) => {
+            productDataTypesLoadingRef.current.delete(dtId);
+            try {
+                const result = await getProductRequestProductValues(id, dtId);
+                const options = result.values.map((p: any) => ({ label: p.productNumber, value: p.productNumber }));
+                // Merge any just-selected product numbers that may not yet be
+                // persisted (PubSub can arrive before the update round-trips).
+                if (extraProductNumbers) {
+                    for (const n of extraProductNumbers) {
+                        const key = String(n);
+                        if (!options.some((o) => o.value === key)) {
+                            options.push({ label: key, value: key });
+                        }
+                    }
+                }
+                setProductOptions((prev) => ({ ...prev, [dtId]: options }));
+            } catch (e: any) {
+                console.error("reloadProductOptions failed:", e);
+            }
+        }));
     }, [id]);
 
     const reloadProductOptionsRef = useRef(reloadProductOptions);
@@ -312,9 +315,9 @@ export function Component() {
     }, [fetchDetail]);
 
     // Load dropdown data for lookup/consumable/product types
-    const productsLoadedRef = useRef(false);
     const lookupDataTypesLoadingRef = useRef<Set<string>>(new Set());
     const consumableDataTypesLoadingRef = useRef<Set<string>>(new Set());
+    const productDataTypesLoadingRef = useRef<Set<string>>(new Set());
     useEffect(() => {
         if (!id || !request?.values) return;
 
@@ -361,28 +364,23 @@ export function Component() {
                     })
                 .catch((e: any) => { console.error("Initial consumable load failed:", e); });
             }
-        }
-
-        // Load products for product-type data types
-        const hasProductKind = request.values.some((v: any) => v.dataTypeKind === "product");
-        if (hasProductKind && !productsLoadedRef.current) {
-            productsLoadedRef.current = true;
-            // Coerce to String(): see reloadProductOptions for why the jsonb
-            // "value" column can surface digit-only productNumbers as numbers.
-            const selectedProductNumbers = new Set(
-                (request.values ?? [])
-                    .filter((rv: any) => rv.dataTypeKind === "product" && rv.value != null)
-                    .flatMap((rv: any) => Array.isArray(rv.value) ? rv.value.map((x: any) => String(x)) : [String(rv.value)]),
-            );
-            getProducts(0, 1000, false)
-                .then((result) => {
-                    setProductOptions(
-                        result.products
-                            .filter((p: any) => !p.disabled && (p.productNumber !== request.productToUpdate || selectedProductNumbers.has(p.productNumber)))
-                            .map((p: any) => ({ label: p.productNumber, value: p.productNumber })),
-                    );
-                })
-                .catch((e: any) => { console.error("Initial product load failed:", e); });
+            // Load products — same product-request-scoped permission model.
+            // Options are keyed by dataType so each product-kind data type
+            // gets its own server-side-filtered option list.
+            if (v.dataTypeKind === "product" && v.dataType) {
+                const dataTypeId = v.dataType as string;
+                if (productDataTypesLoadingRef.current.has(dataTypeId)) continue;
+                productDataTypesLoadingRef.current.add(dataTypeId);
+                getProductRequestProductValues(id, dataTypeId)
+                    .then((result) => {
+                        setProductOptions((prev) => ({
+                            ...prev,
+                            [dataTypeId]: result.values
+                                .map((p: any) => ({ label: p.productNumber, value: p.productNumber })),
+                        }));
+                    })
+                    .catch((e: any) => { console.error("Initial product load failed:", e); });
+            }
         }
     }, [id, request]);
 
@@ -442,9 +440,24 @@ export function Component() {
         const sub4 = subscribe({ and: message_ImportingProductRequest }, (msg: PubSubMessage) => {
             if ((msg.data as any).identifier === id) fetchDetail();
         });
+        const sub5 = subscribe({ and: message_MandatoryAndRequestorCanEditUpdated }, (msg: PubSubMessage) => {
+            const data = msg.data as MandatoryAndRequestorCanEditPayload;
+            if (data.productRequest !== id) return;
+            setRequest((prev) => {
+                if (!prev) return prev;
+                return {
+                    ...prev,
+                    values: prev.values.map((v) => ({
+                        ...v,
+                        mandatory: data.mandatory[v.dataType!] ?? v.mandatory,
+                        requestorCanEdit: data.requestorCanEdit[v.dataType!] ?? v.requestorCanEdit,
+                    })),
+                } satisfies typeof prev;
+            });
+        });
 
         return () => {
-            [sub1, sub2, sub3, sub4].forEach((s) => { if (s) unsubscribe(s); });
+            [sub1, sub2, sub3, sub4, sub5].forEach((s) => { if (s) unsubscribe(s); });
         };
     }, [id, fetchDetail, navigate]);
 
@@ -518,27 +531,23 @@ export function Component() {
                 };
             });
 
-            // Ensure the selected product number is in productOptions so the
-            // Dropdown / MultiSelect can display the selection immediately,
-            // without waiting for the PubSub-triggered reloadProductOptions (which
-            // would be needed because the initial load filters out productToUpdate).
-            // Lookup needs no equivalent because getProductRequestLookupValues
-            // returns all non-disabled lookup values regardless of productToUpdate.
-            // Coerce to String(): the jsonb "value" column round-trips through
-            // drizzle-orm's double JSON-parsing (the postgres driver already
-            // parses jsonb, then drizzle parses the resulting string again),
-            // which silently turns digit-only productNumbers (e.g. "2") into
-            // numbers in the API response. Accept numbers here too so this
-            // guard still fires.
+            // Ensure the selected product number is in the product options for
+            // this dataType so the Dropdown / MultiSelect can display the
+            // selection immediately, without waiting for the PubSub-triggered
+            // reloadProductOptions.
             if (savedVal != null) {
                 const ids: string[] = Array.isArray(savedVal)
                     ? savedVal.filter((v: any) => v !== null && v !== undefined).map((v: any) => String(v))
                     : [String(savedVal)];
                 if (ids.length > 0) {
-                    setProductOptions((prevOpts) => {
-                        const missing = ids.filter((id) => !prevOpts.some((o) => o.value === id));
-                        if (missing.length === 0) return prevOpts;
-                        return [...prevOpts, ...missing.map((id) => ({ label: id, value: id }))];
+                    setProductOptions((prev) => {
+                        const existing = prev[dataTypeIdentifier] ?? [];
+                        const missing = ids.filter((id) => !existing.some((o) => o.value === id));
+                        if (missing.length === 0) return prev;
+                        return {
+                            ...prev,
+                            [dataTypeIdentifier]: [...existing, ...missing.map((id) => ({ label: id, value: id }))],
+                        };
                     });
                 }
             }
@@ -678,10 +687,11 @@ export function Component() {
             // Coerce to String(): see the "product" case in valueBody for why
             // the jsonb "value" column can surface digit-only productNumbers
             // as numbers instead of strings.
-            if (!productOptions || productOptions.length === 0) return Array.isArray(val) ? (val as unknown[]).map((v) => String(v)).join(", ") : String(val);
+            const options = productOptions[(row.dataType as string) ?? ""];
+            if (!options || options.length === 0) return Array.isArray(val) ? (val as unknown[]).map((v) => String(v)).join(", ") : String(val);
             return Array.isArray(val)
-                ? resolveArray((val as unknown[]).map((v) => String(v)), productOptions)
-                : resolveSingle(String(val), productOptions);
+                ? resolveArray((val as unknown[]).map((v) => String(v)), options)
+                : resolveSingle(String(val), options);
         }
         if (typeof val === "object") {
             return Array.isArray(val) ? (val as string[]).join(", ") : JSON.stringify(val);
@@ -742,27 +752,9 @@ export function Component() {
             } else if (v.dataTypeKind === "consumable") {
                 editOptions = consumableOptions[v.dataType] ?? [];
             } else {
-                // Product options come from the generic, paginated getProducts()
-                // list (unlike Lookup/Consumable, which are fetched via
-                // request-scoped endpoints guaranteed to include the row's own
-                // value). That list can legitimately be missing the row's
-                // currently selected productNumber (disabled since selection,
-                // self-reference filtering, or outside the fetched page), which
-                // makes the single-select Dropdown render blank (unlike
-                // MultiSelect, which falls back to showing the raw value).
-                // Mirror Lookup's guarantee by ensuring the row's own selected
-                // productNumber(s) are always present, rendering the
-                // productNumber itself (never a "name") for any synthesized entry.
-                //
-                // Also coerce to String(): the jsonb "value" column round-trips
-                // through drizzle-orm's double JSON-parsing (the postgres driver
-                // already parses jsonb, then drizzle parses the resulting string
-                // again), which silently turns digit-only productNumbers (e.g.
-                // "2") into numbers. Lookup/Consumable identifiers are UUIDs and
-                // never hit this, since JSON.parse() on a UUID throws and falls
-                // back to the original string — that's why only Product needs
-                // this coercion.
-                editOptions = productOptions;
+                // Product options are fetched per dataType via the
+                // getProductRequestProductValues endpoint (server-side filtered).
+                editOptions = productOptions[v.dataType ?? ""] ?? [];
                 const selectedProductIds: string[] = displayValue == null
                     ? []
                     : Array.isArray(displayValue)

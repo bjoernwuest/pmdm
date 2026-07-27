@@ -10,6 +10,7 @@ import * as AdminConfigListPage from "@/ui/pages/AdminConfigList.tsx";
 import * as AdminApiKeyListPage from "@/ui/pages/AdminApiKeyList.tsx";
 import * as AdminApiKeyDetailPage from "@/ui/pages/AdminApiKeyDetail.tsx";
 import * as AdminAuditLogPage from "@/ui/pages/AdminAuditLog.tsx";
+import * as AdminScriptLogPage from "@/ui/pages/AdminScriptLog.tsx";
 import * as UserProfileConfigListPage from "@/ui/pages/UserProfileConfigList.tsx";
 import * as AdminNotificationsPage from "@/ui/pages/AdminNotifications.tsx";
 import type { NavGroupItem, NavItem, NavLeafItem, NavSection, PageMeta, PageModule } from "@/types/PageType.ts";
@@ -39,6 +40,7 @@ export const pageModules: readonly PageModule[] = [
     { meta: AdminAuditLogPage.meta, Component: AdminAuditLogPage.Component },
     { meta: AdminNotificationsPage.meta, Component: AdminNotificationsPage.Component },
     { meta: UserProfileConfigListPage.meta, Component: UserProfileConfigListPage.Component },
+    { meta: AdminScriptLogPage.meta, Component: AdminScriptLogPage.Component },
 //    { meta: DocPage.meta, Component: DocPage.Component },
     ...appPageModules,
 ];

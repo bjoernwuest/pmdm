@@ -2,47 +2,7 @@ import { useState, useEffect } from "react";
 import { Dialog } from "primereact/dialog";
 import { Button } from "primereact/button";
 import Editor from "@monaco-editor/react";
-
-// ---------------------------------------------------------------------------
-// Monaco Type Declarations
-// ---------------------------------------------------------------------------
-
-/** TypeScript type declarations registered with Monaco for IntelliSense. */
-const MONACO_TYPES_DECLARATION = `
-declare type DataTypeType = {
-    identifier: string;
-    name: string;
-    disabled: boolean;
-    description: string | null;
-    kind: string;
-    mandatory: boolean;
-    requestorCanEdit: boolean;
-    config: Record<string, unknown>;
-    owner: string;
-    createdAt: string;
-    updatedAt: string;
-    createdBy: string | null;
-    updatedBy: string | null;
-};
-
-declare type ProductRequestType = {
-    identifier: string;
-    productType: string | null;
-    productNumber: string;
-    status: string;
-    createdAt: string;
-    updatedAt: string;
-    createdBy: string | null;
-    updatedBy: string | null;
-};
-
-declare type ProductType = {
-    productTypeIdentifier: string;
-    productNumber: string;
-};
-`;
-
-let monacoTypesRegistered = false;
+import { registerMonacoTypes } from "./MonacoTypesDeclaration.ts";
 
 // ---------------------------------------------------------------------------
 // Props
@@ -76,13 +36,7 @@ export function ScriptEditorPopup({
     }, [script]);
 
     const handleBeforeMount = (monaco: any) => {
-        if (!monacoTypesRegistered) {
-            monacoTypesRegistered = true;
-            monaco.languages.typescript.typescriptDefaults.addExtraLib(
-                MONACO_TYPES_DECLARATION,
-                "ts:types.d.ts",
-            );
-        }
+        registerMonacoTypes(monaco);
     };
 
     const handleSave = async () => {

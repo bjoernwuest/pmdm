@@ -104,6 +104,58 @@ export async function getProducts(
 }
 
 /**
+ * Get a single product by productNumber for script consumption.
+ * Read-only; no permission checks (script API reads run with the caller's
+ * already-established authority). Returns the product row with its values.
+ */
+export async function getProductByNumberForScript(
+    db: DBClient,
+    productNumber: string,
+): Promise<{
+    productNumber: string;
+    productTypeIdentifier: string | null;
+    productTypeName: string | null;
+    disabled: boolean;
+    values: Record<string, unknown>;
+} | null> {
+    const rows = await db
+        .select({
+            productNumber: Products.productNumber,
+            productTypeIdentifier: Products.productTypeIdentifier,
+            productTypeName: ProductTypes.name,
+            disabled: Products.disabled,
+        })
+        .from(Products)
+        .leftJoin(ProductTypes, eq(Products.productTypeIdentifier, ProductTypes.identifier))
+        .where(eq(Products.productNumber, productNumber))
+        .limit(1);
+
+    if (rows.length === 0) return null;
+
+    const valueRows = await db
+        .select({
+            dataTypeIdentifier: ProductsValues.dataTypeIdentifier,
+            value: ProductsValues.value,
+        })
+        .from(ProductsValues)
+        .where(eq(ProductsValues.productNumber, productNumber));
+
+    const values: Record<string, unknown> = {};
+    for (const v of valueRows) {
+        if (v.dataTypeIdentifier) values[v.dataTypeIdentifier] = v.value;
+    }
+
+    const r = rows[0]!;
+    return {
+        productNumber: r.productNumber!,
+        productTypeIdentifier: r.productTypeIdentifier ?? null,
+        productTypeName: r.productTypeName ?? null,
+        disabled: r.disabled ?? false,
+        values,
+    };
+}
+
+/**
  * Get a single product by productNumber, enriched with productTypeName and
  * viewer-filtered values.
  */

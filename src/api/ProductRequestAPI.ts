@@ -16,11 +16,12 @@ import {
     cancelProductRequest,
     getProductRequestLookupValues,
     getProductRequestConsumableValues,
+    getProductRequestProductValues,
 } from "@/repo/ProductRequestRepo.ts";
 import { getProductByNumber } from "@/repo/ProductRepo.ts";
 import { runInTransaction } from "@/services/DatabaseDriver.ts";
 import { getUserListPageSizes } from "@/services/ui_config.ts";
-import { PermissionDeniedError } from "@/types/errors.ts";
+import { PermissionDeniedError, FilterScriptError } from "@/types/errors.ts";
 import { LookupsValuesSelectSchema } from "@/types/LookupsType.ts";
 import { ConsumablesValuesSelectSchema } from "@/types/ConsumableType.ts";
 import { status, t } from "elysia";
@@ -318,6 +319,9 @@ export default function register(app: ApiInstance): void {
             if (e instanceof PermissionDeniedError) {
                 return status(403, { error: e.message });
             }
+            if (e instanceof FilterScriptError) {
+                return status(500, { error: e.message });
+            }
             return status(400, { error: e.message });
         }
     }, {
@@ -330,6 +334,7 @@ export default function register(app: ApiInstance): void {
             400: t.Object({ error: t.String() }),
             401: t.Object({ error: t.String() }),
             403: t.Object({ error: t.String() }),
+            500: t.Object({ error: t.String() }),
         },
         detail: {
             tags: ["Product Requests"],
@@ -362,6 +367,9 @@ export default function register(app: ApiInstance): void {
             if (e instanceof PermissionDeniedError) {
                 return status(403, { error: e.message });
             }
+            if (e instanceof FilterScriptError) {
+                return status(500, { error: e.message });
+            }
             return status(400, { error: e.message });
         }
     }, {
@@ -374,12 +382,67 @@ export default function register(app: ApiInstance): void {
             400: t.Object({ error: t.String() }),
             401: t.Object({ error: t.String() }),
             403: t.Object({ error: t.String() }),
+            500: t.Object({ error: t.String() }),
         },
         detail: {
             tags: ["Product Requests"],
             summary: "Get consumable values for a data type on a product request",
             description:
                 "Returns all consumable values (including disabled and already-used ones) for the consumable backing a consumable-kind data type, scoped to the current user's data-type-level Viewer/Writer/Approver role on the product request. Access is governed by the same role model as the product request detail endpoint — not by the Configuration-area FP_VIEW_CONSUMABLES permission. Used by the UI to populate selection dropdowns and resolve display names.",
+            parameters: [
+                { name: "X-API-Key", in: "header", description: "API key for authentication", schema: { type: "string" }, required: false },
+            ],
+        },
+    });
+
+    // -----------------------------------------------------------------------
+    // GET /api/product-requests/:id/product-values/:dataTypeIdentifier
+    // -----------------------------------------------------------------------
+    app.get("/product-requests/:id/product-values/:dataTypeIdentifier", async (context) => {
+        const claims = context.session?.idTokenClaims ?? context.tokenClaims ?? {};
+        const authz = await authorize(context.dbClient, claims, [FP_VIEW_PRODUCTS]);
+        if (!authz.some((perm) => perm.identifier === FP_VIEW_PRODUCTS.identifier)) {
+            return status(403, { error: `Permission denied. Required: ${FP_VIEW_PRODUCTS.functionalPermissionName}` });
+        }
+
+        const requestId = context.params.id as string;
+        const dataTypeIdentifier = context.params.dataTypeIdentifier as string;
+
+        try {
+            const values = await getProductRequestProductValues(context.dbClient, claims, requestId, dataTypeIdentifier);
+            return { values };
+        } catch (e: any) {
+            if (e instanceof PermissionDeniedError) {
+                return status(403, { error: e.message });
+            }
+            if (e instanceof FilterScriptError) {
+                return status(500, { error: e.message });
+            }
+            return status(400, { error: e.message });
+        }
+    }, {
+        params: t.Object({
+            id: t.String({ format: "uuid" }),
+            dataTypeIdentifier: t.String({ format: "uuid" }),
+        }),
+        response: {
+            200: t.Object({
+                values: t.Array(t.Object({
+                    productNumber: t.String(),
+                    productTypeName: t.Union([t.String(), t.Null()]),
+                    disabled: t.Boolean(),
+                })),
+            }),
+            400: t.Object({ error: t.String() }),
+            401: t.Object({ error: t.String() }),
+            403: t.Object({ error: t.String() }),
+            500: t.Object({ error: t.String() }),
+        },
+        detail: {
+            tags: ["Product Requests"],
+            summary: "Get candidate products for a product-kind data type on a product request",
+            description:
+                "Returns the candidate products for a product-kind data type, scoped to the current user's data-type-level Viewer/Writer/Approver role on the product request, with the data type's filter script applied. Mirrors the lookup/consumable dropdown endpoints. Used by the UI to populate the product selection dropdown.",
             parameters: [
                 { name: "X-API-Key", in: "header", description: "API key for authentication", schema: { type: "string" }, required: false },
             ],

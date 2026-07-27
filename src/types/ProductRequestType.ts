@@ -24,6 +24,10 @@ export const TAG_CANCEL = "cancel" as const;
 export const TAG_IMPORTING = "importing" as const;
 /** Action tag for done events. */
 export const TAG_DONE = "done" as const;
+/** Aspect tag for mandatory script re-evaluation. */
+export const TAG_MANDATORY = "mandatory" as const;
+/** Aspect tag for requestorCanEdit script re-evaluation. */
+export const TAG_REQUESTOR_CAN_EDIT = "requestor_can_edit" as const;
 
 /** PubSub topic for product request create events. */
 export const message_CreateProductRequest: Tag[] = [TAG_PRODUCT_REQUEST, TAG_CREATE];
@@ -37,6 +41,13 @@ export const message_CancelProductRequest: Tag[] = [TAG_PRODUCT_REQUEST, TAG_CAN
 export const message_ImportingProductRequest: Tag[] = [TAG_PRODUCT_REQUEST, TAG_IMPORTING];
 /** PubSub topic for product request transition to done. */
 export const message_DoneProductRequest: Tag[] = [TAG_PRODUCT_REQUEST, TAG_DONE];
+/** PubSub topic for mandatory & requestorCanEdit script re-evaluation results. */
+export const message_MandatoryAndRequestorCanEditUpdated: Tag[] = [
+    TAG_PRODUCT_REQUEST,
+    TAG_MANDATORY,
+    TAG_REQUESTOR_CAN_EDIT,
+    TAG_UPDATE,
+];
 /** PubSub topic for product export marked as exported. */
 export const message_ProductExportExported: Tag[] = ["ProductExport", "exported"];
 /** PubSub topic for product export marked as imported. */
@@ -84,4 +95,11 @@ export type ProductRequestDetail = ProductRequestsSelectType & {
     productTypeName: string;
     createdByName: string;
     values: ProductRequestValueEnriched[];
+};
+
+/** Payload for {@link message_MandatoryAndRequestorCanEditUpdated}. */
+export type MandatoryAndRequestorCanEditPayload = {
+    productRequest: string;
+    mandatory: Record<string, boolean>;
+    requestorCanEdit: Record<string, boolean>;
 };

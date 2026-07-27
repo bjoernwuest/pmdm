@@ -751,10 +751,10 @@ export function Component() {
     // ---------- Inline config helpers (WITH inheritance) ----------
 
     const MONACO_HELP: Record<string, string> = {
-        defaultProvider: "defaultProvider: undefined | ((d: DataTypeType, p: ProductRequestType | ProductType) => T)",
-        validate: "validate: undefined | ((d: DataTypeType, p: ProductRequestType) => boolean)",
-        filter: "filter: undefined | ((d: DataTypeType, p: ProductRequestType) => T[])",
-        script: "script: undefined | (() => any)",
+        defaultProvider: "ctx.api available. Receives ctx. Returns default value, e.g.:\nconst meta = await ctx.api.request.meta(); return 42;",
+        validate: "ctx.api + ctx.trigger.candidateValue. Returns { valid, message? }, e.g.:\nreturn { valid: ctx.trigger.candidateValue.length > 3, message: 'Too short' };",
+        filter: "ctx.options contains the unfiltered list. Returns filtered array, e.g.:\nreturn ctx.options.filter(o => o.name.startsWith('A'));",
+        script: "ctx.api available. Returns computed value, e.g.:\nconst v = await ctx.api.request.getValue('uuid'); return v ? v * 2 : null;",
     };
 
     const setField = useCallback(

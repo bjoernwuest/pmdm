@@ -49,6 +49,16 @@ export type ProductRequestConsumableValuesResponse = {
     values: ConsumableValue[];
 };
 
+export type ProductRequestProductValue = {
+    productNumber: string;
+    productTypeName: string | null;
+    disabled: boolean;
+};
+
+export type ProductRequestProductValuesResponse = {
+    values: ProductRequestProductValue[];
+};
+
 // ---------------------------------------------------------------------------
 // API Functions
 // ---------------------------------------------------------------------------
@@ -148,6 +158,20 @@ export async function getProductRequestConsumableValues(
 ): Promise<ProductRequestConsumableValuesResponse> {
     return apiGet<ProductRequestConsumableValuesResponse>(
         `${BASE}/${encodeURIComponent(requestId)}/consumable-values/${encodeURIComponent(dataTypeIdentifier)}`,
+    );
+}
+
+/**
+ * Returns the candidate products for a product-kind data type, scoped to the
+ * current user's data-type-level role on the product request, with the data
+ * type's filter script applied. Used to populate the product dropdown.
+ */
+export async function getProductRequestProductValues(
+    requestId: string,
+    dataTypeIdentifier: string,
+): Promise<ProductRequestProductValuesResponse> {
+    return apiGet<ProductRequestProductValuesResponse>(
+        `${BASE}/${encodeURIComponent(requestId)}/product-values/${encodeURIComponent(dataTypeIdentifier)}`,
     );
 }
 

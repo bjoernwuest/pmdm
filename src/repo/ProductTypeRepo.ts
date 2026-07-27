@@ -47,6 +47,8 @@ import { and, asc, eq, or, sql } from "drizzle-orm";
 import PubSub from "@/services/PubSub.ts";
 import type { UserSelectType } from "@/types/UserType.ts";
 import { Group } from "@/schema/UserSchema.ts";
+import * as ScriptEngine from "@/services/ScriptEngine.ts";
+import { ScriptCategory } from "@/types/ScriptEngineType.ts";
 
 // ---------------------------------------------------------------------------
 // ProductType CRUD (existing — DO NOT MODIFY)
@@ -140,18 +142,6 @@ export async function assignDataType(db: DBClient, user: UserSelectType, product
     // Resolve effective config (data type config + product type assignment override)
     const effectiveConfig = { ...(dataType?.config as Record<string, unknown> ?? {}), ...(result[0]!.config as Record<string, unknown> ?? {}) };
 
-    // Determine default value following the same pattern as createProductRequest
-    let defaultValue: unknown = null;
-    if (effectiveConfig.defaultProvider) {
-        try {
-            // eslint-disable-next-line no-new-func
-            const fn = new Function(`"use strict"; return (${effectiveConfig.defaultProvider});`);
-            defaultValue = fn();
-        } catch (_) {
-            defaultValue = null;
-        }
-    }
-
     // Query all open product requests for this product type
     const openRequests = await db
         .select({ identifier: ProductRequests.identifier })
@@ -161,8 +151,26 @@ export async function assignDataType(db: DBClient, user: UserSelectType, product
             eq(ProductRequests.status, ProductRequestStatus.open),
         ));
 
-    // Insert a default value row for each open product request
+    // Insert a default value row for each open product request. The
+    // defaultProvider script executes per request so the script context carries
+    // that request's identifier (cause: product_type_assign).
     for (const request of openRequests) {
+        let defaultValue: unknown = null;
+        if (effectiveConfig.defaultProvider) {
+            const assignCtx = ScriptEngine.buildContext(db, {
+                cause: "product_type_assign",
+                productRequestIdentifier: request.identifier!,
+                dataTypeIdentifier: dataTypeIdentifier as string,
+                principal: { userId: user.identifier ?? null, apiKeyIdentifier: null, isApiKey: false },
+            });
+            defaultValue = await ScriptEngine.execute(
+                db,
+                effectiveConfig.defaultProvider as string,
+                assignCtx,
+                ScriptCategory.DefaultProvider,
+            );
+        }
+
         await db
             .insert(ProductRequestsValues)
             .values({
