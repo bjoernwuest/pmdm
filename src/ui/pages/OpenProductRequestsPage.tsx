@@ -117,6 +117,10 @@ export function Component() {
                     : undefined,
             });
             setData(result);
+            if (result.availablePageSizes.length > 0 && !result.availablePageSizes.includes(pageSize)) {
+                setPageSize(result.availablePageSizes[0]);
+                setPage(0);
+            }
         } catch (e: any) {
             toast.current?.show({ severity: "error", summary: "Error", detail: e.message, life: 5000 });
         } finally {
@@ -308,7 +312,7 @@ export function Component() {
                 totalRecords={data?.total ?? 0}
                 lazy
                 first={page * pageSize}
-                onPage={(e) => { setPage(e.page ?? 0); setPageSize(e.rows ?? 20); }}
+                onPage={(e) => { setPage(e.page ?? 0); setPageSize(e.rows ?? pageSize); }}
                 rowsPerPageOptions={data?.availablePageSizes ?? [10, 20, 50, 100]}
                 onRowClick={(e) => navigate(`/product-requests/${encodeURIComponent(e.data.identifier)}`)}
                 rowHover

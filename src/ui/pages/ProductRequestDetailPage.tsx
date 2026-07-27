@@ -1364,6 +1364,7 @@ function InlineEditField({
     const [saving, setSaving] = useState(false);
     const [validationError, setValidationError] = useState<string | null>(null);
     const [validationWarning, setValidationWarning] = useState<string | null>(null);
+    const [renderKey, setRenderKey] = useState(0);
 
     const isActive = activeEditField === dataTypeId;
     const prevActiveRef = useRef(isActive);
@@ -1466,7 +1467,8 @@ function InlineEditField({
                 setEditValue(parsed);
                 origValueRef.current = parsed;
             } catch (_) {
-                // Error handled by parent toast
+                setEditValue(origValueRef.current);
+                setRenderKey(k => k + 1);
             } finally {
                 setSaving(false);
                 savingRef.current = false;
@@ -1516,7 +1518,8 @@ function InlineEditField({
             setValidationError(null);
             setValidationWarning(null);
         } catch (_) {
-            // Error handled by parent toast
+            setEditValue(origValueRef.current);
+            setRenderKey(k => k + 1);
         } finally {
             setSaving(false);
             savingRef.current = false;
@@ -1556,6 +1559,7 @@ function InlineEditField({
             value === true ? "success" : value === false ? "danger" : "warning";
         return (
             <Tag
+                key={renderKey}
                 value={label}
                 severity={severity}
                 style={{ cursor: "pointer", userSelect: "none" }}
@@ -1566,7 +1570,7 @@ function InlineEditField({
                     try {
                         await onSave(next);
                     } catch (_) {
-                        // Error handled by parent toast
+                        setRenderKey(k => k + 1);
                     } finally {
                         savingRef.current = false;
                     }
@@ -1579,6 +1583,7 @@ function InlineEditField({
     if (type === "switch") {
         return (
             <InputSwitch
+                key={renderKey}
                 checked={value === true}
                 onChange={async (e: { value: boolean }) => {
                     if (savingRef.current) return;
@@ -1586,7 +1591,7 @@ function InlineEditField({
                     try {
                         await onSave(e.value);
                     } catch (_) {
-                        // Error handled by parent toast
+                        setRenderKey(k => k + 1);
                     } finally {
                         savingRef.current = false;
                     }
@@ -1599,6 +1604,7 @@ function InlineEditField({
     if (type === "dropdown") {
         return (
             <Dropdown
+                key={renderKey}
                 value={value}
                 options={options ?? []}
                 onChange={async (e) => {
@@ -1613,7 +1619,7 @@ function InlineEditField({
                     try {
                         await onSave(selectedValue);
                     } catch (_) {
-                        // Error handled by parent toast
+                        setRenderKey(k => k + 1);
                     } finally {
                         savingRef.current = false;
                     }
@@ -1630,6 +1636,7 @@ function InlineEditField({
         const safeValue: unknown[] = Array.isArray(value) ? value : (value != null ? [value] : []);
         return (
             <MultiSelect
+                key={renderKey}
                 value={safeValue}
                 options={options ?? []}
                 onChange={async (e) => {
@@ -1638,7 +1645,7 @@ function InlineEditField({
                     try {
                         await onSave(e.value);
                     } catch (_) {
-                        // Error handled by parent toast
+                        setRenderKey(k => k + 1);
                     } finally {
                         savingRef.current = false;
                     }

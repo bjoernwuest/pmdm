@@ -94,6 +94,7 @@ export function ConfigurationEntitiesPage<T extends ConfigurationEntity = Config
     const [createExtraFields, setCreateExtraFields] = useState<Record<string, string>>({});
 
     const queryPage = Number(searchParams.get("page") ?? "1");
+    const hasExplicitPageSize = searchParams.get("pageSize") !== null;
     const queryPageSize = Number(searchParams.get("pageSize") ?? "10");
     const showDisabled = searchParams.get("showDisabled") === "1";
     const page = Number.isInteger(queryPage) && queryPage > 0 ? queryPage : 1;
@@ -147,8 +148,12 @@ export function ConfigurationEntitiesPage<T extends ConfigurationEntity = Config
             setTotal(payload.total);
             setAvailablePageSizes(payload.availablePageSizes);
             if (payload.page !== page - 1) updateQuery({ page: payload.page + 1 });
-            if (!payload.availablePageSizes.includes(pageSize) && payload.availablePageSizes.length > 0) {
-                updateQuery({ page: 1, pageSize: payload.availablePageSizes[0] });
+            if (payload.availablePageSizes.length > 0) {
+                const needsCorrection = !payload.availablePageSizes.includes(pageSize)
+                    || (!hasExplicitPageSize && pageSize !== payload.availablePageSizes[0]);
+                if (needsCorrection) {
+                    updateQuery({ page: 1, pageSize: payload.availablePageSizes[0] });
+                }
             }
         } catch (loadError) {
             setError(loadError instanceof Error ? loadError.message : `Could not load ${props.entityLabelPlural.toLowerCase()}`);
