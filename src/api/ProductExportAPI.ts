@@ -735,6 +735,10 @@ function buildRequestColumnCondition(col: string, op: string, val: unknown, vals
             return `${table}.${col}::text ${likeOp} '${escapeSql(val)}%'`;
         case "ENDS WITH":
             return `${table}.${col}::text ${likeOp} '%${escapeSql(val)}'`;
+        case "REGEX":
+            return ci ? `${table}.${col}::text ~* '${escapeSql(val)}'` : `${table}.${col}::text ~ '${escapeSql(val)}'`;
+        case "NOT REGEX":
+            return ci ? `${table}.${col}::text !~* '${escapeSql(val)}'` : `${table}.${col}::text !~ '${escapeSql(val)}'`;
         case "EMPTY": return `(${table}.${col} IS NULL OR ${table}.${col}::text = '')`;
         case "NOT EMPTY": return `(${table}.${col} IS NOT NULL AND ${table}.${col}::text != '')`;
         default: return null;
@@ -761,6 +765,14 @@ function buildRequestValueCondition(dtId: string, op: string, val: unknown, vals
             return `EXISTS (SELECT 1 FROM ${table} prv WHERE prv.product_request = product_requests.identifier AND prv.data_type = '${dtId}' AND prv.value::text ${likeOp} '${escapeSql(val)}%')`;
         case "ENDS WITH":
             return `EXISTS (SELECT 1 FROM ${table} prv WHERE prv.product_request = product_requests.identifier AND prv.data_type = '${dtId}' AND prv.value::text ${likeOp} '%${escapeSql(val)}')`;
+        case "REGEX":
+            return ci
+                ? `EXISTS (SELECT 1 FROM ${table} prv WHERE prv.product_request = product_requests.identifier AND prv.data_type = '${dtId}' AND prv.value::text ~* '${escapeSql(val)}')`
+                : `EXISTS (SELECT 1 FROM ${table} prv WHERE prv.product_request = product_requests.identifier AND prv.data_type = '${dtId}' AND prv.value::text ~ '${escapeSql(val)}')`;
+        case "NOT REGEX":
+            return ci
+                ? `NOT EXISTS (SELECT 1 FROM ${table} prv WHERE prv.product_request = product_requests.identifier AND prv.data_type = '${dtId}' AND prv.value::text ~* '${escapeSql(val)}')`
+                : `NOT EXISTS (SELECT 1 FROM ${table} prv WHERE prv.product_request = product_requests.identifier AND prv.data_type = '${dtId}' AND prv.value::text ~ '${escapeSql(val)}')`;
         case "EMPTY":
             return `NOT EXISTS (SELECT 1 FROM ${table} prv WHERE prv.product_request = product_requests.identifier AND prv.data_type = '${dtId}' AND prv.value IS NOT NULL)`;
         case "NOT EMPTY":

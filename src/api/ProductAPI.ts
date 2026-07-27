@@ -576,6 +576,10 @@ function buildProductColumnCondition(col: string, op: string, val: unknown, vals
             return `products.${col}::text ${likeOp} '${escapeSql(val)}%'`;
         case "ENDS WITH":
             return `products.${col}::text ${likeOp} '%${escapeSql(val)}'`;
+        case "REGEX":
+            return ci ? `products.${col}::text ~* '${escapeSql(val)}'` : `products.${col}::text ~ '${escapeSql(val)}'`;
+        case "NOT REGEX":
+            return ci ? `products.${col}::text !~* '${escapeSql(val)}'` : `products.${col}::text !~ '${escapeSql(val)}'`;
         case "IN":
             if (!vals || vals.length === 0) return null;
             const escIn = vals.map((v: any) => `'${escapeSql(v)}'`).join(", ");
@@ -617,6 +621,14 @@ function buildProductValueCondition(dtId: string, op: string, val: unknown, vals
             return `EXISTS (SELECT 1 FROM products_values pv WHERE pv.product_number = products.product_number AND pv.data_type_identifier = '${dtId}' AND pv.value::text ${likeOp} '${escapeSql(val)}%')`;
         case "ENDS WITH":
             return `EXISTS (SELECT 1 FROM products_values pv WHERE pv.product_number = products.product_number AND pv.data_type_identifier = '${dtId}' AND pv.value::text ${likeOp} '%${escapeSql(val)}')`;
+        case "REGEX":
+            return ci
+                ? `EXISTS (SELECT 1 FROM products_values pv WHERE pv.product_number = products.product_number AND pv.data_type_identifier = '${dtId}' AND pv.value::text ~* '${escapeSql(val)}')`
+                : `EXISTS (SELECT 1 FROM products_values pv WHERE pv.product_number = products.product_number AND pv.data_type_identifier = '${dtId}' AND pv.value::text ~ '${escapeSql(val)}')`;
+        case "NOT REGEX":
+            return ci
+                ? `NOT EXISTS (SELECT 1 FROM products_values pv WHERE pv.product_number = products.product_number AND pv.data_type_identifier = '${dtId}' AND pv.value::text ~* '${escapeSql(val)}')`
+                : `NOT EXISTS (SELECT 1 FROM products_values pv WHERE pv.product_number = products.product_number AND pv.data_type_identifier = '${dtId}' AND pv.value::text ~ '${escapeSql(val)}')`;
         case "TRUE":
             return `EXISTS (SELECT 1 FROM products_values pv WHERE pv.product_number = products.product_number AND pv.data_type_identifier = '${dtId}' AND pv.value::text = 'true')`;
         case "FALSE":

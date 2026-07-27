@@ -2,7 +2,7 @@ import type { DBClient } from "@/services/DatabaseDriver.ts";
 import { ProductRequests, ProductRequestsValues, ProductNumberState, ProductRequestStatus } from "@/schema/ProductRequestSchema.ts";
 import { ProductTypes, ProductTypesDataTypes, ProductTypesDataTypePermission, ProductTypesDataTypePreviousApproval, ProductTypesPermission } from "@/schema/ProductTypeSchema.ts";
 import { DataTypeSchema, DataTypePermission, type DataTypeGroupRoles } from "@/schema/DataTypeSchema.ts";
-import { DataTypeKind, YesNoScript, type YesNoScriptType, type ConfigNumeric, type ConfigString, type ConfigBoolean, type ConfigLookup, type ConfigConsumable, type ConfigProduct, CalculatedCalculationMode, DefaultValueCalculationMode, type ConfigCalculated } from "@/types/DataTypeType.ts";
+import { DataTypeKind, YesNoScript, type YesNoScriptType, type ConfigString, type ConfigBoolean, type ConfigLookup, type ConfigConsumable, type ConfigProduct, CalculatedCalculationMode, DefaultValueCalculationMode, type ConfigCalculated } from "@/types/DataTypeType.ts";
 import { BusinessDomains } from "@/schema/BusinessDomainSchema.ts";
 import {Group, User, UserGroup} from "@/schema/UserSchema.ts";
 import { Products, ProductsValues } from "@/schema/ProductSchema.ts";
@@ -1443,39 +1443,10 @@ export async function updateProductRequestValue(
     const config = dataType[0]!.config as Record<string, unknown> | null;
 
     switch (kind) {
-        case DataTypeKind.Numeric: {
-            const numConfig = config as ConfigNumeric | null | undefined;
-            if (value !== null && (typeof value !== "number" || isNaN(value as number))) {
-                throw new Error("Value must be a number");
-            }
-            const numVal = value as number;
-            if (value !== null) {
-                if (numConfig?.min !== null && numConfig?.min !== undefined && numVal < numConfig.min) {
-                    throw new Error(`Value must be at least ${numConfig.min}`);
-                }
-                if (numConfig?.max !== null && numConfig?.max !== undefined && numVal > numConfig.max) {
-                    throw new Error(`Value must be at most ${numConfig.max}`);
-                }
-                if (numConfig?.decimals !== null && numConfig?.decimals !== undefined) {
-                    const factor = Math.pow(10, numConfig.decimals);
-                    const rounded = Math.round(numVal * factor) / factor;
-                    if (rounded !== numVal) {
-                        throw new Error(`Value must have at most ${numConfig.decimals} decimal places`);
-                    }
-                }
-            }
-            break;
-        }
         case DataTypeKind.String: {
             const strConfig = config as ConfigString | null | undefined;
             if (value !== null && typeof value !== "string") {
                 throw new Error("Value must be a string");
-            }
-            if (strConfig?.min !== null && strConfig?.min !== undefined && (value as string).length < strConfig.min) {
-                throw new Error(`Must be at least ${strConfig.min} characters`);
-            }
-            if (strConfig?.max !== null && strConfig?.max !== undefined && (value as string).length > strConfig.max) {
-                throw new Error(`Must be at most ${strConfig.max} characters`);
             }
             if (value && strConfig?.inputValidation) {
                 try {

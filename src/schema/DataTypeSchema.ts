@@ -9,7 +9,6 @@ import type {
     ConfigCalculated,
     ConfigConsumable,
     ConfigLookup,
-    ConfigNumeric,
     ConfigProduct,
     ConfigString,
     DataTypeKind, YesNoScriptType
@@ -28,7 +27,7 @@ export const DataTypeSchema = pgTable(
         requestorCanEdit: text("requestor_can_edit").notNull().$type<YesNoScriptType>(),
         requestorCanEdit_script: text("requestor_can_edit_script"),
 //        requestorCanEdit: boolean("requestor_can_edit").notNull().default(true),
-        config: jsonb("config").$type<ConfigCalculated | ConfigBoolean | ConfigNumeric | ConfigString | ConfigLookup | ConfigConsumable | ConfigProduct>().notNull(),
+        config: jsonb("config").$type<ConfigCalculated | ConfigBoolean | ConfigString | ConfigLookup | ConfigConsumable | ConfigProduct>().notNull(),
         owner: identifierColumnType("owner").notNull().references(() => BusinessDomains.identifier, { onDelete: "restrict", onUpdate: "cascade" }),
     },
     (table) => ({

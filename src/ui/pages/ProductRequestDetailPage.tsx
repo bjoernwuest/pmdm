@@ -94,21 +94,8 @@ function describeValueConstraints(row: any): string[] {
                 ? "Tri-state: true / false / empty"
                 : "Two-state: true / false");
             break;
-        case "numeric": {
-            const min = config.min as number | undefined;
-            const max = config.max as number | undefined;
-            const decimals = (config.decimals as number | undefined) ?? 0;
-            if (min !== undefined && min !== null) constraints.push(`Minimum: ${min}`);
-            if (max !== undefined && max !== null) constraints.push(`Maximum: ${max}`);
-            constraints.push(decimals === 0 ? "No decimals (integer)" : `Decimals: up to ${decimals}`);
-            break;
-        }
         case "string": {
-            const min = config.min as number | undefined;
-            const max = config.max as number | undefined;
             constraints.push((config.multi ?? false) ? "Multi-line text" : "Single-line text");
-            if (min !== undefined && min !== null && min > 0) constraints.push(`Minimum length: ${min} characters`);
-            if (max !== undefined && max !== null) constraints.push(`Maximum length: ${max} characters`);
             break;
         }
         case "lookup":
@@ -851,20 +838,6 @@ export function Component() {
                     />
                 );
             }
-            case "numeric":
-                return (
-                    <InlineEditField
-                        value={displayValue}
-                        type="number"
-                        config={row.dataTypeConfig}
-                        onSave={(v) => handleValueChange(row.dataType, v)}
-                        dataTypeId={row.dataType}
-                        activeEditField={activeEditField}
-                        onActivate={(id) => setActiveEditField(id)}
-                        onDeactivate={() => setActiveEditField(null)}
-                        kind={row.dataTypeKind}
-                    />
-                );
             case "string": {
                 const multi = row.dataTypeConfig?.multi ?? false;
                 return (
@@ -1364,7 +1337,7 @@ export function Component() {
 
 interface InlineEditFieldProps {
     value: unknown;
-    type: "text" | "number" | "textarea" | "dropdown" | "multiselect" | "switch" | "tristate";
+    type: "text" | "textarea" | "dropdown" | "multiselect" | "switch" | "tristate";
     config?: Record<string, unknown>;
     onSave: (value: unknown) => void;
     options?: DropdownOption[];
@@ -1412,40 +1385,6 @@ function InlineEditField({
     // --- Client-side validation (Task 2: allow "-" as intermediate numeric input) ---
     const validate = useCallback(
         (val: any): string | null => {
-            if (type === "number") {
-                if (val === null || val === undefined || val === "") return null;
-                const str = String(val);
-                // A lone minus sign is a valid intermediate state while user is typing a negative number
-                if (str === "-") return null;
-                const num = Number(str);
-                if (isNaN(num)) return "Invalid number";
-                const min = config?.min as number | undefined;
-                const max = config?.max as number | undefined;
-                if (min !== undefined && num < min) {
-                    return `Value must be at least ${min}`;
-                }
-                if (max !== undefined && num > max) {
-                    return `Value must be at most ${max}`;
-                }
-                const decimals = config?.decimals as number | undefined;
-                if (decimals !== undefined) {
-                    const factor = Math.pow(10, decimals);
-                    if (Math.round(num * factor) / factor !== num) {
-                        return `Value must have at most ${decimals} decimal places`;
-                    }
-                }
-            }
-            if (type === "text" || type === "textarea") {
-                const str = (val ?? "") as string;
-                const min = config?.min as number | undefined;
-                const max = config?.max as number | undefined;
-                if (min !== undefined && str.length < min) {
-                    return `Must be at least ${min} characters`;
-                }
-                if (max !== undefined && str.length > max) {
-                    return `Must be at most ${max} characters`;
-                }
-            }
             return null;
         },
         [type, config],
@@ -1517,15 +1456,6 @@ function InlineEditField({
             savingRef.current = true;
             try {
                 let parsed: unknown = val;
-                if (type === "number") {
-                    const str = val === null || val === undefined ? "" : String(val);
-                    if (str === "" || str === "-") {
-                        parsed = null;
-                    } else {
-                        parsed = Number(str);
-                        if (isNaN(parsed as number)) return; // should not happen with validation
-                    }
-                }
                 if (type === "switch") {
                     parsed = val === true;
                 }
@@ -1729,18 +1659,7 @@ function InlineEditField({
                         value={(editValue ?? "") as string}
                         onChange={(e) => setEditValue(e.target.value)}
                         rows={3}
-                        maxLength={config?.max as number | undefined}
                         style={{ minWidth: "180px" }}
-                        onFocus={handleFocus}
-                        onBlur={handleBlur}
-                    />
-                );
-            case "number":
-                return (
-                    <InputText
-                        value={editValue != null ? String(editValue) : ""}
-                        onChange={(e) => setEditValue(e.target.value)}
-                        style={{ minWidth: "120px" }}
                         onFocus={handleFocus}
                         onBlur={handleBlur}
                     />
@@ -1750,7 +1669,6 @@ function InlineEditField({
                     <InputText
                         value={(editValue ?? "") as string}
                         onChange={(e) => setEditValue(e.target.value)}
-                        maxLength={config?.max as number | undefined}
                         style={{ minWidth: "150px" }}
                         onFocus={handleFocus}
                         onBlur={handleBlur}

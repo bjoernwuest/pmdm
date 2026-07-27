@@ -1125,96 +1125,9 @@ export function Component() {
                                 </div>
                             );
 
-                        case DataTypeKind.Numeric:
-                            return (
-                                <div className="admin-datatype-config-section">
-                                    <label>
-                                        Decimals
-                                        <InputText
-                                            type="number"
-                                            value={String(editConfig["decimals"] ?? "0")}
-                                            onChange={(e) => setField("decimals", Number(e.target.value))}
-                                            onBlur={() => saveConfigImmediate(editConfig)}
-                                            onKeyDown={(e) => { if (e.key === 'Enter') saveConfigImmediate(editConfig); }}
-                                        />
-                                    </label>
-                                    <label>
-                                        Min
-                                        <InputText
-                                            type="number"
-                                            value={String(editConfig["min"] ?? "")}
-                                            onChange={(e) => setField("min", e.target.value === "" ? undefined : Number(e.target.value))}
-                                            onBlur={() => saveConfigImmediate(editConfig)}
-                                            onKeyDown={(e) => { if (e.key === 'Enter') saveConfigImmediate(editConfig); }}
-                                        />
-                                    </label>
-                                    <label>
-                                        Max
-                                        <InputText
-                                            type="number"
-                                            value={String(editConfig["max"] ?? "")}
-                                            onChange={(e) => setField("max", e.target.value === "" ? undefined : Number(e.target.value))}
-                                            onBlur={() => saveConfigImmediate(editConfig)}
-                                            onKeyDown={(e) => { if (e.key === 'Enter') saveConfigImmediate(editConfig); }}
-                                        />
-                                    </label>
-                                    <label>
-                                        Default Provider Mode
-                                        <select
-                                            value={String(editConfig["mode"] ?? DefaultValueCalculationMode.OnCreate)}
-                                            onChange={(e) => setFieldAndSave("mode", e.target.value)}
-                                        >
-                                            <option value={DefaultValueCalculationMode.OnCreate}>On Create</option>
-                                            <option value={DefaultValueCalculationMode.OnChangeNoValue}>On Change (no value)</option>
-                                            <option value={DefaultValueCalculationMode.OnChange}>On Change</option>
-                                        </select>
-                                    </label>
-                                    <MonacoField
-                                        label="Default Provider"
-                                        value={editConfig.defaultProvider as string | undefined}
-                                        originalValue={origConfig.defaultProvider as string | undefined}
-                                        onChange={(val) => setField("defaultProvider", val)}
-                                        onSave={saveField("defaultProvider")}
-                                        onRestore={restoreField("defaultProvider")}
-                                        helpText={MONACO_HELP.defaultProvider}
-                                        isSaving={isSaving}
-                                    />
-                                    <MonacoField
-                                        label="Validate"
-                                        value={editConfig.validate as string | undefined}
-                                        originalValue={origConfig.validate as string | undefined}
-                                        onChange={(val) => setField("validate", val)}
-                                        onSave={saveField("validate")}
-                                        onRestore={restoreField("validate")}
-                                        helpText={MONACO_HELP.validate}
-                                        isSaving={isSaving}
-                                    />
-                                </div>
-                            );
-
                         case DataTypeKind.String:
                             return (
                                 <div className="admin-datatype-config-section">
-                                    <label>
-                                        Min Length
-                                        <InputText
-                                            type="number"
-                                            value={String(editConfig["min"] ?? "0")}
-                                            onChange={(e) => setField("min", Number(e.target.value))}
-                                            onBlur={() => saveConfigImmediate(editConfig)}
-                                            onKeyDown={(e) => { if (e.key === 'Enter') saveConfigImmediate(editConfig); }}
-                                        />
-                                    </label>
-                                    <label>
-                                        Max Length
-                                        <InputText
-                                            type="number"
-                                            value={String(editConfig["max"] ?? "")}
-                                            onChange={(e) => setField("max", e.target.value === "" ? undefined : Number(e.target.value))}
-                                            onBlur={() => saveConfigImmediate(editConfig)}
-                                            onKeyDown={(e) => { if (e.key === 'Enter') saveConfigImmediate(editConfig); }}
-                                        />
-                                    </label>
                                     <label className="admin-checkbox-label">
                                         <Checkbox
                                             checked={Boolean(editConfig["multi"])}

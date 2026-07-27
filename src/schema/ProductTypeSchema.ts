@@ -7,7 +7,7 @@ import {DataTypeSchema, type DataTypeGroupRoles} from "./DataTypeSchema.ts";
 import {Group, User} from "./UserSchema.ts";
 import {TargetSystems} from "./TargetSystemSchema.ts";
 import type {
-    ConfigBoolean, ConfigCalculated, ConfigConsumable, ConfigLookup, ConfigNumeric, ConfigProduct, ConfigString,
+    ConfigBoolean, ConfigCalculated, ConfigConsumable, ConfigLookup, ConfigProduct, ConfigString,
     YesNoScriptType
 } from "@/types/DataTypeType.ts";
 
@@ -45,7 +45,7 @@ export const ProductTypesDataTypes = pgTable(
 //        requestorCanEdit: boolean("requestor_can_edit"), // If 'null', use the information from the referenced data type
         requestorCanEdit: text("requestor_can_edit").$type<YesNoScriptType>(), // If 'null', use the information from the referenced data type
         requestorCanEdit_script: text("requestor_can_edit_script"),
-        config: jsonb("config").$type<ConfigCalculated | ConfigBoolean | ConfigNumeric | ConfigString | ConfigLookup | ConfigConsumable | ConfigProduct>(), // If 'null', use the information from the referenced data type. If any config value is null, use the information from the referenced data type.
+        config: jsonb("config").$type<ConfigCalculated | ConfigBoolean | ConfigString | ConfigLookup | ConfigConsumable | ConfigProduct>(), // If 'null', use the information from the referenced data type. If any config value is null, use the information from the referenced data type.
         owner: identifierColumnType("owner").references(() => BusinessDomains.identifier, { onDelete: "restrict", onUpdate: "cascade" }), // If 'null', use the information from the referenced data type
         editableOnUpdate: boolean("editable_on_update").notNull().default(true),
     },

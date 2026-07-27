@@ -46,7 +46,6 @@ export const meta: PageMeta = {
 const kindBadgeClass: Record<string, string> = {
     calculated: "admin-datatype-kind-calculated",
     boolean: "admin-datatype-kind-boolean",
-    numeric: "admin-datatype-kind-numeric",
     string: "admin-datatype-kind-string",
     lookup: "admin-datatype-kind-lookup",
     consumable: "admin-datatype-kind-consumable",

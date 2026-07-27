@@ -7,7 +7,6 @@ import {
     type ConfigCalculated,
     type ConfigConsumable,
     type ConfigLookup,
-    type ConfigNumeric,
     type ConfigProduct,
     type ConfigString,
     type DataTypeGroupRoles,
@@ -39,12 +38,11 @@ import type {UserSelectType} from "@/types/_UserType.ts";
 // ---------------------------------------------------------------------------
 
 /** Build a default config object for a given data type kind. */
-function getDefaultConfigForKind(kind: string): ConfigCalculated | ConfigBoolean | ConfigNumeric | ConfigString | ConfigLookup | ConfigConsumable | ConfigProduct {
+function getDefaultConfigForKind(kind: string): ConfigCalculated | ConfigBoolean | ConfigString | ConfigLookup | ConfigConsumable | ConfigProduct {
     switch (kind) {
         case DataTypeKind.Calculated: return { script: undefined, mode: "on_export" } as ConfigCalculated;
         case DataTypeKind.Boolean: return { permitEmpty: false, defaultProvider: undefined, validate: undefined } as ConfigBoolean;
-        case DataTypeKind.Numeric: return { decimals: 0, min: undefined, max: undefined, defaultProvider: undefined, validate: undefined } as ConfigNumeric;
-        case DataTypeKind.String: return { min: 0, max: undefined, multi: false, inputValidation: undefined, defaultProvider: undefined, validate: undefined } as ConfigString;
+        case DataTypeKind.String: return { multi: false, inputValidation: undefined, defaultProvider: undefined, validate: undefined } as ConfigString;
         case DataTypeKind.Lookup: return { source: undefined, multi: false, defaultProvider: undefined, filter: undefined, validate: undefined } as ConfigLookup;
         case DataTypeKind.Consumable: return { source: undefined, multi: false, defaultProvider: undefined, filter: undefined, validate: undefined } as ConfigConsumable;
         case DataTypeKind.Product: return { multi: false, defaultProvider: undefined, filter: undefined, validate: undefined } as ConfigProduct;
@@ -82,7 +80,7 @@ export async function getByIdentifier(db: DBClient, identifier: string, includeD
  * @returns The created data type row.
  */
 export async function create(db: DBClient, user: UserSelectType, input: DataTypeSchemaInsertType): Promise<DataTypeSchemaSelectType[]> {
-    const config = (input.config ?? getDefaultConfigForKind(input.kind)) as ConfigCalculated | ConfigBoolean | ConfigNumeric | ConfigString | ConfigLookup | ConfigConsumable | ConfigProduct;
+    const config = (input.config ?? getDefaultConfigForKind(input.kind)) as ConfigCalculated | ConfigBoolean | ConfigString | ConfigLookup | ConfigConsumable | ConfigProduct;
     const valuesToInsert = {
         name: input.name,
         kind: input.kind as DataTypeKind,

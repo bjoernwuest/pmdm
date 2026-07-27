@@ -86,15 +86,15 @@ const PSEUDO_DT_PRODUCT_TYPE = "__pseudo_productType";
 const OPERATORS_BY_KIND: Record<string, string[]> = {
     boolean: ["TRUE", "FALSE", "NOT TRUE", "NOT FALSE", "EMPTY", "NOT EMPTY"],
     numeric: ["=", "!=", ">", ">=", "<", "<=", "EMPTY", "NOT EMPTY"],
-    string: ["=", "!=", "CONTAINS", "NOT CONTAINS", "STARTS WITH", "ENDS WITH", "EMPTY", "NOT EMPTY"],
+    string: ["=", "!=", "CONTAINS", "NOT CONTAINS", "STARTS WITH", "ENDS WITH", "REGEX", "NOT REGEX", "EMPTY", "NOT EMPTY"],
     lookup: ["=", "!=", "CONTAINS", "NOT CONTAINS", "STARTS WITH", "ENDS WITH", "EMPTY", "NOT EMPTY"],
     consumable: ["=", "!=", "CONTAINS", "NOT CONTAINS", "STARTS WITH", "ENDS WITH", "EMPTY", "NOT EMPTY"],
     product: ["=", "!=", "CONTAINS", "NOT CONTAINS", "STARTS WITH", "ENDS WITH", "EMPTY", "NOT EMPTY"],
-    __pseudo__: ["=", "!=", "CONTAINS", "NOT CONTAINS", "STARTS WITH", "ENDS WITH", "EMPTY", "NOT EMPTY"],
+    __pseudo__: ["=", "!=", "CONTAINS", "NOT CONTAINS", "STARTS WITH", "ENDS WITH", "REGEX", "NOT REGEX", "EMPTY", "NOT EMPTY"],
 };
 
 /** Operators that can be made case-insensitive for string/text-like criteria */
-const CASE_INSENSITIVE_OPERATORS = new Set(["=", "!=", "CONTAINS", "NOT CONTAINS", "STARTS WITH", "ENDS WITH", "IN", "NOT IN"]);
+const CASE_INSENSITIVE_OPERATORS = new Set(["=", "!=", "CONTAINS", "NOT CONTAINS", "STARTS WITH", "ENDS WITH", "REGEX", "NOT REGEX", "IN", "NOT IN"]);
 
 const VALUE_LESS_OPERATORS = new Set(["EMPTY", "NOT EMPTY", "TRUE", "FALSE", "NOT TRUE", "NOT FALSE"]);
 
@@ -339,7 +339,7 @@ const QueryBuilder: React.FC<QueryBuilderProps> = ({
     // Check if an operator supports case insensitivity
     function supportsCaseInsensitive(node: RuleNode): boolean {
         const kind = getKindForIdentifier(node.dataTypeIdentifier ?? "");
-        if (kind === "numeric" || kind === "boolean") return false;
+        if (kind === "boolean") return false;
         return node.operator ? CASE_INSENSITIVE_OPERATORS.has(node.operator) : false;
     }
 

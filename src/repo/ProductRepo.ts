@@ -680,26 +680,8 @@ function validateDataTypeValue(
             if (permitEmpty && (strVal === "" || strVal === "null" || strVal === "undefined")) return null;
             return `Invalid boolean value: "${value}". Expected true/false, 1/0, yes/no.`;
         }
-        case "numeric": {
-            const num = Number(value);
-            if (isNaN(num)) return `Invalid numeric value: "${value}"`;
-            const min = config?.min;
-            const max = config?.max;
-            const decimals = config?.decimals;
-            if (min !== undefined && num < min) return `Value ${num} is below minimum ${min}`;
-            if (max !== undefined && num > max) return `Value ${num} is above maximum ${max}`;
-            if (decimals !== undefined) {
-                const parts = String(value).split(".");
-                if (parts[1] && parts[1].length > decimals) return `Value has more than ${decimals} decimal places`;
-            }
-            return null;
-        }
         case "string": {
             const strVal = String(value);
-            const min = config?.min;
-            const max = config?.max;
-            if (min !== undefined && strVal.length < min) return `String is shorter than minimum ${min} characters`;
-            if (max !== undefined && strVal.length > max) return `String is longer than maximum ${max} characters`;
             const inputValidation = config?.inputValidation;
             if (inputValidation && strVal.length > 0) {
                 try {

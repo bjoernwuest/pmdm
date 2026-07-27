@@ -26,7 +26,6 @@ export * from './_DataTypeType.ts';
 export const DataTypeKind = {
     Calculated: "calculated" as const,
     Boolean: "boolean" as const,
-    Numeric: "numeric" as const,
     String: "string" as const,
     Lookup: "lookup" as const,
     Consumable: "consumable" as const,
@@ -88,22 +87,8 @@ export type ConfigBoolean = DefaultProvider<boolean> & Validator & {
     permitEmpty: boolean | undefined, // Must be set for DataType, may be overwritten by ProductTypesDataTypes
 }
 
-/** Configuration payload for numeric data types. */
-export type ConfigNumeric = DefaultProvider<number> & Validator & {
-    // Number of decimals. Defaults to 0.
-    decimals: number | undefined, // Must be set for DataType, may be overwritten by ProductTypesDataTypes
-    // Minimum value permitted. Defaults to "-infinite". At most `max`.
-    min: number | undefined, // Must be set for DataType, may be overwritten by ProductTypesDataTypes
-    // Maximum value permitted. Defaults to "+infinite". At least `min`.
-    max: number | undefined,
-}
-
 /** Configuration payload for string data types. */
 export type ConfigString = DefaultProvider<string> & Validator & {
-    // Minimum number of characters in the string. Defaults to 0. At least 0. At most `max`.
-    min: number | undefined,
-    // Maximum number of characters in the string. Defaults to "infinite", At least `min`.
-    max: number | undefined,
     // Defaults to `false`. When set to `true` then multi-line text is supported (i.e. use TextArea instead of Input)
     multi: boolean | undefined, // Must be set for DataType, may be overwritten by ProductTypesDataTypes
     // Browser-side input validation regex. When set, the value must match this pattern.
@@ -145,21 +130,10 @@ export const ConfigBooleanSchema = Type.Object({
     permitEmpty: Type.Optional(Type.Boolean()),
 }, { additionalProperties: false });
 
-export const ConfigNumericSchema = Type.Object({
-    defaultProvider: Type.Optional(Type.String()),
-    mode: Type.Optional(Type.Unknown()),
-    validate: Type.Optional(Type.String()),
-    decimals: Type.Optional(Type.Number()),
-    min: Type.Optional(Type.Number()),
-    max: Type.Optional(Type.Number()),
-}, { additionalProperties: false });
-
 export const ConfigStringSchema = Type.Object({
     defaultProvider: Type.Optional(Type.String()),
     mode: Type.Optional(Type.Unknown()),
     validate: Type.Optional(Type.String()),
-    min: Type.Optional(Type.Number()),
-    max: Type.Optional(Type.Number()),
     multi: Type.Optional(Type.Boolean()),
     inputValidation: Type.Optional(Type.String()),
 }, { additionalProperties: false });
@@ -194,7 +168,6 @@ export const ConfigProductSchema = Type.Object({
 const configSchema = Type.Optional(Type.Union([
     ConfigCalculatedSchema,
     ConfigBooleanSchema,
-    ConfigNumericSchema,
     ConfigStringSchema,
     ConfigLookupSchema,
     ConfigConsumableSchema,
