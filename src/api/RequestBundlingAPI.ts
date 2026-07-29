@@ -52,10 +52,17 @@ function computeServerTimeoutMs(req: RequestBundlingRequestItem, cfg: RequestBun
     return Math.max(cfg.defaultServerTimeoutMs, clientBudget, expected);
 }
 
-/** Extracts a human-readable error message from arbitrary response bodies. */
+/** Extracts a human-readable error message from arbitrary response bodies, including Elysia-style validation errors. */
 function extractErrorMessage(body: unknown, fallback: string): string {
     if (body && typeof body === "object") {
-        const candidate = body as { message?: unknown; error?: unknown };
+        const candidate = body as Record<string, unknown>;
+
+        if (candidate.type === "validation") {
+            const location = typeof candidate.on === "string" ? candidate.on : "request";
+            const details = candidate.errors ?? candidate.found ?? body;
+            return `Validation failed on ${location}: ${JSON.stringify(details)}`;
+        }
+
         if (typeof candidate.message === "string") return candidate.message;
         if (typeof candidate.error === "string") return candidate.error;
     }
@@ -253,6 +260,15 @@ export default function register(app: ApiInstance) {
                         } else {
                             body = await response.text();
                         }
+                    }
+
+                    if (!response.ok && process.env.BUNDLING_DEBUG === "1") {
+                        console.warn(`[api/request_bundling] sub-request ${response.status}`, {
+                            method: req.method,
+                            url: subUrl,
+                            requestBody: req.body,
+                            responseBody: body,
+                        });
                     }
 
                     enqueueResponse({
