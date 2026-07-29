@@ -25,7 +25,7 @@ import {
     message_UpdateDataType,
 } from "@/types/DataTypeType.ts";
 import { apiGet } from "@/ui/api/index.ts";
-import { useEffect, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 
 export const meta: PageMeta = {
     id: "configuration-data-types",
@@ -111,6 +111,12 @@ export function Component() {
 
     const kindOptions = Object.values(DataTypeKind);
 
+    const ownerNameMap = useMemo(() => {
+        const map = new Map<string, string>();
+        for (const opt of ownerOptions) map.set(opt.identifier, opt.name);
+        return map;
+    }, [ownerOptions]);
+
     return (
         <ConfigurationEntitiesPage<DataTypeSummary>
             urn={meta.urn}
@@ -122,10 +128,17 @@ export function Component() {
             viewPermissionName={FP_VIEW_DATA_TYPES.functionalPermissionName}
             managePermissionName={FP_MANAGE_DATA_TYPES.functionalPermissionName}
             pubSubTopics={[{ and: message_CreateDataType }, { and: message_UpdateDataType }, { and: message_DisableDataType }]}
-            extraColumnHeaders={["Kind"]}
+            extraColumnHeaders={["Kind", "Owner"]}
+            extraColumnSortAccessor={{
+                Kind: (row) => row.kind,
+                Owner: (row) => ownerNameMap.get(row.owner) ?? row.owner ?? "",
+            }}
             renderExtraCells={(row) => [
                 <span key={`${row.identifier}-kind`} className={`mui-pill ${kindBadgeClass[row.kind] ?? "admin-datatype-kind-default"}`}>
                     {row.kind}
+                </span>,
+                <span key={`${row.identifier}-owner`}>
+                    {ownerNameMap.get(row.owner) ?? row.owner ?? <span style={{ fontStyle: "italic", color: "var(--text-color-secondary)" }}>—</span>}
                 </span>,
             ]}
             rowHref={(row) => `/configuration/datatypes/${encodeURIComponent(row.identifier)}`}

@@ -490,8 +490,9 @@ export function Component() {
             if (result === null) {
                 toast.current?.show({ severity: "error", summary: "Conflict", detail: "Value was modified by another user", life: 5000 });
                 pendingOwnActionRef.current.delete(dataTypeIdentifier);
+                for (const dt of onChangeCalcDts) pendingOwnActionRef.current.delete(dt);
                 fetchDetail();
-                return;
+                throw new Error("Value was modified by another user");
             }
             toast.current?.show({ severity: "success", summary: "Saved", detail: "Value updated", life: 2000 });
             const respValue = result.value as any;
@@ -516,6 +517,8 @@ export function Component() {
                                 approvedBy: null,
                                 approverName: null,
                                 approverEmail: null,
+                                mandatory: respValue.mandatory ?? v.mandatory,
+                                requestorCanEdit: respValue.requestorCanEdit ?? v.requestorCanEdit,
                             };
                         }
                         const recalc = recalcMap.get(v.dataType);
@@ -525,6 +528,8 @@ export function Component() {
                                 value: recalc.value,
                                 updatedAt: recalc.updatedAt,
                                 updatedBy: recalc.updatedBy,
+                                mandatory: (recalc as any).mandatory ?? v.mandatory,
+                                requestorCanEdit: (recalc as any).requestorCanEdit ?? v.requestorCanEdit,
                             };
                         }
                         return v;
@@ -554,7 +559,9 @@ export function Component() {
             }
         } catch (e: any) {
             pendingOwnActionRef.current.delete(dataTypeIdentifier);
+            for (const dt of onChangeCalcDts) pendingOwnActionRef.current.delete(dt);
             toast.current?.show({ severity: "error", summary: "Error", detail: e.message, life: 5000 });
+            throw e;
         }
     }, [id, pendOwnAction]);
 
@@ -1113,6 +1120,8 @@ export function Component() {
                     dataKey="identifier"
                     loading={loading}
                     emptyMessage="No data types visible"
+                    sortField="dataTypeName"
+                    sortOrder={1}
                     paginator={visibleValues.length > (request?.availablePageSizes?.[0] ?? 20)}
                     rows={request?.availablePageSizes?.[0] ?? 20}
                     rowsPerPageOptions={request?.availablePageSizes ?? [20, 50, 100]}

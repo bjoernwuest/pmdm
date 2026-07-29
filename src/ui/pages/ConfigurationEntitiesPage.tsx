@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { useNavigate, useSearchParams } from "react-router-dom";
 import { Dialog } from "primereact/dialog";
 import { InputText } from "primereact/inputtext";
@@ -40,6 +40,7 @@ type EntityPageProps<T extends ConfigurationEntity = ConfigurationEntity> = {
     createdEntityHref?: (row: ConfigurationEntity) => string;
     extraColumnHeaders?: readonly string[];
     renderExtraCells?: (row: T) => React.ReactNode[];
+    extraColumnSortAccessor?: Record<string, (row: T) => string>;
     renderCreateFields?: (state: { values: Record<string, string>; onChange: (key: string, value: string) => void }) => React.ReactNode;
     extraCreateFields?: readonly { key: string; label: string }[];
 };
@@ -75,6 +76,21 @@ function formatUserRef(identifier: string | null, userRefs: UserRefMap): string 
     return `${user.firstName} ${user.lastName} (${user.email})`;
 }
 
+function SortableHeader({ label, sortKey, sortConfig, onSort }: {
+    label: string;
+    sortKey: string;
+    sortConfig: { key: string; dir: "asc" | "desc" };
+    onSort: (key: string) => void;
+}) {
+    const isActive = sortConfig.key === sortKey;
+    const indicator = isActive ? (sortConfig.dir === "asc" ? " ▲" : " ▼") : "";
+    return (
+        <th style={{ cursor: "pointer", userSelect: "none" }} onClick={() => onSort(sortKey)}>
+            <span style={{ fontWeight: isActive ? 700 : 400 }}>{label}{indicator}</span>
+        </th>
+    );
+}
+
 export function ConfigurationEntitiesPage<T extends ConfigurationEntity = ConfigurationEntity>(props: EntityPageProps<T>) {
     const navigate = useNavigate();
     const [searchParams, setSearchParams] = useSearchParams();
@@ -92,6 +108,8 @@ export function ConfigurationEntitiesPage<T extends ConfigurationEntity = Config
     const [isCreating, setIsCreating] = useState(false);
     const [userRefs, setUserRefs] = useState<UserRefMap>({});
     const [createExtraFields, setCreateExtraFields] = useState<Record<string, string>>({});
+
+    const [sortConfig, setSortConfig] = useState<{ key: string; dir: "asc" | "desc" }>({ key: "name", dir: "asc" });
 
     const queryPage = Number(searchParams.get("page") ?? "1");
     const hasExplicitPageSize = searchParams.get("pageSize") !== null;
@@ -127,6 +145,34 @@ export function ConfigurationEntitiesPage<T extends ConfigurationEntity = Config
         }
         setSearchParams(next);
     };
+
+    const handleSort = (key: string) => {
+        setSortConfig((prev) => prev.key === key ? { key, dir: prev.dir === "asc" ? "desc" : "asc" } : { key, dir: "asc" });
+    };
+
+    const sortedRows = useMemo(() => {
+        const getValue = (row: T, key: string): string => {
+            switch (key) {
+                case "identifier": return row.identifier;
+                case "name": return row.name;
+                case "disabled": return String(row.disabled);
+                case "createdAt": return row.createdAt;
+                case "updatedAt": return row.updatedAt;
+                case "createdBy": return formatUserRef(row.createdBy, userRefs);
+                case "updatedBy": return formatUserRef(row.updatedBy, userRefs);
+                default: return props.extraColumnSortAccessor?.[key]?.(row) ?? "";
+            }
+        };
+        const sorted = [...rows];
+        sorted.sort((a, b) => {
+            const aVal = getValue(a, sortConfig.key);
+            const bVal = getValue(b, sortConfig.key);
+            if (aVal < bVal) return sortConfig.dir === "asc" ? -1 : 1;
+            if (aVal > bVal) return sortConfig.dir === "asc" ? 1 : -1;
+            return 0;
+        });
+        return sorted;
+    }, [rows, sortConfig, userRefs, props.extraColumnSortAccessor]);
 
     useEffect(() => {
         let cancelled = false;
@@ -350,18 +396,20 @@ export function ConfigurationEntitiesPage<T extends ConfigurationEntity = Config
                         <table className="mui-simple-table admin-table admin-configuration-entity-table">
                             <thead>
                                 <tr>
-                                    <th>Identifier</th>
-                                    <th>Name</th>
-                                    <th>Disabled</th>
-                                    <th>Created at</th>
-                                    <th>Updated at</th>
-                                    <th>Created by</th>
-                                    <th>Updated by</th>
-                                    {props.extraColumnHeaders?.map((header) => <th key={header}>{header}</th>)}
+                                    <SortableHeader label="Identifier" sortKey="identifier" sortConfig={sortConfig} onSort={handleSort} />
+                                    <SortableHeader label="Name" sortKey="name" sortConfig={sortConfig} onSort={handleSort} />
+                                    <SortableHeader label="Disabled" sortKey="disabled" sortConfig={sortConfig} onSort={handleSort} />
+                                    <SortableHeader label="Created at" sortKey="createdAt" sortConfig={sortConfig} onSort={handleSort} />
+                                    <SortableHeader label="Updated at" sortKey="updatedAt" sortConfig={sortConfig} onSort={handleSort} />
+                                    <SortableHeader label="Created by" sortKey="createdBy" sortConfig={sortConfig} onSort={handleSort} />
+                                    <SortableHeader label="Updated by" sortKey="updatedBy" sortConfig={sortConfig} onSort={handleSort} />
+                                    {props.extraColumnHeaders?.map((header) => (
+                                        <SortableHeader key={header} label={header} sortKey={header} sortConfig={sortConfig} onSort={handleSort} />
+                                    ))}
                                 </tr>
                             </thead>
                             <tbody>
-                                {rows.map((row) => {
+                                {sortedRows.map((row) => {
                                     // Ensure label refs exist for this row
                                     if (!labelRefs.current.has(row.identifier)) {
                                         labelRefs.current.set(row.identifier, {
