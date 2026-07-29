@@ -40,18 +40,7 @@ export async function getEntraIDClientId(db: DBClient): Promise<string> { return
  */
 export async function getEntraIDClientSecret(db: DBClient): Promise<string> { return (await getConfigEntriesByKey(db, config.cfgClientSecret.domain, config.cfgClientSecret.key) satisfies ConfigEntrySelectType[])[0]!.value as string; }
 
-/** 98 |   let res: GraphPage | undefined;
- 99 |   do {
-100 |     try {
-101 |       res = (await MSGraphQLClient.api(nextLink!).get()) as GraphPage;
-102 |       for (const entry of res.value ?? []) {
-103 |         if (entry["@removed"] && IdentifierSchema.safeParse({ identifier: entry.id }).success) deletedIds.add({identifier: entry.id} satisfies IdentifierType);
-                                                        ^
-TypeError: IdentifierSchema.safeParse is not a function. (In 'IdentifierSchema.safeParse({ identifier: entry.id })', 'IdentifierSchema.safeParse' is undefined)
-      at userSync (/home/bjoern/Nextcloud/dev/earepo-bun/src/services/EntraIDSync.ts:103:51)
-      at async <anonymous> (/home/bjoern/Nextcloud/dev/earepo-bun/src/services/EntraIDSync.ts:228:15)
-
-
+/**
  * Retrieves the Entra ID Tenant ID from the configuration database.
  *
  * @param {DBClient} db - The database client instance used to query the configuration.

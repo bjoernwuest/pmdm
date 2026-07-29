@@ -2,9 +2,7 @@ import { readdirSync } from "node:fs";
 import { join } from "node:path";
 import {type DBClient, getDatabaseConnection, initDatabase} from "@/services/DatabaseDriver.ts";
 import { startScheduler as startEntraIDSync } from "@/services/EntraIDSync.ts";
-import { init as initNotifications } from "@/services/Notifications.ts";
-import { startScriptEngine } from "@/services/ScriptEngine.ts";
-import { init as initScriptLogCleanup } from "@/services/ScriptLog.ts";
+
 import { Elysia } from "elysia";
 import { devMode } from "@/devmode.ts";
 
@@ -76,14 +74,6 @@ try {
 
 if (devMode) console.log("...💉 Injecting Drizzle database connection");
 app.use(injectDb(dbClient));
-// Start the notification digest scheduler
-console.log("...⚡ Start notification scheduler...");
-await initNotifications(dbClient);
-console.log("...⚡ Start script log cleanup scheduler...");
-await initScriptLogCleanup(dbClient);
-// Seed the Script Engine config entries
-console.log("...⚡ Start script engine...");
-await startScriptEngine(dbClient);
 if (devMode) console.log("...⚡ Mount login application...");
 app.use(loginApp);
 if (devMode) console.log("...⚡ Mount API backend...");
