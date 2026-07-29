@@ -136,7 +136,15 @@ function resolveResponse(item: RequestBundlingResponseItem): void {
     }
 
     if (item.error || item.status >= 400) {
-        const message = item.error ?? `HTTP ${item.status}`;
+        let message = item.error ?? `HTTP ${item.status}`;
+        if (item.body && typeof item.body === "object") {
+            const bodyObj = item.body as Record<string, unknown>;
+            if (bodyObj.type === "validation") {
+                const location = typeof bodyObj.on === "string" ? bodyObj.on : "request";
+                const details = bodyObj.errors ?? bodyObj.found ?? item.body;
+                message = `Validation failed on ${location}: ${JSON.stringify(details)}`;
+            }
+        }
         pending.reject(new ApiError(item.status, message, {
             signal: item.signal,
             mayHaveExecuted: item.mayHaveExecuted,
