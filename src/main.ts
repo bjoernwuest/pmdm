@@ -1,6 +1,7 @@
+import { readdirSync } from "node:fs";
+import { join } from "node:path";
 import {type DBClient, getDatabaseConnection, initDatabase} from "@/services/DatabaseDriver.ts";
 import { startScheduler as startEntraIDSync } from "@/services/EntraIDSync.ts";
-import { startAuditLog } from "@/services/AuditLog.ts";
 import { Elysia } from "elysia";
 import { devMode } from "@/devmode.ts";
 
@@ -49,11 +50,29 @@ const injectDb = (dbClient: DBClient) => new Elysia({ name: 'db-inject' }).deriv
 // Mount applications
 // ====================================================================================================================
 const dbClient = await getDatabaseConnection();
+
+// ── Auto-discovered autostart tasks ────────────────────────────────────────────
+console.log("...⚡ Start autostart tasks...");
+const autostartDir = join(import.meta.dir, "autostart");
+try {
+  for (const file of readdirSync(autostartDir)) {
+    if (!file.endsWith(".ts")) continue;
+    try {
+      const mod = await import(`@/autostart/${file}`);
+      if (typeof mod.start === "function") {
+        await mod.start(dbClient);
+        console.log(`  ✓ autostart: ${file}`);
+      }
+    } catch (e) {
+      console.warn(`  ✗ autostart ${file} failed:`, e);
+    }
+  }
+} catch (e: any) {
+  if (e?.code !== "ENOENT") console.warn("Could not scan autostart directory:", e);
+}
+
 if (devMode) console.log("...💉 Injecting Drizzle database connection");
 app.use(injectDb(dbClient));
-// Start the audit log subscriber (batched PubSub listener)
-console.log("...⚡ Start audit log subscriber...");
-await startAuditLog(dbClient);
 if (devMode) console.log("...⚡ Mount login application...");
 app.use(loginApp);
 if (devMode) console.log("...⚡ Mount API backend...");

@@ -47,6 +47,7 @@ The following folders already have their own `AGENTS.md` files unless noted othe
 
 - `src/api/` — REST route handlers, request/response schemas, and OpenAPI documentation.
 - `src/apps/` — Elysia sub-application entry points that compose the server.
+- `src/autostart/` — startup tasks (croner jobs, background services, subscribers) that are auto-discovered on startup by [`src/main.ts`](src/main.ts) (convention-based, no explicit import needed). See [`design/autostart.md`](design/autostart.md) for the contract and how-to-use guide.
 - `src/login/` — login application assets and entry points for OIDC authentication.
 - `src/migrations/` — generated Umzug/Drizzle migration files and their template hooks.
 - `src/repo/` — data-access layer; all database mutations are encapsulated here.
@@ -60,5 +61,5 @@ The following folders already have their own `AGENTS.md` files unless noted othe
 ## Working with the layered guidance
 
 - Keep root-level changes focused on repository-wide conventions and cross-cutting structure.
-- Use the folder-local `AGENTS.md` files for detailed instructions when editing anything under `src/api/`, `src/apps/`, `src/login/`, `src/migrations/`, `src/repo/`, `src/schema/`, `src/services/`, `src/setup/`, `src/types/`, `src/ui/`, or `src/utils/`.
+- Use the folder-local `AGENTS.md` files for detailed instructions when editing anything under `src/api/`, `src/apps/`, `src/autostart/`, `src/login/`, `src/migrations/`, `src/repo/`, `src/schema/`, `src/services/`, `src/setup/`, `src/types/`, `src/ui/`, or `src/utils/`.
 - Avoid duplicating detailed layer rules here unless they apply to the whole repository.
