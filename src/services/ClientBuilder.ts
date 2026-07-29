@@ -15,22 +15,29 @@ export class ClientBundleService {
     private _BuildQueue: Array<() => void> = [];
     private _EntryPoints: string[];
     private _WatchPath: string;
+    private _PreBuild?: () => void | Promise<void>;
 
-    private constructor(sourcePath: string = "src/client", entrypoints: string[] = ["./src/client/index.tsx"]) {
+    private constructor(sourcePath: string = "src/client", entrypoints: string[] = ["./src/client/index.tsx"], preBuild?: () => void | Promise<void>) {
         this._EntryPoints = entrypoints;
         this._WatchPath = sourcePath;
+        this._PreBuild = preBuild;
     }
 
-    static async create(sourcePath: string = "src/client", entrypoints: string[] = ["./src/client/index.tsx"]): Promise<ClientBundleService> {
-        const instance = new ClientBundleService(sourcePath, entrypoints);
+    static async create(
+        sourcePath: string = "src/client",
+        entrypoints: string[] = ["./src/client/index.tsx"],
+        options?: { preBuild?: () => void | Promise<void> },
+    ): Promise<ClientBundleService> {
+        const instance = new ClientBundleService(sourcePath, entrypoints, options?.preBuild);
         await instance.buildBundle();
         if (devMode) { instance.watchClientFiles(); }
         return instance;
     }
 
     private async buildBundle(): Promise<void> {
+        await this._PreBuild?.();
+
         if (this._IsBuilding) {
-            // Wenn bereits ein Build läuft, in Queue einreihen
             return new Promise((resolve) => {
                 this._BuildQueue.push(resolve);
             });
@@ -40,7 +47,6 @@ export class ClientBundleService {
         console.log("🔨 Building bundle...");
 
         try {
-            // Bun unterstützt React JSX nativ
             const result = await Bun.build({
                 entrypoints: this._EntryPoints,
                 target: "browser",
@@ -63,7 +69,6 @@ export class ClientBundleService {
 
             const code = await result.outputs[0]!.text();
 
-            // ETag generieren (Hash des Bundle-Contents)
             const etag = `"${createHash("sha256").update(code).digest("hex").substring(0, 16)}"`;
 
             this._Bundle = {
@@ -80,7 +85,6 @@ export class ClientBundleService {
         } finally {
             this._IsBuilding = false;
 
-            // Queue abarbeiten
             const callbacks = [...this._BuildQueue];
             this._BuildQueue = [];
             callbacks.forEach(cb => cb());

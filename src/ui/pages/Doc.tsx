@@ -1,4 +1,4 @@
-import { PageTemplate, PageSection } from "./PageTemplate.tsx";
+import { PageTemplate, PageSection } from "@/ui/PageTemplate.tsx";
 import type { PageMeta } from "@/types/PageType.ts";
 
 export const meta: PageMeta = {

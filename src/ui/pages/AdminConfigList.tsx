@@ -7,7 +7,7 @@ import { InputText } from "primereact/inputtext";
 import InputField, { type InputFieldHandle } from "@/ui/components/InputField";
 import { uuidFormatter } from "@/ui/components/InputField/formatters/UUIDFormatter";
 import { numericFormatter } from "@/ui/components/InputField/formatters/NumericFormatter";
-import { PageSection, PageTemplate } from "./PageTemplate.tsx";
+import { PageSection, PageTemplate } from "@/ui/PageTemplate.tsx";
 import type {
     ConfigDomainGroup,
 } from "@/types/ConfigType.ts";

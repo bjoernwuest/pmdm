@@ -1,19 +1,5 @@
-import * as DashboardPage from "@/ui/pages/Dashboard.tsx";
-import * as DocPage from "@/ui/pages/Doc.tsx";
-import * as AdministrationHomePage from "@/ui/pages/AdministrationHome.tsx";
-import * as AdminUserListPage from "@/ui/pages/AdminUserList.tsx";
-import * as AdminUserDetailPage from "@/ui/pages/AdminUserDetail.tsx";
-import * as AdminGroupListPage from "@/ui/pages/AdminGroupList.tsx";
-import * as AdminGroupDetailPage from "@/ui/pages/AdminGroupDetail.tsx";
-import * as AdminFunctionalPermissionListPage from "@/ui/pages/AdminFunctionalPermissionList.tsx";
-import * as AdminFunctionalPermissionDetailPage from "@/ui/pages/AdminFunctionalPermissionDetail.tsx";
-import * as AdminApiDocumentationPage from "@/ui/pages/AdminApiDocumentation.tsx";
-import * as AdminConfigListPage from "@/ui/pages/AdminConfigList.tsx";
-import * as AdminApiKeyListPage from "@/ui/pages/AdminApiKeyList.tsx";
-import * as AdminApiKeyDetailPage from "@/ui/pages/AdminApiKeyDetail.tsx";
-import * as AdminAuditLogPage from "@/ui/pages/AdminAuditLog.tsx";
-import * as UserProfileConfigListPage from "@/ui/pages/UserProfileConfigList.tsx";
 import type { NavGroupItem, NavItem, NavLeafItem, NavSection, PageMeta, PageModule } from "@/types/PageType.ts";
+import { autoPageModules } from "./_pageRegistry.generated.ts";
 import { pageModules as appPageModules } from "@/ui/app_PageRegistry.ts";
 
 /**
@@ -25,21 +11,7 @@ import { pageModules as appPageModules } from "@/ui/app_PageRegistry.ts";
  * The order of pages affects default routing and navigation ordering.
  */
 export const pageModules: readonly PageModule[] = [
-    { meta: DashboardPage.meta, Component: DashboardPage.Component },
-    { meta: AdministrationHomePage.meta, Component: AdministrationHomePage.Component },
-    { meta: AdminUserListPage.meta, Component: AdminUserListPage.Component },
-    { meta: AdminUserDetailPage.meta, Component: AdminUserDetailPage.Component },
-    { meta: AdminGroupListPage.meta, Component: AdminGroupListPage.Component },
-    { meta: AdminGroupDetailPage.meta, Component: AdminGroupDetailPage.Component },
-    { meta: AdminFunctionalPermissionListPage.meta, Component: AdminFunctionalPermissionListPage.Component },
-    { meta: AdminFunctionalPermissionDetailPage.meta, Component: AdminFunctionalPermissionDetailPage.Component },
-    { meta: AdminApiKeyListPage.meta, Component: AdminApiKeyListPage.Component },
-    { meta: AdminApiKeyDetailPage.meta, Component: AdminApiKeyDetailPage.Component },
-    { meta: AdminApiDocumentationPage.meta, Component: AdminApiDocumentationPage.Component },
-    { meta: AdminConfigListPage.meta, Component: AdminConfigListPage.Component },
-    { meta: AdminAuditLogPage.meta, Component: AdminAuditLogPage.Component },
-    { meta: DocPage.meta, Component: DocPage.Component },
-    { meta: UserProfileConfigListPage.meta, Component: UserProfileConfigListPage.Component },
+    ...autoPageModules,
     ...appPageModules,
 ];
 

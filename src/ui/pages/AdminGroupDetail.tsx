@@ -2,7 +2,7 @@ import { useEffect, useMemo, useRef, useState } from "react";
 import { Link, useLocation, useParams, useSearchParams } from "react-router-dom";
 import Toggle from "@/ui/components/Toggle";
 import Label, { type LabelHandle } from "@/ui/components/Label";
-import { PageTemplate, PageSection } from "./PageTemplate.tsx";
+import { PageTemplate, PageSection } from "@/ui/PageTemplate.tsx";
 import type { PageMeta } from "@/types/PageType.ts";
 import { apiDelete, apiGet, apiPost } from "@/ui/api/index.ts";
 import type { FunctionalPermissionsResponse, GroupFunctionalPermissionResponseType } from "@/types/ApiType.ts";

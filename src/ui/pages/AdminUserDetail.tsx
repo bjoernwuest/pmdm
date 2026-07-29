@@ -3,7 +3,7 @@ import { Link, useLocation, useParams } from "react-router-dom";
 import { InputSwitch } from "primereact/inputswitch";
 import { Chip } from "primereact/chip";
 import Label, { type LabelHandle } from "@/ui/components/Label";
-import { PageTemplate, PageSection } from "./PageTemplate.tsx";
+import { PageTemplate, PageSection } from "@/ui/PageTemplate.tsx";
 import type { PageMeta } from "@/types/PageType.ts";
 import { apiGet } from "@/ui/api/index.ts";
 import type { UserDetailsResponse } from "@/types/ApiType.ts";

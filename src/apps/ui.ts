@@ -2,6 +2,7 @@ import { Elysia } from "elysia";
 import { ClientBundleService } from "@/services/ClientBuilder.ts";
 import { getCookie, getSession } from "@/services/Auth.ts";
 import { devMode } from "@/devmode.ts";
+import { regeneratePageRegistry } from "@/services/PageRegistryGenerator.ts";
 
 
 import type {DBClient} from "@/services/DatabaseDriver.ts";
@@ -18,7 +19,7 @@ export const app = new Elysia().decorate("dbClient", {} as DBClient);
 if (devMode) console.log("UI: ...⚡ Build client bundle");
 const clientBundle = await ClientBundleService.create("src/ui", [
   "./src/ui/index.tsx",
-]);
+], { preBuild: () => regeneratePageRegistry("src/ui/pages", "src/ui/_pageRegistry.generated.ts") });
 
 app.get("/ui/client.js", async ({ request }) => {
   const bundle = clientBundle.getBundle();
