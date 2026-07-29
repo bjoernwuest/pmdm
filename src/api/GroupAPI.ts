@@ -184,7 +184,7 @@ export default function register(app: ApiInstance) {
         catch (_err) { return status(404, {error: "Could not grant", message: _err}); }
         return { success: true };
     }, {
-        response: {200: SuccessResponseSchema, 401: Type.String(), 403: Type.String(), 404: ErrorSchema},
+        response: {200: SuccessResponseSchema, 401: Type.String(), 403: Type.String(), 404: ErrorSchema, 500: Type.String()},
         body: PermissionIdentifiersBodySchema,
         detail: {
             tags: ["Users & Groups"],
