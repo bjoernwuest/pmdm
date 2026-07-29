@@ -134,7 +134,7 @@ export default function register(app: ApiInstance) {
         if (result && typeof result === "object" && "status" in result) return result;
         return { success: true };
     }, {
-        response: {200: SuccessResponseSchema, 401: Type.String(), 403: Type.String(), 404: ErrorSchema},
+        response: {200: SuccessResponseSchema, 401: Type.String(), 403: Type.String(), 404: ErrorSchema, 500: ErrorSchema},
         body: GroupIdentifiersBodySchema,
         detail: {
             tags: ["Auth"],
@@ -180,7 +180,7 @@ export default function register(app: ApiInstance) {
         if (result && typeof result === "object" && "status" in result) return result;
         return { success: true };
     }, {
-        response: {200: SuccessResponseSchema, 401: Type.String(), 403: Type.String(), 404: ErrorSchema},
+        response: {200: SuccessResponseSchema, 401: Type.String(), 403: Type.String(), 404: ErrorSchema, 500: ErrorSchema},
         body: GroupIdentifiersBodySchema,
         detail: {
             tags: ["Auth"],
