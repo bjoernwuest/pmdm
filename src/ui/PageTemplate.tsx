@@ -34,4 +34,3 @@ export function PageSection({ title, children }: SectionProps) {
         </section>
     );
 }
-

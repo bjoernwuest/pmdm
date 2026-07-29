@@ -1,6 +1,6 @@
 import { useEffect, useState } from "react";
 import { useLocation, useNavigate, useSearchParams } from "react-router-dom";
-import { PageTemplate, PageSection } from "./PageTemplate.tsx";
+import { PageTemplate, PageSection } from "@/ui/PageTemplate.tsx";
 import type { PageMeta } from "@/types/PageType.ts";
 import { apiGet } from "@/ui/api/index.ts";
 import { FP_READ_FUNCTIONAL_PERMISSIONS } from "@/ui/auth/functional_permissions.ts";

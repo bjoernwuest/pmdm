@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useState } from "react";
-import { PageSection, PageTemplate } from "./PageTemplate.tsx";
+import { PageSection, PageTemplate } from "@/ui/PageTemplate.tsx";
 import type { PageMeta } from "@/types/PageType.ts";
 import { FP_CLEAR_AUDIT_LOG, FP_READ_AUDIT_LOG } from "@/ui/auth/functional_permissions.ts";
 import { clearAuditLog, getAuditEntries, type AuditEntry } from "@/ui/api/AuditLog.ts";

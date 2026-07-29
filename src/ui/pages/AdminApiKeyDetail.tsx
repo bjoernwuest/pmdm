@@ -2,7 +2,7 @@ import { useEffect, useMemo, useRef, useState } from "react";
 import { Link, useLocation, useParams, useSearchParams } from "react-router-dom";
 import { Dialog } from "primereact/dialog";
 import { InputText } from "primereact/inputtext";
-import { PageSection, PageTemplate } from "./PageTemplate.tsx";
+import { PageSection, PageTemplate } from "@/ui/PageTemplate.tsx";
 import InputField, { type InputFieldHandle } from "@/ui/components/InputField";
 import Label, { type LabelHandle } from "@/ui/components/Label";
 import Toggle from "@/ui/components/Toggle";

@@ -4,7 +4,7 @@ import { Dialog } from "primereact/dialog";
 import Toggle from "@/ui/components/Toggle";
 import Label, { type LabelHandle } from "@/ui/components/Label";
 import { InputText } from "primereact/inputtext";
-import { PageSection, PageTemplate } from "./PageTemplate.tsx";
+import { PageSection, PageTemplate } from "@/ui/PageTemplate.tsx";
 import type { PageMeta } from "@/types/PageType.ts";
 import {
     FP_CREATE_API_KEYS,

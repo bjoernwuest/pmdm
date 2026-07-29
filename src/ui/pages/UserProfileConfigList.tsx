@@ -3,7 +3,7 @@ import { Dialog } from "primereact/dialog";
 import { InputText } from "primereact/inputtext";
 import Toggle from "@/ui/components/Toggle";
 import InputField, { type InputFieldHandle } from "@/ui/components/InputField";
-import { PageSection, PageTemplate } from "./PageTemplate.tsx";
+import { PageSection, PageTemplate } from "@/ui/PageTemplate.tsx";
 import type { PageMeta } from "@/types/PageType.ts";
 import type { UserProfileConfigEntry } from "@/ui/api/UserProfileConfig.ts";
 import { getUserProfileConfigEntries, updateUserProfileConfigEntry } from "@/ui/api/UserProfileConfig.ts";
