@@ -389,6 +389,10 @@ export function Component() {
             setAssignments(payload.dataTypeAssignments);
             setAssignmentsTotal(payload.total);
             setAvailablePageSizes(payload.availablePageSizes);
+            if (payload.availablePageSizes.length > 0 && !payload.availablePageSizes.includes(assignmentsPageSize)) {
+                setAssignmentsPageSize(payload.availablePageSizes[0]);
+                setAssignmentsPage(0);
+            }
         } catch (e) {
             setError(e instanceof Error ? e.message : "Could not load data type assignments");
         }

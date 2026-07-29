@@ -287,7 +287,8 @@ export default function register(app: ApiInstance): void {
             return status(404, "Product request not found");
         }
 
-        return request;
+        const availablePageSizes = await getUserListPageSizes(context.dbClient, typeof claims.oid === "string" ? claims.oid : undefined);
+        return { ...request, availablePageSizes };
     }, {
         params: t.Object({ id: t.String({ format: "uuid" }) }),
         detail: {

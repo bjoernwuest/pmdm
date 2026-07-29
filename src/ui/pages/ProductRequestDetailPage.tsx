@@ -1113,9 +1113,9 @@ export function Component() {
                     dataKey="identifier"
                     loading={loading}
                     emptyMessage="No data types visible"
-                    paginator={visibleValues.length > 20}
-                    rows={20}
-                    rowsPerPageOptions={[20, 50, 100]}
+                    paginator={visibleValues.length > (request?.availablePageSizes?.[0] ?? 20)}
+                    rows={request?.availablePageSizes?.[0] ?? 20}
+                    rowsPerPageOptions={request?.availablePageSizes ?? [20, 50, 100]}
                     onRowMouseEnter={(e: any) => {
                         if (infoTooltipPinned) return;
                         if (!canEditRow(e.data)) return;

@@ -95,6 +95,7 @@ export type ProductRequestDetail = ProductRequestsSelectType & {
     productTypeName: string;
     createdByName: string;
     values: ProductRequestValueEnriched[];
+    availablePageSizes: number[];
 };
 
 /** Payload for {@link message_MandatoryAndRequestorCanEditUpdated}. */
