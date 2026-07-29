@@ -196,7 +196,7 @@ Functions:
 
 ### Step 7: Overview Page
 
-New file: [`src/ui/pages/ConfigurationDataTypes.tsx`](../src/ui/pages/ConfigurationDataTypes.tsx)
+New file: [`../src/ui/pages/pmdm/ConfigurationDataTypes.tsx`](../src/ui/pages/pmdm/ConfigurationDataTypes.tsx)
 
 Uses the existing [`ConfigurationEntitiesPage`](../src/ui/pages/ConfigurationEntitiesPage.tsx) component (generic reusable overview).
 
@@ -211,7 +211,7 @@ Uses the existing [`ConfigurationEntitiesPage`](../src/ui/pages/ConfigurationEnt
 
 ### Step 8: Detail Page
 
-New file: [`src/ui/pages/ConfigurationDataTypeDetail.tsx`](../src/ui/pages/ConfigurationDataTypeDetail.tsx)
+New file: [`../src/ui/pages/pmdm/ConfigurationDataTypeDetail.tsx`](../src/ui/pages/pmdm/ConfigurationDataTypeDetail.tsx)
 
 **Route**: `/configuration/datatypes/:datatypeid`
 
@@ -388,8 +388,8 @@ sequenceDiagram
 | `src/ui/auth/app_functional_permissions.ts` | **Modify** | Add client-side FP helpers |
 | `src/ui/types/ConfigurationTypes.ts` | **Modify** | Add DataTypeSchema summary, entity, permission types |
 | `src/ui/api/DataTypes.ts` | **Create** | API client functions |
-| `src/ui/pages/ConfigurationDataTypes.tsx` | **Create** | Overview page (reuses ConfigurationEntitiesPage) |
-| `src/ui/pages/ConfigurationDataTypeDetail.tsx` | **Create** | Detail page with config editor + permissions |
+| `../src/ui/pages/pmdm/ConfigurationDataTypes.tsx` | **Create** | Overview page (reuses ConfigurationEntitiesPage) |
+| `../src/ui/pages/pmdm/ConfigurationDataTypeDetail.tsx` | **Create** | Detail page with config editor + permissions |
 | `src/ui/app_PageRegistry.ts` | **Modify** | Register both new pages |
 | `design/datatypes_ui.md` | **Create** | This document |
 

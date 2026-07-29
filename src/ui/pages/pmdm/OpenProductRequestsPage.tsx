@@ -1,4 +1,5 @@
 import type { PageMeta } from "@/types/PageType.ts";
+import { PageTemplate, PageSection } from "@/ui/PageTemplate.tsx";
 import { FP_VIEW_PRODUCTS, FP_CREATE_PRODUCT } from "@/ui/auth/functional_permissions.ts";
 import {
     getProductRequests,
@@ -22,9 +23,9 @@ import { InputText } from "primereact/inputtext";
 import { Dialog } from "primereact/dialog";
 import { Toast } from "primereact/toast";
 import { useNavigate } from "react-router-dom";
-import type { PubSubMessage } from "@/types/PubSubType";
+import type { PubSubMessage } from "@/types/PubSubType.ts";
 import { subscribe, unsubscribe } from "@/ui/pubsub.ts";
-import { apiGet } from "@/ui/api/index.ts";
+import { apiGet } from "@/ui/api";
 
 export const meta: PageMeta = {
     id: "open-product-requests",
@@ -228,7 +229,7 @@ export function Component() {
     ];
 
     return (
-        <div style={{ padding: "1rem" }}>
+        <PageTemplate urn={meta.urn} title={meta.title} description={meta.description}>
             <Toast ref={toast} />
 
             {/* Header */}
@@ -383,6 +384,6 @@ export function Component() {
                     </div>
                 </div>
             </Dialog>
-        </div>
+        </PageTemplate>
     );
 }

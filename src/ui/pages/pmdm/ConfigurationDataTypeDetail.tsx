@@ -1,8 +1,8 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { Link, useParams } from "react-router-dom";
-import { PageSection, PageTemplate } from "./PageTemplate.tsx";
+import { PageSection, PageTemplate } from "@/ui/PageTemplate.tsx";
 import type { PageMeta } from "@/types/PageType.ts";
-import { apiGet } from "@/ui/api/index.ts";
+import { apiGet } from "@/ui/api";
 import {
     getDataTypeDetail,
     getDataTypePermissions,
@@ -34,13 +34,13 @@ import {
     TAG_DISABLE,
     TAG_CREATE,
     type PubSubMessage,
-} from "@/types/PubSubType";
+} from "@/types/PubSubType.ts";
 import { subscribe, unsubscribe } from "@/ui/pubsub.ts";
 import { FilterableDropdown } from "@/ui/components/FilterableDropdown.tsx";
-import { MonacoField } from "@/ui/components/MonacoField";
-import InputField, { type InputFieldHandle } from "@/ui/components/InputField";
-import Toggle from "@/ui/components/Toggle";
-import { ScriptEditorPopup } from "@/ui/components/ScriptEditorPopup";
+import { MonacoField } from "@/ui/components/MonacoField.tsx";
+import InputField, { type InputFieldHandle } from "@/ui/components/InputField.tsx";
+import Toggle from "@/ui/components/Toggle.tsx";
+import { ScriptEditorPopup } from "@/ui/components/ScriptEditorPopup.tsx";
 import { ApiError } from "@/ui/api/errors.ts";
 import { InputText } from "primereact/inputtext";
 import { Checkbox } from "primereact/checkbox";

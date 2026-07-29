@@ -11,7 +11,7 @@ import {
     FP_VIEW_TARGET_SYSTEMS,
 } from "@/ui/auth/functional_permissions.ts";
 import { message_CreateTargetSystem, message_DisableTargetSystem, message_UpdateTargetSystem } from "@/types/TargetSystemType.ts";
-import { createConfigurationEntityPage } from "@/ui/pages/_configuration_entity_page_factory.tsx";
+import { createConfigurationEntityPage } from "@/ui/components/_configuration_entity_page_factory.tsx";
 
 export const meta: PageMeta = {
     id: "configuration-target-systems",

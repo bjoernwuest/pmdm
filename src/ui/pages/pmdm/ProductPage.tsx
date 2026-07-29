@@ -1,4 +1,5 @@
 import type { PageMeta } from "@/types/PageType.ts";
+import { PageTemplate, PageSection } from "@/ui/PageTemplate.tsx";
 import {
     FP_VIEW_PRODUCTS,
     FP_REQUEST_PRODUCT_UPDATE,
@@ -20,7 +21,7 @@ import { getProductTypes, getProductTypeDataTypes } from "@/ui/api/ProductTypes.
 import { getLookupValues } from "@/ui/api/Lookups.ts";
 import { getConsumableValues } from "@/ui/api/Consumables.ts";
 import { message_CreateProduct, message_UpdateProduct, message_DisableProduct } from "@/types/ProductType.ts";
-import type { PubSubMessage } from "@/types/PubSubType";
+import type { PubSubMessage } from "@/types/PubSubType.ts";
 import React, { useEffect, useState, useCallback, useRef } from "react";
 import { DataTable } from "primereact/datatable";
 import { Column } from "primereact/column";
@@ -37,7 +38,7 @@ import QueryBuilder, {
     type FilterPayload as QBFilterPayload,
 } from "@/ui/components/QueryBuilder.tsx";
 import { subscribe, unsubscribe } from "@/ui/pubsub.ts";
-import { apiGet } from "@/ui/api/index.ts";
+import { apiGet } from "@/ui/api";
 
 export const meta: PageMeta = {
     id: "products",
@@ -371,7 +372,7 @@ export function Component() {
     const hasFilter = filterPayload !== null;
 
     return (
-        <div style={{ padding: "1rem" }}>
+        <PageTemplate urn={meta.urn} title={meta.title} description={meta.description}>
             <Toast ref={toast} />
 
             <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: "1rem", flexWrap: "wrap", gap: "0.5rem" }}>
@@ -512,6 +513,6 @@ export function Component() {
                     </div>
                 </div>
             </Dialog>
-        </div>
+        </PageTemplate>
     );
 }

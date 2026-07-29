@@ -5,7 +5,7 @@ import { InputText } from "primereact/inputtext";
 import Label, { type LabelHandle } from "@/ui/components/Label";
 import Toggle from "@/ui/components/Toggle";
 import InputField, { type InputFieldHandle } from "@/ui/components/InputField";
-import { PageSection, PageTemplate } from "./PageTemplate.tsx";
+import { PageSection, PageTemplate } from "@/ui/PageTemplate.tsx";
 import { apiGet } from "@/ui/api/index.ts";
 import type { UserSelectType } from "@/types/UserType.ts";
 import type { ConfigurationEntity } from "@/types/ConfigurationTypes.ts";

@@ -11,7 +11,7 @@ import {
     FP_VIEW_BUSINESS_DOMAINS,
 } from "@/ui/auth/functional_permissions.ts";
 import { message_CreateBusinessDomain, message_DisableBusinessDomain, message_UpdateBusinessDomain } from "@/types/BusinessDomainType.ts";
-import { createConfigurationEntityPage } from "@/ui/pages/_configuration_entity_page_factory.tsx";
+import { createConfigurationEntityPage } from "@/ui/components/_configuration_entity_page_factory.tsx";
 
 export const meta: PageMeta = {
     id: "configuration-business-domains",

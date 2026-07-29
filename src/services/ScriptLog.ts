@@ -19,6 +19,7 @@ export const config = {
         outputFormat: "",
         editInUI: true,
         mandatoryForStart: false,
+        userProfile: false,
     },
     cfgScriptLogDeleteOlderThanHours: {
         domain: "Script Log",
@@ -30,6 +31,7 @@ export const config = {
         outputFormat: "",
         editInUI: true,
         mandatoryForStart: false,
+        userProfile: false,
     },
 } satisfies Record<string, ConfigEntrySelectType>;
 

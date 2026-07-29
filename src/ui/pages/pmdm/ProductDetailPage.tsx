@@ -1,4 +1,5 @@
 import type { PageMeta } from "@/types/PageType.ts";
+import { PageTemplate, PageSection } from "@/ui/PageTemplate.tsx";
 import { FP_VIEW_PRODUCTS, FP_REQUEST_PRODUCT_UPDATE, FP_CREATE_PRODUCT_COPY } from "@/ui/auth/functional_permissions.ts";
 import { getProduct, requestProductUpdate, copyProduct, type ProductDetailResponse } from "@/ui/api/Products.ts";
 import { findOpenRequestForProduct } from "@/ui/api/ProductRequests.ts";
@@ -12,7 +13,7 @@ import { Card } from "primereact/card";
 import { Toast } from "primereact/toast";
 import { Dialog } from "primereact/dialog";
 import { InputText } from "primereact/inputtext";
-import { apiGet } from "@/ui/api/index.ts";
+import { apiGet } from "@/ui/api";
 
 export const meta: PageMeta = {
     id: "product-detail",
@@ -149,26 +150,30 @@ export function Component() {
 
     if (loading) {
         return (
-            <div style={{ padding: "2rem", textAlign: "center" }}>
-                <i className="pi pi-spin pi-spinner" style={{ fontSize: "2rem" }} />
-                <p>Loading product...</p>
-            </div>
+            <PageTemplate urn={meta.urn} title={meta.title} description={meta.description}>
+                <div style={{ padding: "2rem", textAlign: "center" }}>
+                    <i className="pi pi-spin pi-spinner" style={{ fontSize: "2rem" }} />
+                    <p>Loading product...</p>
+                </div>
+            </PageTemplate>
         );
     }
 
     if (error || !product) {
         return (
-            <div style={{ padding: "2rem" }}>
-                <Button label="Back to Products" icon="pi pi-arrow-left" className="p-button-outlined" onClick={() => navigate("/products")} style={{ marginBottom: "1rem" }} />
-                <Card>
-                    <p style={{ color: "var(--red-500)" }}>{error ?? "Product not found"}</p>
-                </Card>
-            </div>
+            <PageTemplate urn={meta.urn} title={meta.title} description={meta.description}>
+                <div style={{ padding: "2rem" }}>
+                    <Button label="Back to Products" icon="pi pi-arrow-left" className="p-button-outlined" onClick={() => navigate("/products")} style={{ marginBottom: "1rem" }} />
+                    <Card>
+                        <p style={{ color: "var(--red-500)" }}>{error ?? "Product not found"}</p>
+                    </Card>
+                </div>
+            </PageTemplate>
         );
     }
 
     return (
-        <div style={{ padding: "1rem" }}>
+        <PageTemplate urn={meta.urn} title={meta.title} description={meta.description}>
             <Toast ref={toast} />
             <Button label="Back to Products" icon="pi pi-arrow-left" className="p-button-outlined" onClick={() => navigate("/products")} style={{ marginBottom: "1rem" }} />
 
@@ -253,6 +258,6 @@ export function Component() {
                     </div>
                 </div>
             </Dialog>
-        </div>
+        </PageTemplate>
     );
 }

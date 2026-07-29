@@ -1,8 +1,8 @@
 import { useEffect, useMemo, useState } from "react";
 import { Link } from "react-router-dom";
-import { PageSection, PageTemplate } from "./PageTemplate.tsx";
+import { PageSection, PageTemplate } from "@/ui/PageTemplate.tsx";
 import type { PageMeta } from "@/types/PageType.ts";
-import { apiGet } from "@/ui/api/index.ts";
+import { apiGet } from "@/ui/api";
 import {
     FP_DO_CONFIGURATION,
     FP_VIEW_CONSUMABLES,

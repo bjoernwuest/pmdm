@@ -151,8 +151,8 @@ User with `role=cancel` in [`ProductTypesPermission`](../src/schema/ProductType.
 | `src/repo/ProductRequestRepo.ts` | Repository for product request CRUD + value management |
 | `src/api/ProductRequestAPI.ts` | API routes for product requests |
 | `src/ui/api/ProductRequests.ts` | Client-side API functions |
-| `src/ui/pages/OpenProductRequestsPage.tsx` | Open requests list page |
-| `src/ui/pages/ProductRequestDetailPage.tsx` | Product request detail page |
+| `../src/ui/pages/pmdm/OpenProductRequestsPage.tsx` | Open requests list page |
+| `../src/ui/pages/pmdm/ProductRequestDetailPage.tsx` | Product request detail page |
 
 ### Modified Files
 | File | Change |
@@ -161,8 +161,8 @@ User with `role=cancel` in [`ProductTypesPermission`](../src/schema/ProductType.
 | `src/types/ProductRequestSchema.ts` | Add enriched types for API responses |
 | `src/api/ProductAPI.ts` | Implement `request-update` and `copy` endpoints |
 | `src/ui/api/Products.ts` | Update `requestProductUpdate` / `copyProduct` to call new endpoints |
-| `src/ui/pages/ProductPage.tsx` | Wire up "Request Update" and "Create Copy" buttons |
-| `src/ui/pages/ProductDetailPage.tsx` | Wire up "Request update" and "Create copy" buttons |
+| `../src/ui/pages/pmdm/ProductPage.tsx` | Wire up "Request Update" and "Create Copy" buttons |
+| `../src/ui/pages/pmdm/ProductDetailPage.tsx` | Wire up "Request update" and "Create copy" buttons |
 | `src/ui/PageRegistry.ts` | Register new pages |
 | `src/ui/auth/app_functional_permissions.ts` | Add new FP entries if needed |
 

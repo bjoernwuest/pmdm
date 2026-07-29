@@ -6,7 +6,7 @@
 
 **Status:** Part of the product-types implementation (see [`design/producttypes.md`](producttypes.md) section 12.1).
 
-**Source:** [`src/ui/pages/ConfigurationDataTypeDetail.tsx`](../src/ui/pages/ConfigurationDataTypeDetail.tsx:304) — `PermissionChipManager` component.
+**Source:** [`../src/ui/pages/pmdm/ConfigurationDataTypeDetail.tsx`](../src/ui/pages/ConfigurationDataTypeDetail.tsx:304) — `PermissionChipManager` component.
 
 **Target:** [`src/ui/components/PermissionChipManager.tsx`](../src/ui/components/PermissionChipManager.tsx)
 
@@ -18,7 +18,7 @@
 
 **Status:** Deferred — not part of the product-types implementation.
 
-**Source:** [`src/ui/pages/ConfigurationDataTypeDetail.tsx`](../src/ui/pages/ConfigurationDataTypeDetail.tsx:255) — `SaveRestoreField` component (inline-edit wrapper with save/revert/clear buttons).
+**Source:** [`../src/ui/pages/pmdm/ConfigurationDataTypeDetail.tsx`](../src/ui/pages/ConfigurationDataTypeDetail.tsx:255) — `SaveRestoreField` component (inline-edit wrapper with save/revert/clear buttons).
 
 **Proposed target:** [`src/ui/components/SaveRestoreField.tsx`](../src/ui/components/SaveRestoreField.tsx)
 
@@ -36,7 +36,7 @@
 
 **Status:** Deferred — not part of the product-types implementation.
 
-**Source:** [`src/ui/pages/ConfigurationDataTypeDetail.tsx`](../src/ui/pages/ConfigurationDataTypeDetail.tsx:162) — `MonacoField` component (Monaco editor with save/restore/clear).
+**Source:** [`../src/ui/pages/pmdm/ConfigurationDataTypeDetail.tsx`](../src/ui/pages/ConfigurationDataTypeDetail.tsx:162) — `MonacoField` component (Monaco editor with save/restore/clear).
 
 **Proposed target:** [`src/ui/components/MonacoField.tsx`](../src/ui/components/MonacoField.tsx)
 

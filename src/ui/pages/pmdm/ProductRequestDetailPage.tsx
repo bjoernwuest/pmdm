@@ -1,4 +1,5 @@
 import type { PageMeta } from "@/types/PageType.ts";
+import { PageTemplate, PageSection } from "@/ui/PageTemplate.tsx";
 import { FP_VIEW_PRODUCTS } from "@/ui/auth/functional_permissions.ts";
 import {
     getProductRequest,
@@ -33,7 +34,7 @@ import { Dialog } from "primereact/dialog";
 import { Toast } from "primereact/toast";
 import { Card } from "primereact/card";
 import { Checkbox } from "primereact/checkbox";
-import type { PubSubMessage } from "@/types/PubSubType";
+import type { PubSubMessage } from "@/types/PubSubType.ts";
 import { subscribe, unsubscribe } from "@/ui/pubsub.ts";
 
 export const meta: PageMeta = {
@@ -1054,7 +1055,7 @@ export function Component() {
     };
 
     return (
-        <div style={{ padding: "1rem" }}>
+        <PageTemplate urn={meta.urn} title={meta.title} description={meta.description}>
             <Toast ref={toast} />
 
             {/* Back button */}
@@ -1390,7 +1391,7 @@ export function Component() {
                         onClick={() => { setShowCancelConfirm(false); handleCancel(); }} />
                 </div>
             </Dialog>
-        </div>
+        </PageTemplate>
     );
 }
 

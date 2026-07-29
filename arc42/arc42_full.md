@@ -1916,7 +1916,7 @@ A CRON schedule (configurable, default disabled) triggers digest emails. The dig
 
 #### 8.11.6 Client-Side
 
-The `AdminNotifications` page (`src/ui/pages/AdminNotifications.tsx`) provides a full configuration UI with inline editing of all config entries with optimistic locking, manual send controls, and email simulation/preview.
+The `AdminNotifications` page (`../src/ui/pages/pmdm/AdminNotifications.tsx`) provides a full configuration UI with inline editing of all config entries with optimistic locking, manual send controls, and email simulation/preview.
 
 ### 8.12 Client-Side Architecture
 

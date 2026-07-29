@@ -6,7 +6,7 @@
 
 ## 1. Page Overview
 
-**File**: [`src/ui/pages/ProductRequestDetailPage.tsx`](../src/ui/pages/ProductRequestDetailPage.tsx)
+**File**: [`../src/ui/pages/pmdm/ProductRequestDetailPage.tsx`](../src/ui/pages/pmdm/ProductRequestDetailPage.tsx)
 
 **Route**: `/product-requests/:id`
 

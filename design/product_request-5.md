@@ -196,8 +196,8 @@ export const pageModules: readonly PageModule[] = [
 | `src/repo/ProductRequestRepo.ts` | ~400 |
 | `src/api/ProductRequestAPI.ts` | ~250 |
 | `src/ui/api/ProductRequests.ts` | ~80 |
-| `src/ui/pages/OpenProductRequestsPage.tsx` | ~300 |
-| `src/ui/pages/ProductRequestDetailPage.tsx` | ~600 |
+| `../src/ui/pages/pmdm/OpenProductRequestsPage.tsx` | ~300 |
+| `../src/ui/pages/pmdm/ProductRequestDetailPage.tsx` | ~600 |
 
 ### Modified Files
 | File | Changes |
@@ -205,8 +205,8 @@ export const pageModules: readonly PageModule[] = [
 | `src/types/ProductRequestSchema.ts` | Add PubSub topics + enriched types (~50 lines) |
 | `src/api/ProductAPI.ts` | Implement `request-update` and `copy` endpoints (~60 lines changed) |
 | `src/ui/api/Products.ts` | Update `requestProductUpdate`/`copyProduct` or deprecate (~20 lines changed) |
-| `src/ui/pages/ProductPage.tsx` | Wire up buttons with dialogs and API calls (~80 lines changed) |
-| `src/ui/pages/ProductDetailPage.tsx` | Wire up buttons with dialogs and API calls (~40 lines changed) |
+| `../src/ui/pages/pmdm/ProductPage.tsx` | Wire up buttons with dialogs and API calls (~80 lines changed) |
+| `../src/ui/pages/pmdm/ProductDetailPage.tsx` | Wire up buttons with dialogs and API calls (~40 lines changed) |
 | `src/ui/PageRegistry.ts` | Register 2 new pages (~4 lines added) |
 
 ---

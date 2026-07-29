@@ -1,4 +1,5 @@
 import type { PageMeta } from "@/types/PageType.ts";
+import { PageTemplate, PageSection } from "@/ui/PageTemplate.tsx";
 import {
     FP_VIEW_PRODUCT_EXPORTS,
     FP_EXPORT_PRODUCT_REQUESTS,
@@ -21,7 +22,7 @@ import {
 } from "@/types/ProductRequestType.ts";
 import type { ProductExportsListResponse, ProductExportRequestRow, ProductExportRow } from "@/types/ProductExportType.ts";
 import type { FilterPayload } from "@/ui/api/Products.ts";
-import type { PubSubMessage } from "@/types/PubSubType";
+import type { PubSubMessage } from "@/types/PubSubType.ts";
 import React, { useEffect, useState, useCallback, useRef } from "react";
 import { DataTable } from "primereact/datatable";
 import { Column } from "primereact/column";
@@ -447,7 +448,7 @@ export function Component() {
     };
 
     return (
-        <div style={{ padding: "1rem" }}>
+        <PageTemplate urn={meta.urn} title={meta.title} description={meta.description}>
             <Toast ref={toast} />
 
             <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: "1rem", flexWrap: "wrap", gap: "0.5rem" }}>
@@ -594,6 +595,6 @@ export function Component() {
                     )}
                 </div>
             </Dialog>
-        </div>
+        </PageTemplate>
     );
 }

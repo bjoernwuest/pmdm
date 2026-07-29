@@ -3,7 +3,7 @@ import type { PageMeta } from "@/types/PageType.ts";
 import { createConsumable, getConsumables, setConsumableDisabled, updateConsumable } from "@/ui/api/Consumables.ts";
 import { FP_DO_CONFIGURATION, FP_MANAGE_CONSUMABLES, FP_VIEW_CONSUMABLES } from "@/ui/auth/functional_permissions.ts";
 import { message_CreateConsumable, message_DisableConsumable, message_UpdateConsumable } from "@/types/ConsumableType.ts";
-import { ConfigurationEntitiesPage } from "./ConfigurationEntitiesPage.tsx";
+import { ConfigurationEntitiesPage } from "@/ui/components/ConfigurationEntitiesPage.tsx";
 import type { ConsumableSummary } from "@/types/ConfigurationTypes.ts";
 
 export const meta: PageMeta = {

@@ -3,9 +3,9 @@ import { Link, useParams } from "react-router-dom";
 import { Dialog } from "primereact/dialog";
 import { FilterableDropdown } from "@/ui/components/FilterableDropdown.tsx";
 import type { FilterableDropdownOption } from "@/ui/components/FilterableDropdown.tsx";
-import { PageSection, PageTemplate } from "./PageTemplate.tsx";
+import { PageSection, PageTemplate } from "@/ui/PageTemplate.tsx";
 import type { PageMeta } from "@/types/PageType.ts";
-import { apiGet, apiPut } from "@/ui/api/index.ts";
+import { apiGet, apiPut } from "@/ui/api";
 import {
     getProductType,
     updateProductType,
@@ -41,14 +41,14 @@ import {
     TAG_DISABLE,
     TAG_GRANT,
     TAG_REVOKE,
-} from "@/types/PubSubType";
-import type { PubSubMessage } from "@/types/PubSubType";
+} from "@/types/PubSubType.ts";
+import type { PubSubMessage } from "@/types/PubSubType.ts";
 import { subscribe, unsubscribe } from "@/ui/pubsub.ts";
 import type { UserSelectType } from "@/types/UserType.ts";
 import { DataTypeKind, DefaultValueCalculationMode } from "@/types/DataTypeType.ts";
-import InputField, { type InputFieldHandle } from "@/ui/components/InputField";
-import Label, { type LabelHandle } from "@/ui/components/Label";
-import Toggle, { type ToggleHandle } from "@/ui/components/Toggle";
+import InputField, { type InputFieldHandle } from "@/ui/components/InputField.tsx";
+import Label, { type LabelHandle } from "@/ui/components/Label.tsx";
+import Toggle, { type ToggleHandle } from "@/ui/components/Toggle.tsx";
 
 // ---------------------------------------------------------------------------
 // Meta
@@ -376,7 +376,7 @@ export function Component() {
 
         return () => {
             if (typeof token === "string") {
-                import("@/ui/pubsub").then((m) => m.unsubscribe(token));
+                import("@/ui/pubsub.ts").then((m) => m.unsubscribe(token));
             }
         };
     }, [canView, loadProductTypePermissions]);
@@ -520,7 +520,7 @@ export function Component() {
 
         return () => {
             if (typeof token === "string") {
-                import("@/ui/pubsub").then((m) => m.unsubscribe(token));
+                import("@/ui/pubsub.ts").then((m) => m.unsubscribe(token));
             }
         };
     }, [productType, producttypeid]);
@@ -538,7 +538,7 @@ export function Component() {
 
         return () => {
             if (typeof token === "string") {
-                import("@/ui/pubsub").then((m) => m.unsubscribe(token));
+                import("@/ui/pubsub.ts").then((m) => m.unsubscribe(token));
             }
         };
     }, [canView, loadAssignments]);
@@ -570,7 +570,7 @@ export function Component() {
 
         return () => {
             if (typeof token === "string") {
-                import("@/ui/pubsub").then((m) => m.unsubscribe(token));
+                import("@/ui/pubsub.ts").then((m) => m.unsubscribe(token));
             }
         };
     }, [canView]);

@@ -342,7 +342,7 @@ export async function importProducts(productTypeIdentifier: string, file: File):
 
 ## 8. UI Pages
 
-### 8.1 [`src/ui/pages/ProductPage.tsx`](src/ui/pages/ProductPage.tsx) (new)
+### 8.1 [`../src/ui/pages/pmdm/ProductPage.tsx`](src/ui/pages/ProductPage.tsx) (new)
 
 #### Page Meta
 
@@ -550,7 +550,7 @@ type DataTypeMeta = {
 };
 ```
 
-### 8.2 [`src/ui/pages/ProductDetailPage.tsx`](src/ui/pages/ProductDetailPage.tsx) (new)
+### 8.2 [`../src/ui/pages/pmdm/ProductDetailPage.tsx`](src/ui/pages/ProductDetailPage.tsx) (new)
 
 #### Page Meta
 
@@ -687,8 +687,8 @@ Run `bun install` after adding.
 | `src/repo/ProductRepo.ts` | Repository: CRUD, values, import, permissions |
 | `src/api/ProductAPI.ts` | API routes |
 | `src/ui/api/Products.ts` | Frontend API client |
-| `src/ui/pages/ProductPage.tsx` | Product list page |
-| `src/ui/pages/ProductDetailPage.tsx` | Product detail page |
+| `../src/ui/pages/pmdm/ProductPage.tsx` | Product list page |
+| `../src/ui/pages/pmdm/ProductDetailPage.tsx` | Product detail page |
 | `src/ui/components/QueryBuilder.tsx` | Reusable AND/OR query builder component |
 
 ### Modified Files

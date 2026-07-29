@@ -1,7 +1,7 @@
 import type { ConfigurationEntity } from "@/types/ConfigurationTypes.ts";
 import type { PageMeta } from "@/types/PageType.ts";
 import type { TagExpression } from "@/types/PubSubType";
-import { ConfigurationEntitiesPage } from "./ConfigurationEntitiesPage.tsx";
+import { ConfigurationEntitiesPage } from "@/ui/components/ConfigurationEntitiesPage.tsx";
 import type { ReactElement } from "react";
 
 /**

@@ -1,5 +1,5 @@
 import type { PageMeta } from "@/types/PageType.ts";
-import { ConfigurationEntitiesPage } from "./ConfigurationEntitiesPage.tsx";
+import { ConfigurationEntitiesPage } from "@/ui/components/ConfigurationEntitiesPage.tsx";
 import {
     FP_DO_CONFIGURATION,
     FP_MANAGE_DATA_TYPES,
@@ -24,7 +24,7 @@ import {
     message_DisableDataType,
     message_UpdateDataType,
 } from "@/types/DataTypeType.ts";
-import { apiGet } from "@/ui/api/index.ts";
+import { apiGet } from "@/ui/api";
 import { useEffect, useMemo, useState } from "react";
 
 export const meta: PageMeta = {

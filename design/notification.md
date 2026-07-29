@@ -422,7 +422,7 @@ When simulating for a group, `{User.Firstname}` in the template resolves to `"Me
 
 ## 8. UI Page
 
-### New file: `src/ui/pages/AdminNotifications.tsx`
+### New file: `../src/ui/pages/pmdm/AdminNotifications.tsx`
 
 Registered in `src/ui/PageRegistry.ts` (template page, admin section).
 

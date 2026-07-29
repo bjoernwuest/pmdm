@@ -1,9 +1,9 @@
 import { useCallback, useEffect, useState } from "react";
-import { PageSection, PageTemplate } from "./PageTemplate.tsx";
+import { PageSection, PageTemplate } from "@/ui/PageTemplate.tsx";
 import type { PageMeta } from "@/types/PageType.ts";
 import { FP_MANAGE_DATA_TYPES } from "@/ui/auth/functional_permissions.ts";
 import { getScriptLogs, clearScriptLog, type ScriptLogEntry } from "@/ui/api/ScriptLog.ts";
-import { apiGet } from "@/ui/api/index.ts";
+import { apiGet } from "@/ui/api";
 import { MultiSelect } from "primereact/multiselect";
 import { InputText } from "primereact/inputtext";
 

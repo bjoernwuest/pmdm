@@ -519,7 +519,7 @@ export const FP_EDIT_EXPORT_STATUS     = { functionalPermissionName: FunctionalP
 
 ---
 
-## 7. UI (`src/ui/pages/ProductExportsPage.tsx` — new)
+## 7. UI (`../src/ui/pages/pmdm/ProductExportsPage.tsx` — new)
 
 ### 7.1 Page Registration
 
@@ -697,7 +697,7 @@ The `ProductExportsPage` subscribes to PubSub messages and updates **only the af
 |---|---|
 | `src/repo/ProductExportRepo.ts` | Data access layer for ProductExport operations |
 | `src/api/ProductExportAPI.ts` | REST API routes for product exports |
-| `src/ui/pages/ProductExportsPage.tsx` | Product exports management page |
+| `../src/ui/pages/pmdm/ProductExportsPage.tsx` | Product exports management page |
 | `src/ui/api/ProductExports.ts` | Browser-side API client wrapper |
 
 ### 9.2 Modified Files

@@ -394,7 +394,7 @@ Read calls (`apiGet`) bypass bundling as direct `fetch()` calls.
 
 ## 7. Frontend Pages
 
-### 7.1 [`ConfigurationProductTypes.tsx`](../src/ui/pages/ConfigurationProductTypes.tsx) — Add Link Column
+### 7.1 [`ConfigurationProductTypes.tsx`](../src/ui/pages/pmdm/ConfigurationProductTypes.tsx) — Add Link Column
 
 The existing page uses `createConfigurationEntityPage()` → `_configuration_entity_page_factory.tsx` → `ConfigurationEntitiesPage.tsx`.
 
@@ -412,7 +412,7 @@ rowHref: (row) => `/configuration/product-types/${row.identifier}/datatypes`,
 
 This makes each product type row clickable — navigating to the detail/datatypes page.
 
-### 7.2 [`ConfigurationProductTypesDataTypes.tsx`](../src/ui/pages/ConfigurationProductTypesDataTypes.tsx) — NEW
+### 7.2 [`ConfigurationProductTypesDataTypes.tsx`](../src/ui/pages/pmdm/ConfigurationProductTypesDataTypes.tsx) — NEW
 
 **Route:** `/configuration/product-types/:producttypeid/datatypes`
 
@@ -430,7 +430,7 @@ This makes each product type row clickable — navigating to the detail/datatype
 - Dialog: Paginated list/table of available DataTypes (from `getDataTypes()` with pagination parameters)
   - Display: `dataType.name`, `dataType.kind`, and `dataType.description` for each option
   - Filter out already-assigned DataTypes on the client side
-  - Pagination controls match the pattern in [`ConfigurationProductTypes.tsx`](../src/ui/pages/ConfigurationProductTypes.tsx)
+  - Pagination controls match the pattern in [`ConfigurationProductTypes.tsx`](../src/ui/pages/pmdm/ConfigurationProductTypes.tsx)
 - On confirm: calls `assignDataType()`
 
 #### C. Assigned DataTypes Table
@@ -474,7 +474,7 @@ Required permissions: `FP_DO_CONFIGURATION` + `FP_VIEW_PRODUCT_TYPES`.
 
 ---
 
-### 7.3 [`ConfigurationProductTypesDataTypesTargetSystems.tsx`](../src/ui/pages/ConfigurationProductTypesDataTypesTargetSystems.tsx) — NEW
+### 7.3 [`ConfigurationProductTypesDataTypesTargetSystems.tsx`](../src/ui/pages/pmdm/ConfigurationProductTypesDataTypesTargetSystems.tsx) — NEW
 
 **Route:** `/configuration/product-types/:producttypeid/datatypes/:datatypeassignmentid/targetsystems`
 
@@ -505,7 +505,7 @@ Pattern: Same as the columns in 7.2.C, but displayed as labeled fields with the 
 
 #### D. Permissions Section
 - Extract **`PermissionChipManager`** to a shared component at [`src/ui/components/PermissionChipManager.tsx`](../src/ui/components/) (see section 12).
-- Both [`ConfigurationDataTypeDetail.tsx`](../src/ui/pages/ConfigurationDataTypeDetail.tsx) and this page import from the shared location.
+- Both [`ConfigurationDataTypeDetail.tsx`](../src/ui/pages/pmdm/ConfigurationDataTypeDetail.tsx) and this page import from the shared location.
 - Three panels: Viewer, Writer, Approver
 - Load groups from `/api/groups` (same as DataTypeSchema detail)
 - Grant: select group from dropdown, calls `grantProductTypeDataTypePermission()`
@@ -517,7 +517,7 @@ Pattern: Same as the columns in 7.2.C, but displayed as labeled fields with the 
 - Button: "Assign Target System" with `pi-plus` icon, opens dialog
 - Dialog: **Paginated** list/table of available TargetSystems (from `getTargetSystems()` with pagination)
   - Filter out already-assigned ones on the client side
-  - Pagination controls match the pattern in [`ConfigurationProductTypes.tsx`](../src/ui/pages/ConfigurationProductTypes.tsx)
+  - Pagination controls match the pattern in [`ConfigurationProductTypes.tsx`](../src/ui/pages/pmdm/ConfigurationProductTypes.tsx)
 - Table columns:
 
 | Column | Source | Editable | Widget |
@@ -563,9 +563,9 @@ Files to create or modify, in dependency order:
 
 ### Phase 6: Frontend Pages & Factory
 7. **MODIFY** [`src/ui/pages/_configuration_entity_page_factory.tsx`](../src/ui/pages/_configuration_entity_page_factory.tsx) — Extend to accept `rowHref` and `renderExtraCells`
-8. **MODIFY** [`src/ui/pages/ConfigurationProductTypes.tsx`](../src/ui/pages/ConfigurationProductTypes.tsx) — Add `rowHref` for detail link
-9. **CREATE** [`src/ui/pages/ConfigurationProductTypesDataTypes.tsx`](../src/ui/pages/ConfigurationProductTypesDataTypes.tsx) — New page (section 7.2)
-10. **CREATE** [`src/ui/pages/ConfigurationProductTypesDataTypesTargetSystems.tsx`](../src/ui/pages/ConfigurationProductTypesDataTypesTargetSystems.tsx) — New page (section 7.3)
+8. **MODIFY** [`../src/ui/pages/pmdm/ConfigurationProductTypes.tsx`](../src/ui/pages/pmdm/ConfigurationProductTypes.tsx) — Add `rowHref` for detail link
+9. **CREATE** [`../src/ui/pages/pmdm/ConfigurationProductTypesDataTypes.tsx`](../src/ui/pages/pmdm/ConfigurationProductTypesDataTypes.tsx) — New page (section 7.2)
+10. **CREATE** [`../src/ui/pages/pmdm/ConfigurationProductTypesDataTypesTargetSystems.tsx`](../src/ui/pages/pmdm/ConfigurationProductTypesDataTypesTargetSystems.tsx) — New page (section 7.3)
 
 ### Phase 7: Page Registry
 11. **MODIFY** [`src/ui/app_PageRegistry.ts`](../src/ui/app_PageRegistry.ts) — Import and register new pages

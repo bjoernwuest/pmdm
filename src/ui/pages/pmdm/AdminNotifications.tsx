@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useRef, useState } from "react";
-import { PageSection, PageTemplate } from "./PageTemplate.tsx";
+import { PageSection, PageTemplate } from "@/ui/PageTemplate.tsx";
 import type { PageMeta } from "@/types/PageType.ts";
 import {
     getNotificationConfig,
@@ -13,8 +13,8 @@ import {
 } from "@/ui/api/Notifications.ts";
 import { ApiError } from "@/ui/api/errors.ts";
 import { FP_NOTIFICATIONS } from "@/ui/auth/functional_permissions.ts";
-import Toggle from "@/ui/components/Toggle";
-import InputField, { type InputFieldHandle } from "@/ui/components/InputField";
+import Toggle from "@/ui/components/Toggle.tsx";
+import InputField, { type InputFieldHandle } from "@/ui/components/InputField.tsx";
 import { Dialog } from "primereact/dialog";
 import { MultiSelect } from "primereact/multiselect";
 import { Dropdown } from "primereact/dropdown";

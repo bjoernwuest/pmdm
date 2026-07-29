@@ -3,7 +3,7 @@ import type { PageMeta } from "@/types/PageType.ts";
 import { createLookup, getLookups, setLookupDisabled, updateLookup } from "@/ui/api/Lookups.ts";
 import { FP_DO_CONFIGURATION, FP_MANAGE_LOOKUPS, FP_VIEW_LOOKUPS } from "@/ui/auth/functional_permissions.ts";
 import { message_CreateLookup, message_DisableLookup, message_UpdateLookup } from "@/types/LookupsType.ts";
-import { ConfigurationEntitiesPage } from "./ConfigurationEntitiesPage.tsx";
+import { ConfigurationEntitiesPage } from "@/ui/components/ConfigurationEntitiesPage.tsx";
 import type { LookupSummary } from "@/types/ConfigurationTypes.ts";
 
 export const meta: PageMeta = {

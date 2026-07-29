@@ -15,7 +15,7 @@ import {
     message_DisableProductType,
     message_UpdateProductType,
 } from "@/types/ProductTypeType.ts";
-import { createConfigurationEntityPage } from "@/ui/pages/_configuration_entity_page_factory.tsx";
+import { createConfigurationEntityPage } from "@/ui/components/_configuration_entity_page_factory.tsx";
 
 export const meta: PageMeta = {
     id: "configuration-product-types",
