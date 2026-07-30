@@ -595,6 +595,10 @@ export async function createProductRequest(
             dataTypeConfig: DataTypeSchema.config,
             dataTypeMandatory: DataTypeSchema.mandatory,
             dataTypeRequestorCanEdit: DataTypeSchema.requestorCanEdit,
+            dataTypeMandatoryScript: DataTypeSchema.mandatory_script,
+            dataTypeRequestorCanEditScript: DataTypeSchema.requestorCanEdit_script,
+            ptMandatoryScript: ProductTypesDataTypes.mandatory_script,
+            ptRequestorCanEditScript: ProductTypesDataTypes.requestorCanEdit_script,
             dataTypeOwner: DataTypeSchema.owner,
             dataTypeDisabled: DataTypeSchema.disabled,
         })
@@ -706,6 +710,19 @@ export async function createProductRequest(
             } as ProductRequestsValuesInsert);
     }
 
+    // Evaluate Mandatory and RequestorCanEdit scripts for the newly created
+    // values so the UI receives status flags without a full detail refetch.
+    try {
+        const statuses = await reevaluateMandatoryAndRequestorCanEdit(tx, created.identifier!, user.identifier!);
+        PubSub.publish(message_MandatoryAndRequestorCanEditUpdated, {
+            productRequest: created.identifier!,
+            mandatory: statuses.mandatory,
+            requestorCanEdit: statuses.requestorCanEdit,
+        });
+    } catch (e: unknown) {
+        if (devMode) console.error("Mandatory/requestorCanEdit evaluation at creation failed:", e);
+    }
+
     PubSub.publish(message_CreateProductRequest, created);
     return created as ProductRequestType;
 }
@@ -778,14 +795,25 @@ export async function getProductRequestLookupValues(
     }
 
     const dataTypeRows = await db
-        .select({ kind: DataTypeSchema.kind, config: DataTypeSchema.config })
+        .select({
+            kind: DataTypeSchema.kind,
+            dtConfig: DataTypeSchema.config,
+            ptConfig: ProductTypesDataTypes.config,
+        })
         .from(DataTypeSchema)
+        .leftJoin(ProductTypesDataTypes, and(
+            eq(ProductTypesDataTypes.dataType, dataTypeIdentifier),
+            eq(ProductTypesDataTypes.productType, requestRows[0]!.productType!),
+        ))
         .where(eq(DataTypeSchema.identifier, dataTypeIdentifier))
         .limit(1);
     if (dataTypeRows.length === 0) throw new Error("Data type not found");
     if (dataTypeRows[0]!.kind !== DataTypeKind.Lookup) throw new Error("Data type is not of kind lookup");
 
-    const config = dataTypeRows[0]!.config as ConfigLookup;
+    const config = resolveConfig(
+        dataTypeRows[0]!.dtConfig as Record<string, unknown> | null,
+        dataTypeRows[0]!.ptConfig as Record<string, unknown> | null,
+    ) as ConfigLookup;
     if (!config?.source) throw new Error("Data type has no lookup source configured");
 
     const lookup = await LookupRepo.getByIdentifier(db, config.source);
@@ -828,14 +856,25 @@ export async function getProductRequestConsumableValues(
     }
 
     const dataTypeRows = await db
-        .select({ kind: DataTypeSchema.kind, config: DataTypeSchema.config })
+        .select({
+            kind: DataTypeSchema.kind,
+            dtConfig: DataTypeSchema.config,
+            ptConfig: ProductTypesDataTypes.config,
+        })
         .from(DataTypeSchema)
+        .leftJoin(ProductTypesDataTypes, and(
+            eq(ProductTypesDataTypes.dataType, dataTypeIdentifier),
+            eq(ProductTypesDataTypes.productType, requestRows[0]!.productType!),
+        ))
         .where(eq(DataTypeSchema.identifier, dataTypeIdentifier))
         .limit(1);
     if (dataTypeRows.length === 0) throw new Error("Data type not found");
     if (dataTypeRows[0]!.kind !== DataTypeKind.Consumable) throw new Error("Data type is not of kind consumable");
 
-    const config = dataTypeRows[0]!.config as ConfigConsumable;
+    const config = resolveConfig(
+        dataTypeRows[0]!.dtConfig as Record<string, unknown> | null,
+        dataTypeRows[0]!.ptConfig as Record<string, unknown> | null,
+    ) as ConfigConsumable;
     if (!config?.source) throw new Error("Data type has no consumable source configured");
 
     const consumable = await ConsumableRepo.getByIdentifier(db, config.source);
@@ -885,14 +924,25 @@ export async function getProductRequestProductValues(
     }
 
     const dataTypeRows = await db
-        .select({ kind: DataTypeSchema.kind, config: DataTypeSchema.config })
+        .select({
+            kind: DataTypeSchema.kind,
+            dtConfig: DataTypeSchema.config,
+            ptConfig: ProductTypesDataTypes.config,
+        })
         .from(DataTypeSchema)
+        .leftJoin(ProductTypesDataTypes, and(
+            eq(ProductTypesDataTypes.dataType, dataTypeIdentifier),
+            eq(ProductTypesDataTypes.productType, requestRows[0]!.productType!),
+        ))
         .where(eq(DataTypeSchema.identifier, dataTypeIdentifier))
         .limit(1);
     if (dataTypeRows.length === 0) throw new Error("Data type not found");
     if (dataTypeRows[0]!.kind !== DataTypeKind.Product) throw new Error("Data type is not of kind product");
 
-    const config = dataTypeRows[0]!.config as ConfigProduct;
+    const config = resolveConfig(
+        dataTypeRows[0]!.dtConfig as Record<string, unknown> | null,
+        dataTypeRows[0]!.ptConfig as Record<string, unknown> | null,
+    ) as ConfigProduct;
 
     // Currently-selected product numbers for this data type on this request,
     // so they remain resolvable even if disabled or filtered out.
@@ -1596,8 +1646,8 @@ export async function updateProductRequestValue(
             dataTypeIdentifier,
             principal: { userId: user.identifier ?? null, apiKeyIdentifier: null, isApiKey: false },
         });
-        recalculated = await recalculateOnChangeCalculatedValues(tx, user.identifier!, requestId, updateCtx);
         await recalculateDefaultValues(tx, user.identifier!, requestId, updateCtx);
+        recalculated = await recalculateOnChangeCalculatedValues(tx, user.identifier!, requestId, updateCtx);
     }
 
     // Re-evaluate mandatory & requestorCanEdit scripts for all values.
