@@ -12,6 +12,7 @@ export const config = {
         description: "Page sizes for user list pagination as number array, e.g. [10, 20, 50].",
         type: ConfigValueTypes["number[]"],
         value: [...DEFAULT_USER_LIST_PAGE_SIZES],
+        formatRegex: "^[1-9][0-9]{0,3}$",
         inputFormat: "^[1-9][0-9]{0,3}$",
         outputFormat: "",
         editInUI: true,
