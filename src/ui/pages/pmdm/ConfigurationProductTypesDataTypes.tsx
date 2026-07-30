@@ -390,7 +390,7 @@ export function Component() {
             setAssignmentsTotal(payload.total);
             setAvailablePageSizes(payload.availablePageSizes);
             if (payload.availablePageSizes.length > 0 && !payload.availablePageSizes.includes(assignmentsPageSize)) {
-                setAssignmentsPageSize(payload.availablePageSizes[0]);
+                setAssignmentsPageSize(payload.availablePageSizes[0]!);
                 setAssignmentsPage(0);
             }
         } catch (e) {

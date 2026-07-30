@@ -119,7 +119,7 @@ export function Component() {
             });
             setData(result);
             if (result.availablePageSizes.length > 0 && !result.availablePageSizes.includes(pageSize)) {
-                setPageSize(result.availablePageSizes[0]);
+                setPageSize(result.availablePageSizes[0]!);
                 setPage(0);
             }
         } catch (e: any) {

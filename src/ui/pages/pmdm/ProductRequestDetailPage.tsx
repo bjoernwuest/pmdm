@@ -431,11 +431,11 @@ export function Component() {
         const sub5 = subscribe({ and: message_MandatoryAndRequestorCanEditUpdated }, (msg: PubSubMessage) => {
             const data = msg.data as MandatoryAndRequestorCanEditPayload;
             if (data.productRequest !== id) return;
-            setRequest((prev) => {
+            setRequest((prev: any) => {
                 if (!prev) return prev;
                 return {
                     ...prev,
-                    values: prev.values.map((v) => ({
+                    values: prev.values.map((v: any) => ({
                         ...v,
                         mandatory: data.mandatory[v.dataType!] ?? v.mandatory,
                         requestorCanEdit: data.requestorCanEdit[v.dataType!] ?? v.requestorCanEdit,
