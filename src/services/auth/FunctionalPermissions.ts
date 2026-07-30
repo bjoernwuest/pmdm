@@ -20,6 +20,9 @@ export const FP_EDIT_FUNCTIONAL_PERMISSION_ASSIGNMENTS = await registerFunctiona
 const FP_READ_FUNCTIONAL_PERMISSIONS_DEF: FunctionalPermissionInsertType = { functionalPermissionName: FunctionalPermissionNames.FP_READ_FUNCTIONAL_PERMISSIONS, description: "View the complete list of all permissions available in the system and their descriptions. Required to see which permissions exist before assigning them.", group: "Admin" };
 export const FP_READ_FUNCTIONAL_PERMISSIONS = await registerFunctionalPermission(getDatabaseConnection(), FP_READ_FUNCTIONAL_PERMISSIONS_DEF) satisfies FunctionalPermissionSelectType;
 
+const FP_READ_FUNCTIONAL_PERMISSION_GROUPS_DEF: FunctionalPermissionInsertType = { functionalPermissionName: FunctionalPermissionNames.FP_READ_FUNCTIONAL_PERMISSION_GROUPS, description: "Read the groups assigned in the system.", group: "Admin" };
+export const FP_READ_FUNCTIONAL_PERMISSION_GROUPS = await registerFunctionalPermission(getDatabaseConnection(), FP_READ_FUNCTIONAL_PERMISSION_GROUPS_DEF) satisfies FunctionalPermissionSelectType;
+
 const FP_READ_API_DOCUMENTATION_DEF: FunctionalPermissionInsertType = { functionalPermissionName: FunctionalPermissionNames.FP_READ_API_DOCUMENTATION, description: "Access the interactive API documentation page (Swagger/OpenAPI) to browse available endpoints and their schemas.", group: "Admin" };
 export const FP_READ_API_DOCUMENTATION = await registerFunctionalPermission(getDatabaseConnection(), FP_READ_API_DOCUMENTATION_DEF) satisfies FunctionalPermissionSelectType;
 
