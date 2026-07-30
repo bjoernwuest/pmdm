@@ -221,6 +221,13 @@ export async function startScheduler(): Promise<StartupSyncState> {
     rejectGroupsReady = reject;
   });
 
+  // Ensure config rows exist (seed with defaults on first run)
+  const db = getDatabaseConnection();
+  for (const entry of Object.values(config)) {
+    const existing = await getConfigEntriesByKey(db, entry.domain, entry.key, { limit: 1 });
+    if (existing.length < 1) await upsertConfigEntry(db, entry);
+  }
+
   // read cron expression from config
   const cfg = (await getConfigEntriesByKey(getDatabaseConnection(), config.cfgSyncInterval.domain, config.cfgSyncInterval.key))[0];
   const expr = cfg?.value ? String(cfg.value) : "off";
