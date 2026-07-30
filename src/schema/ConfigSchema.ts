@@ -59,6 +59,7 @@ export const ConfigEntry = pgTable("config", {
     type: text("type").$type<ConfigValueTypes>().notNull(),
     value: jsonb("value"),
     editInUI: boolean("edit_in_ui").notNull().default(true),
+    formatRegex: text("format").notNull().default("^[\\s\\S]*$"),
     inputFormat: text("input_format").notNull().default(""),
     outputFormat: text("output_format").notNull().default(""),
     mandatoryForStart: boolean("mandatory_for_start").notNull().default(false),
