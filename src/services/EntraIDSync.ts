@@ -20,6 +20,7 @@ export const config = {
   cfgClientSecret: { domain: configDomain, key: `ClientSecret`, description: "The Client Secret of the Azure AD App Registration used for Entra ID synchronization.", type: ConfigValueTypes.string, value: undefined, inputFormat: "^[A-Za-z0-9\\-_.~]{34,40}$", outputFormat: "", editInUI: true, mandatoryForStart: true, userProfile: false },
   cfgTenantId: { domain: configDomain, key: `TenantID`, description: "The Tenant ID of the Azure AD App Registration used for Entra ID synchronization.", type: ConfigValueTypes.string, value: undefined, inputFormat: "^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-4[0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}$", outputFormat: "", editInUI: true, mandatoryForStart: true, userProfile: false },
   cfgSyncInterval: { domain: configDomain, key: `SyncInterval`, description: "The interval between synchronizations with EntraID, given in CRON notion. Set to 'off' to disable scheduled synchronization.", type: ConfigValueTypes.string, value: undefined, inputFormat: "^((?i)@(yearly|annually|monthly|weekly|daily|midnight|hourly)|^\\s*([^ ]+\\s+){4,6}[^ ]+\\s*|^(?i)off)$", outputFormat: "", editInUI: true, mandatoryForStart: true, userProfile: false },
+  cfgEnableUserSync: { domain: configDomain, key: `EnableUserSync`, description: "Enable periodic user synchronization and on-login user/group membership sync from EntraID. Disable if you only need group data.", type: ConfigValueTypes.boolean, value: false, inputFormat: "", outputFormat: "", editInUI: true, mandatoryForStart: false, userProfile: false },
   cfgSyncDeltalinkGroups: { domain: configDomain, key: `Delta.Groups`, description: "The group IDs to synchronize delta changes for. Leave empty to synchronize all groups.", type: ConfigValueTypes.string, value: undefined, inputFormat: "", outputFormat: "", editInUI: false, mandatoryForStart: false, userProfile: false },
   cfgSyncDeltalinkUsers: { domain: configDomain, key: `Delta.Users`, description: "The user IDs to synchronize delta changes for. Leave empty to synchronize all users.", type: ConfigValueTypes.string, value: undefined, inputFormat: "", outputFormat: "", editInUI: false, mandatoryForStart: false, userProfile: false },
 } satisfies Record<string, ConfigEntrySelectType>;
@@ -224,6 +225,16 @@ export async function startScheduler(): Promise<StartupSyncState> {
   const cfg = (await getConfigEntriesByKey(getDatabaseConnection(), config.cfgSyncInterval.domain, config.cfgSyncInterval.key))[0];
   const expr = cfg?.value ? String(cfg.value) : "off";
 
+  // helper to determine whether user sync is enabled from config
+  async function isUserSyncEnabled(db: DBClient): Promise<boolean> {
+    const row = (await getConfigEntriesByKey(db, config.cfgEnableUserSync.domain, config.cfgEnableUserSync.key))[0];
+    const raw = row?.value;
+    if (raw === null || raw === undefined) return false;
+    if (typeof raw === "boolean") return raw;
+    if (raw === "true" || raw === "1" || raw === 1) return true;
+    return false;
+  }
+
   // helper to run the syncs serially and guard against concurrent runs
   async function runOnce(onGroupsSynced?: () => void) {
     if (syncRunning) return; // skip concurrent
@@ -240,15 +251,17 @@ export async function startScheduler(): Promise<StartupSyncState> {
       onGroupsSynced?.();
 
       // Users and memberships can continue in the background after groups are available.
-      await runInTransaction(getDatabaseConnection(), async tx => {
-        const client = getGraphClient(tx);
-        await userSync(client, tx);
+      if (await isUserSyncEnabled(getDatabaseConnection())) {
+        await runInTransaction(getDatabaseConnection(), async tx => {
+          const client = getGraphClient(tx);
+          await userSync(client, tx);
 
-        let count = await countUsersAndGroups(tx);
-        let users: boolean = count.users > count.groups;
+          let count = await countUsersAndGroups(tx);
+          let users: boolean = count.users > count.groups;
 
-        await membershipSync(client, tx, (users ? (await getUsers(tx)).map(u => ({identifier: u.identifier})) : (await getGroups(tx)).map(g => ({identifier: g.identifier}))), users);
-      });
+          await membershipSync(client, tx, (users ? (await getUsers(tx)).map(u => ({identifier: u.identifier})) : (await getGroups(tx)).map(g => ({identifier: g.identifier}))), users);
+        });
+      }
     } catch (e) {
       if (!groupsSynced) rejectGroupsReady(e);
       throw e;
@@ -267,6 +280,7 @@ export async function startScheduler(): Promise<StartupSyncState> {
        const idTokenClaims = session.idTokenClaims;
        try {
          await runInTransaction(getDatabaseConnection(), async tx => {
+           if (!await isUserSyncEnabled(tx)) return;
            const graphClient = getGraphClient(tx);
            await upsertUsers(tx, [{ identifier: idTokenClaims.oid, firstName: idTokenClaims.given_name ?? '', lastName: idTokenClaims.family_name ?? '', email: idTokenClaims.email || idTokenClaims.preferred_username || '', disabled: false }]);
            // CRITICAL: Sync memberships from Graph API instead of token claims for reliability
