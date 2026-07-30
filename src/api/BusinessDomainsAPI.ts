@@ -1,5 +1,5 @@
 import type { ApiInstance } from "@/apps/api.ts";
-import { FP_MANAGE_BUSINESS_DOMAINS, FP_VIEW_BUSINESS_DOMAINS } from "@/services/auth/FunctionalPermissions.ts";
+import { FP_DO_CONFIGURATION, FP_MANAGE_BUSINESS_DOMAINS, FP_VIEW_BUSINESS_DOMAINS } from "@/services/auth/FunctionalPermissions.ts";
 import { count, create, disable, enable, get, getByIdentifier, update } from "@/repo/BusinessDomainRepo.ts";
 import { BusinessDomainsSelectSchema, message_CreateBusinessDomain, message_DisableBusinessDomain, message_UpdateBusinessDomain } from "@/types/BusinessDomainType.ts";
 import { registerConfigurationEntityRoutes } from "@/api/_crud_API.ts";
@@ -31,6 +31,7 @@ export default function register(app: ApiInstance): void {
         entitySchema: BusinessDomainsSelectSchema,
         viewPermission: FP_VIEW_BUSINESS_DOMAINS,
         managePermission: FP_MANAGE_BUSINESS_DOMAINS,
+        gatekeeperPermission: FP_DO_CONFIGURATION,
         repo: { count, get, getByIdentifier, create, update, disable, enable, },
         pubSubTags: [ message_CreateBusinessDomain, message_UpdateBusinessDomain, message_DisableBusinessDomain, ],
     });

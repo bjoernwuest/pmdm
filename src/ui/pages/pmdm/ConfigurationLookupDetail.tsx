@@ -21,7 +21,7 @@ import {
     updateLookup,
     updateLookupValue,
 } from "@/ui/api/Lookups.ts";
-import { FP_MANAGE_LOOKUPS, FP_VIEW_LOOKUPS } from "@/ui/auth/functional_permissions.ts";
+import { FP_DO_CONFIGURATION, FP_MANAGE_LOOKUPS, FP_VIEW_LOOKUPS } from "@/ui/auth/functional_permissions.ts";
 import type { LookupEntity, LookupValue } from "@/types/ConfigurationTypes.ts";
 import type { UserSelectType } from "@/types/UserType.ts";
 import {
@@ -50,7 +50,7 @@ export const meta: PageMeta = {
         parent: "configuration-lookups",
         hidden: true,
     },
-    requiredFunctionalPermissions: [FP_VIEW_LOOKUPS.functionalPermissionName],
+    requiredFunctionalPermissions: [FP_DO_CONFIGURATION.functionalPermissionName, FP_VIEW_LOOKUPS.functionalPermissionName],
 };
 
 type ViewerContext = { permissionNames: string[] };

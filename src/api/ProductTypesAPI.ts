@@ -1,6 +1,6 @@
 import type { ApiInstance } from "@/apps/api.ts";
 import { authorize, getLoggedinUserObject } from "@/services/Auth.ts";
-import { FP_MANAGE_PRODUCT_TYPES, FP_VIEW_PRODUCT_TYPES, FP_READ_PRODUCT_FILTER } from "@/services/auth/FunctionalPermissions.ts";
+import { FP_DO_CONFIGURATION, FP_MANAGE_PRODUCT_TYPES, FP_VIEW_PRODUCT_TYPES } from "@/services/auth/FunctionalPermissions.ts";
 import {
     message_CreateProductType,
     message_DisableProductType,
@@ -69,8 +69,8 @@ export default function register(app: ApiInstance): void {
         detailResponseKey: "productType",
         entitySchema: ProductTypeSchema,
         viewPermission: FP_VIEW_PRODUCT_TYPES,
-        alternativeListViewPermissions: [FP_READ_PRODUCT_FILTER],
         managePermission: FP_MANAGE_PRODUCT_TYPES,
+        gatekeeperPermission: FP_DO_CONFIGURATION,
         repo: ProductTypeRepo,
         pubSubTags: [ message_CreateProductType, message_UpdateProductType, message_DisableProductType, ],
         updateBodySchema: t.Object({
@@ -94,8 +94,11 @@ export default function register(app: ApiInstance): void {
     // GET /product_types/:producttypeid/datatypes — List assigned DataTypes
     app.get("/product_types/:producttypeid/datatypes", async (context) => {
         const claims = context.session?.idTokenClaims ?? context.tokenClaims ?? {};
-        const authz = await authorize(context.dbClient, claims, [FP_VIEW_PRODUCT_TYPES, FP_READ_PRODUCT_FILTER]);
-        if (!authz.some((perm) => perm.identifier === FP_VIEW_PRODUCT_TYPES.identifier || perm.identifier === FP_READ_PRODUCT_FILTER.identifier)) {
+        const authz = await authorize(context.dbClient, claims, [FP_DO_CONFIGURATION, FP_VIEW_PRODUCT_TYPES]);
+        if (!authz.some((perm) => perm.identifier === FP_DO_CONFIGURATION.identifier)) {
+            return status(403, `Permission denied. Required: ${FP_DO_CONFIGURATION.functionalPermissionName}`);
+        }
+        if (!authz.some((perm) => perm.identifier === FP_VIEW_PRODUCT_TYPES.identifier)) {
             return status(403, `Permission denied. Required: ${FP_VIEW_PRODUCT_TYPES.functionalPermissionName}`);
         }
 
@@ -151,7 +154,10 @@ export default function register(app: ApiInstance): void {
     // POST /product_types/:producttypeid/datatypes — Assign a DataType
     app.post("/product_types/:producttypeid/datatypes", async (context) => {
         const claims = context.session?.idTokenClaims ?? context.tokenClaims ?? {};
-        const authz = await authorize(context.dbClient, claims, [FP_MANAGE_PRODUCT_TYPES]);
+        const authz = await authorize(context.dbClient, claims, [FP_DO_CONFIGURATION, FP_MANAGE_PRODUCT_TYPES]);
+        if (!authz.some((perm) => perm.identifier === FP_DO_CONFIGURATION.identifier)) {
+            return status(403, `Permission denied. Required: ${FP_DO_CONFIGURATION.functionalPermissionName}`);
+        }
         if (!authz.some((perm) => perm.identifier === FP_MANAGE_PRODUCT_TYPES.identifier)) {
             return status(403, `Permission denied. Required: ${FP_MANAGE_PRODUCT_TYPES.functionalPermissionName}`);
         }
@@ -192,7 +198,10 @@ export default function register(app: ApiInstance): void {
     // DELETE /product_types/:producttypeid/datatypes/:datatypeassignmentid — Unassign a DataType
     app.delete("/product_types/:producttypeid/datatypes/:datatypeassignmentid", async (context) => {
         const claims = context.session?.idTokenClaims ?? context.tokenClaims ?? {};
-        const authz = await authorize(context.dbClient, claims, [FP_MANAGE_PRODUCT_TYPES]);
+        const authz = await authorize(context.dbClient, claims, [FP_DO_CONFIGURATION, FP_MANAGE_PRODUCT_TYPES]);
+        if (!authz.some((perm) => perm.identifier === FP_DO_CONFIGURATION.identifier)) {
+            return status(403, `Permission denied. Required: ${FP_DO_CONFIGURATION.functionalPermissionName}`);
+        }
         if (!authz.some((perm) => perm.identifier === FP_MANAGE_PRODUCT_TYPES.identifier)) {
             return status(403, `Permission denied. Required: ${FP_MANAGE_PRODUCT_TYPES.functionalPermissionName}`);
         }
@@ -230,7 +239,10 @@ export default function register(app: ApiInstance): void {
     // PATCH /product_types/:producttypeid/datatypes/:datatypeassignmentid — Update assignment fields
     app.patch("/product_types/:producttypeid/datatypes/:datatypeassignmentid", async (context) => {
         const claims = context.session?.idTokenClaims ?? context.tokenClaims ?? {};
-        const authz = await authorize(context.dbClient, claims, [FP_MANAGE_PRODUCT_TYPES]);
+        const authz = await authorize(context.dbClient, claims, [FP_DO_CONFIGURATION, FP_MANAGE_PRODUCT_TYPES]);
+        if (!authz.some((perm) => perm.identifier === FP_DO_CONFIGURATION.identifier)) {
+            return status(403, `Permission denied. Required: ${FP_DO_CONFIGURATION.functionalPermissionName}`);
+        }
         if (!authz.some((perm) => perm.identifier === FP_MANAGE_PRODUCT_TYPES.identifier)) {
             return status(403, `Permission denied. Required: ${FP_MANAGE_PRODUCT_TYPES.functionalPermissionName}`);
         }
@@ -281,7 +293,10 @@ export default function register(app: ApiInstance): void {
     // GET /product_types/:producttypeid/datatypes/:datatypeassignmentid/targetsystems
     app.get("/product_types/:producttypeid/datatypes/:datatypeassignmentid/targetsystems", async (context) => {
         const claims = context.session?.idTokenClaims ?? context.tokenClaims ?? {};
-        const authz = await authorize(context.dbClient, claims, [FP_VIEW_PRODUCT_TYPES]);
+        const authz = await authorize(context.dbClient, claims, [FP_DO_CONFIGURATION, FP_VIEW_PRODUCT_TYPES]);
+        if (!authz.some((perm) => perm.identifier === FP_DO_CONFIGURATION.identifier)) {
+            return status(403, `Permission denied. Required: ${FP_DO_CONFIGURATION.functionalPermissionName}`);
+        }
         if (!authz.some((perm) => perm.identifier === FP_VIEW_PRODUCT_TYPES.identifier)) {
             return status(403, `Permission denied. Required: ${FP_VIEW_PRODUCT_TYPES.functionalPermissionName}`);
         }
@@ -343,7 +358,10 @@ export default function register(app: ApiInstance): void {
     // POST /product_types/:producttypeid/datatypes/:datatypeassignmentid/targetsystems
     app.post("/product_types/:producttypeid/datatypes/:datatypeassignmentid/targetsystems", async (context) => {
         const claims = context.session?.idTokenClaims ?? context.tokenClaims ?? {};
-        const authz = await authorize(context.dbClient, claims, [FP_MANAGE_PRODUCT_TYPES]);
+        const authz = await authorize(context.dbClient, claims, [FP_DO_CONFIGURATION, FP_MANAGE_PRODUCT_TYPES]);
+        if (!authz.some((perm) => perm.identifier === FP_DO_CONFIGURATION.identifier)) {
+            return status(403, `Permission denied. Required: ${FP_DO_CONFIGURATION.functionalPermissionName}`);
+        }
         if (!authz.some((perm) => perm.identifier === FP_MANAGE_PRODUCT_TYPES.identifier)) {
             return status(403, `Permission denied. Required: ${FP_MANAGE_PRODUCT_TYPES.functionalPermissionName}`);
         }
@@ -393,7 +411,10 @@ export default function register(app: ApiInstance): void {
     // DELETE /product_types/:producttypeid/datatypes/:datatypeassignmentid/targetsystems/:targetsystemid
     app.delete("/product_types/:producttypeid/datatypes/:datatypeassignmentid/targetsystems/:targetsystemid", async (context) => {
         const claims = context.session?.idTokenClaims ?? context.tokenClaims ?? {};
-        const authz = await authorize(context.dbClient, claims, [FP_MANAGE_PRODUCT_TYPES]);
+        const authz = await authorize(context.dbClient, claims, [FP_DO_CONFIGURATION, FP_MANAGE_PRODUCT_TYPES]);
+        if (!authz.some((perm) => perm.identifier === FP_DO_CONFIGURATION.identifier)) {
+            return status(403, `Permission denied. Required: ${FP_DO_CONFIGURATION.functionalPermissionName}`);
+        }
         if (!authz.some((perm) => perm.identifier === FP_MANAGE_PRODUCT_TYPES.identifier)) {
             return status(403, `Permission denied. Required: ${FP_MANAGE_PRODUCT_TYPES.functionalPermissionName}`);
         }
@@ -440,7 +461,10 @@ export default function register(app: ApiInstance): void {
     // PATCH /product_types/:producttypeid/datatypes/:datatypeassignmentid/targetsystems/:targetsystemid
     app.patch("/product_types/:producttypeid/datatypes/:datatypeassignmentid/targetsystems/:targetsystemid", async (context) => {
         const claims = context.session?.idTokenClaims ?? context.tokenClaims ?? {};
-        const authz = await authorize(context.dbClient, claims, [FP_MANAGE_PRODUCT_TYPES]);
+        const authz = await authorize(context.dbClient, claims, [FP_DO_CONFIGURATION, FP_MANAGE_PRODUCT_TYPES]);
+        if (!authz.some((perm) => perm.identifier === FP_DO_CONFIGURATION.identifier)) {
+            return status(403, `Permission denied. Required: ${FP_DO_CONFIGURATION.functionalPermissionName}`);
+        }
         if (!authz.some((perm) => perm.identifier === FP_MANAGE_PRODUCT_TYPES.identifier)) {
             return status(403, `Permission denied. Required: ${FP_MANAGE_PRODUCT_TYPES.functionalPermissionName}`);
         }
@@ -493,7 +517,10 @@ export default function register(app: ApiInstance): void {
     // GET /product_types/:producttypeid/datatypes/:datatypeassignmentid/permissions
     app.get("/product_types/:producttypeid/datatypes/:datatypeassignmentid/permissions", async (context) => {
         const claims = context.session?.idTokenClaims ?? context.tokenClaims ?? {};
-        const authz = await authorize(context.dbClient, claims, [FP_VIEW_PRODUCT_TYPES]);
+        const authz = await authorize(context.dbClient, claims, [FP_DO_CONFIGURATION, FP_VIEW_PRODUCT_TYPES]);
+        if (!authz.some((perm) => perm.identifier === FP_DO_CONFIGURATION.identifier)) {
+            return status(403, `Permission denied. Required: ${FP_DO_CONFIGURATION.functionalPermissionName}`);
+        }
         if (!authz.some((perm) => perm.identifier === FP_VIEW_PRODUCT_TYPES.identifier)) {
             return status(403, `Permission denied. Required: ${FP_VIEW_PRODUCT_TYPES.functionalPermissionName}`);
         }
@@ -532,7 +559,10 @@ export default function register(app: ApiInstance): void {
     // POST /product_types/:producttypeid/datatypes/:datatypeassignmentid/permissions — Grant group+role
     app.post("/product_types/:producttypeid/datatypes/:datatypeassignmentid/permissions", async (context) => {
         const claims = context.session?.idTokenClaims ?? context.tokenClaims ?? {};
-        const authz = await authorize(context.dbClient, claims, [FP_MANAGE_PRODUCT_TYPES]);
+        const authz = await authorize(context.dbClient, claims, [FP_DO_CONFIGURATION, FP_MANAGE_PRODUCT_TYPES]);
+        if (!authz.some((perm) => perm.identifier === FP_DO_CONFIGURATION.identifier)) {
+            return status(403, `Permission denied. Required: ${FP_DO_CONFIGURATION.functionalPermissionName}`);
+        }
         if (!authz.some((perm) => perm.identifier === FP_MANAGE_PRODUCT_TYPES.identifier)) {
             return status(403, `Permission denied. Required: ${FP_MANAGE_PRODUCT_TYPES.functionalPermissionName}`);
         }
@@ -599,7 +629,10 @@ export default function register(app: ApiInstance): void {
     // DELETE /product_types/:producttypeid/datatypes/:datatypeassignmentid/permissions — Revoke group+role
     app.delete("/product_types/:producttypeid/datatypes/:datatypeassignmentid/permissions", async (context) => {
         const claims = context.session?.idTokenClaims ?? context.tokenClaims ?? {};
-        const authz = await authorize(context.dbClient, claims, [FP_MANAGE_PRODUCT_TYPES]);
+        const authz = await authorize(context.dbClient, claims, [FP_DO_CONFIGURATION, FP_MANAGE_PRODUCT_TYPES]);
+        if (!authz.some((perm) => perm.identifier === FP_DO_CONFIGURATION.identifier)) {
+            return status(403, `Permission denied. Required: ${FP_DO_CONFIGURATION.functionalPermissionName}`);
+        }
         if (!authz.some((perm) => perm.identifier === FP_MANAGE_PRODUCT_TYPES.identifier)) {
             return status(403, `Permission denied. Required: ${FP_MANAGE_PRODUCT_TYPES.functionalPermissionName}`);
         }
@@ -647,7 +680,10 @@ export default function register(app: ApiInstance): void {
     // PATCH /product_types/:producttypeid/datatypes/:datatypeassignmentid/permissions/:permid — Update showByDefault
     app.patch("/product_types/:producttypeid/datatypes/:datatypeassignmentid/permissions/:permid", async (context) => {
         const claims = context.session?.idTokenClaims ?? context.tokenClaims ?? {};
-        const authz = await authorize(context.dbClient, claims, [FP_MANAGE_PRODUCT_TYPES]);
+        const authz = await authorize(context.dbClient, claims, [FP_DO_CONFIGURATION, FP_MANAGE_PRODUCT_TYPES]);
+        if (!authz.some((perm) => perm.identifier === FP_DO_CONFIGURATION.identifier)) {
+            return status(403, `Permission denied. Required: ${FP_DO_CONFIGURATION.functionalPermissionName}`);
+        }
         if (!authz.some((perm) => perm.identifier === FP_MANAGE_PRODUCT_TYPES.identifier)) {
             return status(403, `Permission denied. Required: ${FP_MANAGE_PRODUCT_TYPES.functionalPermissionName}`);
         }
@@ -709,7 +745,10 @@ export default function register(app: ApiInstance): void {
     // GET /product_types/:producttypeid/datatypes/:datatypeassignmentid/previous-approvals
     app.get("/product_types/:producttypeid/datatypes/:datatypeassignmentid/previous-approvals", async (context) => {
         const claims = context.session?.idTokenClaims ?? context.tokenClaims ?? {};
-        const authz = await authorize(context.dbClient, claims, [FP_VIEW_PRODUCT_TYPES]);
+        const authz = await authorize(context.dbClient, claims, [FP_DO_CONFIGURATION, FP_VIEW_PRODUCT_TYPES]);
+        if (!authz.some((perm) => perm.identifier === FP_DO_CONFIGURATION.identifier)) {
+            return status(403, `Permission denied. Required: ${FP_DO_CONFIGURATION.functionalPermissionName}`);
+        }
         if (!authz.some((perm) => perm.identifier === FP_VIEW_PRODUCT_TYPES.identifier)) {
             return status(403, `Permission denied. Required: ${FP_VIEW_PRODUCT_TYPES.functionalPermissionName}`);
         }
@@ -748,7 +787,10 @@ export default function register(app: ApiInstance): void {
     // POST /product_types/:producttypeid/datatypes/:datatypeassignmentid/previous-approvals
     app.post("/product_types/:producttypeid/datatypes/:datatypeassignmentid/previous-approvals", async (context) => {
         const claims = context.session?.idTokenClaims ?? context.tokenClaims ?? {};
-        const authz = await authorize(context.dbClient, claims, [FP_MANAGE_PRODUCT_TYPES]);
+        const authz = await authorize(context.dbClient, claims, [FP_DO_CONFIGURATION, FP_MANAGE_PRODUCT_TYPES]);
+        if (!authz.some((perm) => perm.identifier === FP_DO_CONFIGURATION.identifier)) {
+            return status(403, `Permission denied. Required: ${FP_DO_CONFIGURATION.functionalPermissionName}`);
+        }
         if (!authz.some((perm) => perm.identifier === FP_MANAGE_PRODUCT_TYPES.identifier)) {
             return status(403, `Permission denied. Required: ${FP_MANAGE_PRODUCT_TYPES.functionalPermissionName}`);
         }
@@ -796,7 +838,10 @@ export default function register(app: ApiInstance): void {
     // DELETE /product_types/:producttypeid/datatypes/:datatypeassignmentid/previous-approvals/:dependsonid
     app.delete("/product_types/:producttypeid/datatypes/:datatypeassignmentid/previous-approvals/:dependsonid", async (context) => {
         const claims = context.session?.idTokenClaims ?? context.tokenClaims ?? {};
-        const authz = await authorize(context.dbClient, claims, [FP_MANAGE_PRODUCT_TYPES]);
+        const authz = await authorize(context.dbClient, claims, [FP_DO_CONFIGURATION, FP_MANAGE_PRODUCT_TYPES]);
+        if (!authz.some((perm) => perm.identifier === FP_DO_CONFIGURATION.identifier)) {
+            return status(403, `Permission denied. Required: ${FP_DO_CONFIGURATION.functionalPermissionName}`);
+        }
         if (!authz.some((perm) => perm.identifier === FP_MANAGE_PRODUCT_TYPES.identifier)) {
             return status(403, `Permission denied. Required: ${FP_MANAGE_PRODUCT_TYPES.functionalPermissionName}`);
         }
@@ -840,7 +885,10 @@ export default function register(app: ApiInstance): void {
     // GET /product_types/:producttypeid/permissions — List product-type-level permissions
     app.get("/product_types/:producttypeid/permissions", async (context) => {
         const claims = context.session?.idTokenClaims ?? context.tokenClaims ?? {};
-        const authz = await authorize(context.dbClient, claims, [FP_VIEW_PRODUCT_TYPES]);
+        const authz = await authorize(context.dbClient, claims, [FP_DO_CONFIGURATION, FP_VIEW_PRODUCT_TYPES]);
+        if (!authz.some((perm) => perm.identifier === FP_DO_CONFIGURATION.identifier)) {
+            return status(403, `Permission denied. Required: ${FP_DO_CONFIGURATION.functionalPermissionName}`);
+        }
         if (!authz.some((perm) => perm.identifier === FP_VIEW_PRODUCT_TYPES.identifier)) {
             return status(403, `Permission denied. Required: ${FP_VIEW_PRODUCT_TYPES.functionalPermissionName}`);
         }
@@ -875,7 +923,10 @@ export default function register(app: ApiInstance): void {
     // POST /product_types/:producttypeid/permissions — Grant product-type-level permission
     app.post("/product_types/:producttypeid/permissions", async (context) => {
         const claims = context.session?.idTokenClaims ?? context.tokenClaims ?? {};
-        const authz = await authorize(context.dbClient, claims, [FP_MANAGE_PRODUCT_TYPES]);
+        const authz = await authorize(context.dbClient, claims, [FP_DO_CONFIGURATION, FP_MANAGE_PRODUCT_TYPES]);
+        if (!authz.some((perm) => perm.identifier === FP_DO_CONFIGURATION.identifier)) {
+            return status(403, `Permission denied. Required: ${FP_DO_CONFIGURATION.functionalPermissionName}`);
+        }
         if (!authz.some((perm) => perm.identifier === FP_MANAGE_PRODUCT_TYPES.identifier)) {
             return status(403, `Permission denied. Required: ${FP_MANAGE_PRODUCT_TYPES.functionalPermissionName}`);
         }
@@ -932,7 +983,10 @@ export default function register(app: ApiInstance): void {
     // DELETE /product_types/:producttypeid/permissions — Revoke product-type-level permission
     app.delete("/product_types/:producttypeid/permissions", async (context) => {
         const claims = context.session?.idTokenClaims ?? context.tokenClaims ?? {};
-        const authz = await authorize(context.dbClient, claims, [FP_MANAGE_PRODUCT_TYPES]);
+        const authz = await authorize(context.dbClient, claims, [FP_DO_CONFIGURATION, FP_MANAGE_PRODUCT_TYPES]);
+        if (!authz.some((perm) => perm.identifier === FP_DO_CONFIGURATION.identifier)) {
+            return status(403, `Permission denied. Required: ${FP_DO_CONFIGURATION.functionalPermissionName}`);
+        }
         if (!authz.some((perm) => perm.identifier === FP_MANAGE_PRODUCT_TYPES.identifier)) {
             return status(403, `Permission denied. Required: ${FP_MANAGE_PRODUCT_TYPES.functionalPermissionName}`);
         }

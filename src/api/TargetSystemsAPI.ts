@@ -1,5 +1,5 @@
 import type { ApiInstance } from "@/apps/api.ts";
-import { FP_MANAGE_TARGET_SYSTEMS, FP_VIEW_TARGET_SYSTEMS } from "@/services/auth/FunctionalPermissions.ts";
+import { FP_DO_CONFIGURATION, FP_MANAGE_TARGET_SYSTEMS, FP_VIEW_TARGET_SYSTEMS } from "@/services/auth/FunctionalPermissions.ts";
 import { count, create, disable, enable, get, getByIdentifier, update } from "@/repo/TargetSystemRepo.ts";
 import {
     message_CreateTargetSystem,
@@ -36,6 +36,7 @@ export default function register(app: ApiInstance): void {
         entitySchema: TargetSystemsSelectSchema,
         viewPermission: FP_VIEW_TARGET_SYSTEMS,
         managePermission: FP_MANAGE_TARGET_SYSTEMS,
+        gatekeeperPermission: FP_DO_CONFIGURATION,
         repo: { count, get, getByIdentifier, create, update, disable, enable, },
         pubSubTags: [ message_CreateTargetSystem, message_UpdateTargetSystem, message_DisableTargetSystem, ],
     });

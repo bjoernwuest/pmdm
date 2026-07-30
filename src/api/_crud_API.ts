@@ -105,6 +105,14 @@ export type RegisterConfigurationEntityRoutesOptions<
     alternativeListViewPermissions?: FunctionalPermissionSelectType[];
     /** Functional permission required to mutate rows. */
     managePermission: FunctionalPermissionSelectType;
+    /**
+     * Optional gatekeeper permission required alongside view/manage permissions.
+     *
+     * When present, every endpoint requires this permission IN ADDITION to the
+     * domain-specific view or manage permission (AND logic). Use this for
+     * cross-cutting access control like FP_DO_CONFIGURATION.
+     */
+    gatekeeperPermission?: FunctionalPermissionSelectType;
     /** Repo implementation handling persistence and PubSub publication. */
     repo: ConfigurationEntityRepo<TRecord, TListRecord, TCreateInput, TUpdateInput>;
     /**
@@ -181,7 +189,13 @@ export function registerConfigurationEntityRoutes<
     app.get(options.basePath, async (context) => {
         const claims = context.session?.idTokenClaims ?? context.tokenClaims ?? {};
         const allListPerms = [options.viewPermission, ...(options.alternativeListViewPermissions ?? [])];
-        const authz = await authorize(context.dbClient, claims, allListPerms);
+        const permChecks = options.gatekeeperPermission
+            ? [options.gatekeeperPermission, ...allListPerms]
+            : allListPerms;
+        const authz = await authorize(context.dbClient, claims, permChecks);
+        if (options.gatekeeperPermission && !authz.some((perm) => perm.identifier === options.gatekeeperPermission!.identifier)) {
+            return status(403, `Permission denied. Required: ${options.gatekeeperPermission!.functionalPermissionName}`);
+        }
         if (!authz.some((perm) => allListPerms.some((ap) => ap.identifier === perm.identifier))) {
             const requiredNames = allListPerms.map((p) => p.functionalPermissionName).join(" or ");
             return status(403, `Permission denied. Required: ${requiredNames}`);
@@ -236,7 +250,13 @@ export function registerConfigurationEntityRoutes<
 
     app.get(`${options.basePath}/:${options.routeParam}`, async (context) => {
         const claims = context.session?.idTokenClaims ?? context.tokenClaims ?? {};
-        const authz = await authorize(context.dbClient, claims, [options.viewPermission]);
+        const permChecks = options.gatekeeperPermission
+            ? [options.gatekeeperPermission, options.viewPermission]
+            : [options.viewPermission];
+        const authz = await authorize(context.dbClient, claims, permChecks);
+        if (options.gatekeeperPermission && !authz.some((perm) => perm.identifier === options.gatekeeperPermission!.identifier)) {
+            return status(403, `Permission denied. Required: ${options.gatekeeperPermission!.functionalPermissionName}`);
+        }
         if (!authz.some((perm) => perm.identifier === options.viewPermission.identifier)) {
             return status(403, `Permission denied. Required: ${options.viewPermission.functionalPermissionName}`);
         }
@@ -265,7 +285,13 @@ export function registerConfigurationEntityRoutes<
 
     app.post(options.basePath, async (context) => {
         const claims = context.session?.idTokenClaims ?? context.tokenClaims ?? {};
-        const authz = await authorize(context.dbClient, claims, [options.managePermission]);
+        const permChecks = options.gatekeeperPermission
+            ? [options.gatekeeperPermission, options.managePermission]
+            : [options.managePermission];
+        const authz = await authorize(context.dbClient, claims, permChecks);
+        if (options.gatekeeperPermission && !authz.some((perm) => perm.identifier === options.gatekeeperPermission!.identifier)) {
+            return status(403, `Permission denied. Required: ${options.gatekeeperPermission!.functionalPermissionName}`);
+        }
         if (!authz.some((perm) => perm.identifier === options.managePermission.identifier)) {
             return status(403, `Permission denied. Required: ${options.managePermission.functionalPermissionName}`);
         }
@@ -300,7 +326,13 @@ export function registerConfigurationEntityRoutes<
 
     app.put(`${options.basePath}/:${options.routeParam}`, async (context) => {
         const claims = context.session?.idTokenClaims ?? context.tokenClaims ?? {};
-        const authz = await authorize(context.dbClient, claims, [options.managePermission]);
+        const permChecks = options.gatekeeperPermission
+            ? [options.gatekeeperPermission, options.managePermission]
+            : [options.managePermission];
+        const authz = await authorize(context.dbClient, claims, permChecks);
+        if (options.gatekeeperPermission && !authz.some((perm) => perm.identifier === options.gatekeeperPermission!.identifier)) {
+            return status(403, `Permission denied. Required: ${options.gatekeeperPermission!.functionalPermissionName}`);
+        }
         if (!authz.some((perm) => perm.identifier === options.managePermission.identifier)) {
             return status(403, `Permission denied. Required: ${options.managePermission.functionalPermissionName}`);
         }
@@ -345,7 +377,13 @@ export function registerConfigurationEntityRoutes<
 
     app.patch(`${options.basePath}/:${options.routeParam}/disabled`, async (context) => {
         const claims = context.session?.idTokenClaims ?? context.tokenClaims ?? {};
-        const authz = await authorize(context.dbClient, claims, [options.managePermission]);
+        const permChecks = options.gatekeeperPermission
+            ? [options.gatekeeperPermission, options.managePermission]
+            : [options.managePermission];
+        const authz = await authorize(context.dbClient, claims, permChecks);
+        if (options.gatekeeperPermission && !authz.some((perm) => perm.identifier === options.gatekeeperPermission!.identifier)) {
+            return status(403, `Permission denied. Required: ${options.gatekeeperPermission!.functionalPermissionName}`);
+        }
         if (!authz.some((perm) => perm.identifier === options.managePermission.identifier)) {
             return status(403, `Permission denied. Required: ${options.managePermission.functionalPermissionName}`);
         }

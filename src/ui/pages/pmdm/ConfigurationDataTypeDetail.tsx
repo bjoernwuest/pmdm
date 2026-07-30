@@ -15,7 +15,7 @@ import {
 import {
     getBusinessDomains,
 } from "@/ui/api/BusinessDomains.ts";
-import { FP_MANAGE_DATA_TYPES, FP_VIEW_DATA_TYPES } from "@/ui/auth/functional_permissions.ts";
+import { FP_DO_CONFIGURATION, FP_MANAGE_DATA_TYPES, FP_VIEW_DATA_TYPES } from "@/ui/auth/functional_permissions.ts";
 import type {
     DataTypeEntity,
     DataTypePermissionEntry,
@@ -63,7 +63,7 @@ export const meta: PageMeta = {
         parent: "configuration-data-types",
         hidden: true,
     },
-    requiredFunctionalPermissions: [FP_VIEW_DATA_TYPES.functionalPermissionName],
+    requiredFunctionalPermissions: [FP_DO_CONFIGURATION.functionalPermissionName, FP_VIEW_DATA_TYPES.functionalPermissionName],
 };
 
 // ---------------------------------------------------------------------------

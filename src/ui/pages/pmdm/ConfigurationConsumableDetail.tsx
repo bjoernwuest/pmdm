@@ -21,7 +21,7 @@ import {
     updateConsumable,
     updateConsumableValue,
 } from "@/ui/api/Consumables.ts";
-import { FP_MANAGE_CONSUMABLES, FP_VIEW_CONSUMABLES } from "@/ui/auth/functional_permissions.ts";
+import { FP_DO_CONFIGURATION, FP_MANAGE_CONSUMABLES, FP_VIEW_CONSUMABLES } from "@/ui/auth/functional_permissions.ts";
 import type { ConsumableEntity, ConsumableValue } from "@/types/ConfigurationTypes.ts";
 import type { UserSelectType } from "@/types/UserType.ts";
 import {
@@ -50,7 +50,7 @@ export const meta: PageMeta = {
         parent: "configuration-consumables",
         hidden: true,
     },
-    requiredFunctionalPermissions: [FP_VIEW_CONSUMABLES.functionalPermissionName],
+    requiredFunctionalPermissions: [FP_DO_CONFIGURATION.functionalPermissionName, FP_VIEW_CONSUMABLES.functionalPermissionName],
 };
 
 type ViewerContext = { permissionNames: string[] };

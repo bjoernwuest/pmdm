@@ -1,6 +1,6 @@
 import type { ApiInstance } from "@/apps/api.ts";
 import { authorize, getLoggedinUserObject } from "@/services/Auth.ts";
-import { FP_MANAGE_DATA_TYPES, FP_VIEW_DATA_TYPES } from "@/services/auth/FunctionalPermissions.ts";
+import { FP_DO_CONFIGURATION, FP_MANAGE_DATA_TYPES, FP_VIEW_DATA_TYPES } from "@/services/auth/FunctionalPermissions.ts";
 import {
     DataTypeRepo,
     getPermissions,
@@ -54,6 +54,7 @@ export default function register(app: ApiInstance): void {
         detailEntitySchema: DataTypeListEntitySchema,
         viewPermission: FP_VIEW_DATA_TYPES,
         managePermission: FP_MANAGE_DATA_TYPES,
+        gatekeeperPermission: FP_DO_CONFIGURATION,
         repo: DataTypeRepo as any,
         pubSubTags: [message_CreateDataType, message_UpdateDataType, message_DisableDataType],
         createBodySchema: DataTypeSchemaInsertSchema,
@@ -88,7 +89,10 @@ export default function register(app: ApiInstance): void {
     // -----------------------------------------------------------------------
     app.get("/data_types/:datatypeid/permissions", async (context) => {
         const claims = context.session?.idTokenClaims ?? context.tokenClaims ?? {};
-        const authz = await authorize(context.dbClient, claims, [FP_VIEW_DATA_TYPES]);
+        const authz = await authorize(context.dbClient, claims, [FP_DO_CONFIGURATION, FP_VIEW_DATA_TYPES]);
+        if (!authz.some((perm) => perm.identifier === FP_DO_CONFIGURATION.identifier)) {
+            return status(403, `Permission denied. Required: ${FP_DO_CONFIGURATION.functionalPermissionName}`);
+        }
         if (!authz.some((perm) => perm.identifier === FP_VIEW_DATA_TYPES.identifier)) {
             return status(403, `Permission denied. Required: ${FP_VIEW_DATA_TYPES.functionalPermissionName}`);
         }
@@ -122,7 +126,10 @@ export default function register(app: ApiInstance): void {
     // -----------------------------------------------------------------------
     app.post("/data_types/:datatypeid/permissions", async (context) => {
         const claims = context.session?.idTokenClaims ?? context.tokenClaims ?? {};
-        const authz = await authorize(context.dbClient, claims, [FP_MANAGE_DATA_TYPES]);
+        const authz = await authorize(context.dbClient, claims, [FP_DO_CONFIGURATION, FP_MANAGE_DATA_TYPES]);
+        if (!authz.some((perm) => perm.identifier === FP_DO_CONFIGURATION.identifier)) {
+            return status(403, `Permission denied. Required: ${FP_DO_CONFIGURATION.functionalPermissionName}`);
+        }
         if (!authz.some((perm) => perm.identifier === FP_MANAGE_DATA_TYPES.identifier)) {
             return status(403, `Permission denied. Required: ${FP_MANAGE_DATA_TYPES.functionalPermissionName}`);
         }
@@ -180,7 +187,10 @@ export default function register(app: ApiInstance): void {
     // -----------------------------------------------------------------------
     app.delete("/data_types/:datatypeid/permissions", async (context) => {
         const claims = context.session?.idTokenClaims ?? context.tokenClaims ?? {};
-        const authz = await authorize(context.dbClient, claims, [FP_MANAGE_DATA_TYPES]);
+        const authz = await authorize(context.dbClient, claims, [FP_DO_CONFIGURATION, FP_MANAGE_DATA_TYPES]);
+        if (!authz.some((perm) => perm.identifier === FP_DO_CONFIGURATION.identifier)) {
+            return status(403, `Permission denied. Required: ${FP_DO_CONFIGURATION.functionalPermissionName}`);
+        }
         if (!authz.some((perm) => perm.identifier === FP_MANAGE_DATA_TYPES.identifier)) {
             return status(403, `Permission denied. Required: ${FP_MANAGE_DATA_TYPES.functionalPermissionName}`);
         }
@@ -227,7 +237,10 @@ export default function register(app: ApiInstance): void {
     // -----------------------------------------------------------------------
     app.patch("/data_types/:datatypeid/permissions/:permid", async (context) => {
         const claims = context.session?.idTokenClaims ?? context.tokenClaims ?? {};
-        const authz = await authorize(context.dbClient, claims, [FP_MANAGE_DATA_TYPES]);
+        const authz = await authorize(context.dbClient, claims, [FP_DO_CONFIGURATION, FP_MANAGE_DATA_TYPES]);
+        if (!authz.some((perm) => perm.identifier === FP_DO_CONFIGURATION.identifier)) {
+            return status(403, `Permission denied. Required: ${FP_DO_CONFIGURATION.functionalPermissionName}`);
+        }
         if (!authz.some((perm) => perm.identifier === FP_MANAGE_DATA_TYPES.identifier)) {
             return status(403, `Permission denied. Required: ${FP_MANAGE_DATA_TYPES.functionalPermissionName}`);
         }
