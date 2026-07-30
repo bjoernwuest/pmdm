@@ -94,21 +94,27 @@ function generateSessionId(): string {
 // Config
 // ====================================================================================================================
 
-export const config = {
-    cfgRootUserGroup: { domain: "Authentication and Authorization", key: "RootUserGroup", description: "The object identifier of the user group whose members shall have superuser permissions. Superusers have the permission to grant permissions. They do not get any other permission, unless configured otherwise. Other user groups can be granted permissions if required. Thus, this group is meant to bootstrap the permission system.", type: ConfigValueTypes.string, value: undefined, formatRegex: "^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}$", inputFormat: "^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}$", outputFormat: "", editInUI: true, mandatoryForStart: true, userProfile: false},
-    cfgSessionExpirationInSeconds: { domain: "Authentication and Authorization", key: "SessionExpirationSeconds", description: "The idle lifetime of an interactive session in seconds. Any user interaction resets this timer; once exceeded the user is logged out (default 900).", type: ConfigValueTypes.number, value: undefined, formatRegex: "^[1-9][0-9]*$", inputFormat: "^[1-9][0-9]*$", outputFormat: "", editInUI: true, mandatoryForStart: false, userProfile: false},
-    cfgApiKeyLength: { domain: "Authentication and Authorization", key: "ApiKeyLength", description: "Length of newly generated API keys. Minimum 32, maximum 256. Default 256.", type: ConfigValueTypes.number, value: undefined, formatRegex: "^(3[2-9]|[4-9][0-9]|1[0-9]{2}|2[0-4][0-9]|25[0-6])$", inputFormat: "^(3[2-9]|[4-9][0-9]|1[0-9]{2}|2[0-4][0-9]|25[0-6])$", outputFormat: "", editInUI: true, mandatoryForStart: false, userProfile: false},
-    cfgApiKeyValidityDays: { domain: "Authentication and Authorization", key: "ApiKeyValidityDays", description: "Default API key validity in days. Minimum 1, maximum 730. Default 90.", type: ConfigValueTypes.number, value: undefined, formatRegex: "^([1-9]|[1-9][0-9]|[1-6][0-9]{2}|7[0-2][0-9]|730)$", inputFormat: "^([1-9]|[1-9][0-9]|[1-6][0-9]{2}|7[0-2][0-9]|730)$", outputFormat: "", editInUI: true, mandatoryForStart: false, userProfile: false},
-} satisfies Record<string, ConfigEntrySelectType>;
-
+const DEFAULT_SESSION_TIMEOUT = 900;
 const DEFAULT_API_KEY_LENGTH = 256;
 const DEFAULT_API_KEY_VALIDITY_DAYS = 90;
+
+export const config = {
+    cfgRootUserGroup: { domain: "Authentication and Authorization", key: "RootUserGroup", description: "The object identifier of the user group whose members shall have superuser permissions. Superusers have the permission to grant permissions. They do not get any other permission, unless configured otherwise. Other user groups can be granted permissions if required. Thus, this group is meant to bootstrap the permission system.", type: ConfigValueTypes.string, value: undefined, formatRegex: "^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}$", inputFormat: "^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}$", outputFormat: "", editInUI: true, mandatoryForStart: true, userProfile: false},
+    cfgSessionExpirationInSeconds: { domain: "Authentication and Authorization", key: "SessionExpirationSeconds", description: "The idle lifetime of an interactive session in seconds. Any user interaction resets this timer; once exceeded the user is logged out (default 900).", type: ConfigValueTypes.number, value: DEFAULT_SESSION_TIMEOUT, formatRegex: "^[1-9][0-9]*$", inputFormat: "^[1-9][0-9]*$", outputFormat: "", editInUI: true, mandatoryForStart: false, userProfile: false},
+    cfgApiKeyLength: { domain: "Authentication and Authorization", key: "ApiKeyLength", description: "Length of newly generated API keys. Minimum 32, maximum 256. Default 256.", type: ConfigValueTypes.number, value: DEFAULT_API_KEY_LENGTH, formatRegex: "^(3[2-9]|[4-9][0-9]|1[0-9]{2}|2[0-4][0-9]|25[0-6])$", inputFormat: "^(3[2-9]|[4-9][0-9]|1[0-9]{2}|2[0-4][0-9]|25[0-6])$", outputFormat: "", editInUI: true, mandatoryForStart: false, userProfile: false},
+    cfgApiKeyValidityDays: { domain: "Authentication and Authorization", key: "ApiKeyValidityDays", description: "Default API key validity in days. Minimum 1, maximum 730. Default 90.", type: ConfigValueTypes.number, value: DEFAULT_API_KEY_VALIDITY_DAYS, formatRegex: "^([1-9]|[1-9][0-9]|[1-6][0-9]{2}|7[0-2][0-9]|730)$", inputFormat: "^([1-9]|[1-9][0-9]|[1-6][0-9]{2}|7[0-2][0-9]|730)$", outputFormat: "", editInUI: true, mandatoryForStart: false, userProfile: false},
+} satisfies Record<string, ConfigEntrySelectType>;
 
 let sessionTimeOut : undefined | number = undefined;
 async function getSessionTimeOut(db: DBClient): Promise<number> {
     if (!sessionTimeOut) {
         const resp = await getConfigEntriesByKey(db, config.cfgSessionExpirationInSeconds.domain, config.cfgSessionExpirationInSeconds.key);
-        if (Array.isArray(resp) && (0 < resp.length)) sessionTimeOut = resp[0]!.value as number; else sessionTimeOut = 900;
+        const raw = resp[0]?.value;
+        if (typeof raw === "number" && Number.isFinite(raw) && raw > 0) {
+            sessionTimeOut = raw;
+        } else {
+            sessionTimeOut = DEFAULT_SESSION_TIMEOUT;
+        }
     }
     return sessionTimeOut;
 }
@@ -658,6 +664,12 @@ const apiKeyFunctionalPermissionsCache = new TTLMap<string, ApiKeyPermissionCach
 let functionalPermission_Grant: FunctionalPermissionSelectType | undefined = undefined;
 
 export async function init(DBClient: DBClient): Promise<void> {
+    // Ensure config rows exist (seed with defaults on first run)
+    for (const entry of Object.values(config)) {
+        const existing = await getConfigEntriesByKey(DBClient, entry.domain, entry.key, { limit: 1 });
+        if (existing.length < 1) await upsertConfigEntry(DBClient, entry);
+    }
+
     // Register a functional permission for granting permissions to other groups.
     functionalPermission_Grant = await registerFunctionalPermission(DBClient, { functionalPermissionName: FunctionalPermissionNames.GRANT_FUNCTIONAL_PERMISSIONS, description: "Users with this privilege can grant functional permissions to groups.", group: "System" });
     // Get user group permitted to grant permissions.
