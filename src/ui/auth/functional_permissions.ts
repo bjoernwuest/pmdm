@@ -12,7 +12,6 @@ export const FunctionalPermissionNames = {
     FP_READ_GROUP_FUNCTIONAL_PERMISSIONS: "FP_READ_GROUP_FUNCTIONAL_PERMISSIONS",
     FP_EDIT_FUNCTIONAL_PERMISSION_ASSIGNMENTS: "FP_EDIT_FUNCTIONAL_PERMISSION_ASSIGNMENTS",
     FP_READ_FUNCTIONAL_PERMISSIONS: "FP_READ_FUNCTIONAL_PERMISSIONS",
-    FP_READ_FUNCTIONAL_PERMISSION_GROUPS: "FP_READ_FUNCTIONAL_PERMISSION_GROUPS",
     FP_READ_API_DOCUMENTATION: "FP_READ_API_DOCUMENTATION",
     FP_MANAGE_CONFIGURATION: "FP_MANAGE_CONFIGURATION",
     FP_PROLONG_API_KEYS: "prolong_api_keys",
@@ -42,7 +41,6 @@ export const FP_READ_GROUPS = { functionalPermissionName: FunctionalPermissionNa
 export const FP_READ_GROUP_FUNCTIONAL_PERMISSIONS = { functionalPermissionName: FunctionalPermissionNames.FP_READ_GROUP_FUNCTIONAL_PERMISSIONS } as const;
 export const FP_EDIT_FUNCTIONAL_PERMISSION_ASSIGNMENTS = { functionalPermissionName: FunctionalPermissionNames.FP_EDIT_FUNCTIONAL_PERMISSION_ASSIGNMENTS } as const;
 export const FP_READ_FUNCTIONAL_PERMISSIONS = { functionalPermissionName: FunctionalPermissionNames.FP_READ_FUNCTIONAL_PERMISSIONS } as const;
-export const FP_READ_FUNCTIONAL_PERMISSION_GROUPS = { functionalPermissionName: FunctionalPermissionNames.FP_READ_FUNCTIONAL_PERMISSION_GROUPS } as const;
 export const FP_READ_API_DOCUMENTATION = { functionalPermissionName: FunctionalPermissionNames.FP_READ_API_DOCUMENTATION } as const;
 export const FP_MANAGE_CONFIGURATION = { functionalPermissionName: FunctionalPermissionNames.FP_MANAGE_CONFIGURATION } as const;
 export const FP_PROLONG_API_KEYS = { functionalPermissionName: FunctionalPermissionNames.FP_PROLONG_API_KEYS } as const;
