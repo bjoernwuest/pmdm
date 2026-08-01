@@ -97,7 +97,9 @@ export function Component() {
     const [filterAction, setFilterAction] = useState<string>("provide_or_approve");
 
     // Product types for filter and create dialog
-    const [productTypes, setProductTypes] = useState<Array<{ identifier: string; name: string }>>([]);
+    const [productTypes, setProductTypes] = useState<Array<{ identifier: string; name: string; description: string | null }>>([]);
+
+    const selectedProductType = productTypes.find(pt => pt.identifier === createProductType);
 
     // Create dialog state
     const [showCreateDialog, setShowCreateDialog] = useState(false);
@@ -141,6 +143,7 @@ export function Component() {
                 setProductTypes(types.productTypes.map((pt: any) => ({
                     identifier: pt.identifier,
                     name: pt.name,
+                    description: pt.description,
                 })));
             } catch (_) { /* ignore */ }
         })();
@@ -352,6 +355,11 @@ export function Component() {
                             style={{ width: "100%" }}
                         />
                     </div>
+                    {selectedProductType?.description && (
+                        <small style={{ display: "block", color: "var(--text-color-secondary)", fontSize: "0.85rem", marginTop: "-0.5rem" }}>
+                            {selectedProductType.description}
+                        </small>
+                    )}
                     <div>
                         <label style={{ display: "block", marginBottom: "0.25rem", fontWeight: 600 }}>
                             Product Number
