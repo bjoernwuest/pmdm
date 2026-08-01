@@ -790,6 +790,48 @@ export function Component() {
         return String(val);
     }, [lookupOptions, consumableOptions, productOptions]);
 
+    // Filter values by visibility and attach resolved options for edit fields.
+    // useMemo must be above the early returns to satisfy the Rules of Hooks.
+    const visibleValues = useMemo(() => {
+        const vals = request?.values ?? [];
+        return vals.filter((v: any) => {
+            if (v.userRoles?.length === 0) return false;
+            if (!v.showByDefault && !showHidden) return false;
+            if (filterApplied && !filterIds.has(v.dataType)) return false;
+            return true;
+        }).map((v: any) => {
+            const displayValue = v.value !== null ? v.value : (v.defaultValue !== null && v.defaultValue !== "null" ? v.defaultValue : null);
+            let editOptions: DropdownOption[] = [];
+            let resolvedLabel: string | null = null;
+            if (v.dataTypeKind === "lookup" || v.dataTypeKind === "consumable" || v.dataTypeKind === "product") {
+                const source = v.dataTypeConfig?.source as string | undefined;
+                if (v.dataTypeKind === "lookup") {
+                    editOptions = source ? (lookupOptions[source] ?? []) : [];
+                } else if (v.dataTypeKind === "consumable") {
+                    editOptions = consumableOptions[v.dataType] ?? [];
+                } else {
+                    editOptions = productOptions[v.dataType ?? ""] ?? [];
+                    const selectedProductIds: string[] = displayValue == null
+                        ? []
+                        : Array.isArray(displayValue)
+                            ? displayValue.filter((x: any) => x !== null && x !== undefined).map((x: any) => String(x))
+                            : [String(displayValue)];
+                    const missingProductIds = selectedProductIds.filter(
+                        (pid) => !editOptions.some((o) => o.value === pid),
+                    );
+                    if (missingProductIds.length > 0) {
+                        editOptions = [
+                            ...editOptions,
+                            ...missingProductIds.map((pid) => ({ label: pid, value: pid })),
+                        ];
+                    }
+                }
+                resolvedLabel = resolveDisplayName(v, displayValue);
+            }
+            return { ...v, _editOptions: editOptions, _resolvedLabel: resolvedLabel };
+        });
+    }, [request?.values, showHidden, filterApplied, filterIds, lookupOptions, consumableOptions, productOptions]);
+
     // Loading state
     if (loading) {
         return (
@@ -826,43 +868,7 @@ export function Component() {
         v.previousApprovalDepsMet !== false,
     );
 
-    // Filter values by visibility and attach resolved options for edit fields
-    const visibleValues = useMemo(() => (request.values ?? []).filter((v: any) => {
-        if (v.userRoles?.length === 0) return false;
-        if (!v.showByDefault && !showHidden) return false;
-        if (filterApplied && !filterIds.has(v.dataType)) return false;
-        return true;
-    }).map((v: any) => {
-        const displayValue = v.value !== null ? v.value : (v.defaultValue !== null && v.defaultValue !== "null" ? v.defaultValue : null);
-        let editOptions: DropdownOption[] = [];
-        let resolvedLabel: string | null = null;
-        if (v.dataTypeKind === "lookup" || v.dataTypeKind === "consumable" || v.dataTypeKind === "product") {
-            const source = v.dataTypeConfig?.source as string | undefined;
-            if (v.dataTypeKind === "lookup") {
-                editOptions = source ? (lookupOptions[source] ?? []) : [];
-            } else if (v.dataTypeKind === "consumable") {
-                editOptions = consumableOptions[v.dataType] ?? [];
-            } else {
-                editOptions = productOptions[v.dataType ?? ""] ?? [];
-                const selectedProductIds: string[] = displayValue == null
-                    ? []
-                    : Array.isArray(displayValue)
-                        ? displayValue.filter((x: any) => x !== null && x !== undefined).map((x: any) => String(x))
-                        : [String(displayValue)];
-                const missingProductIds = selectedProductIds.filter(
-                    (pid) => !editOptions.some((o) => o.value === pid),
-                );
-                if (missingProductIds.length > 0) {
-                    editOptions = [
-                        ...editOptions,
-                        ...missingProductIds.map((pid) => ({ label: pid, value: pid })),
-                    ];
-                }
-            }
-            resolvedLabel = resolveDisplayName(v, displayValue);
-        }
-        return { ...v, _editOptions: editOptions, _resolvedLabel: resolvedLabel };
-    }), [request?.values, showHidden, filterApplied, filterIds, lookupOptions, consumableOptions, productOptions]);
+
 
     // Collect unique owners for filter dropdown
     const uniqueOwnerNames = [...new Set(
