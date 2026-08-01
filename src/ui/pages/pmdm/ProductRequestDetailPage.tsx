@@ -19,7 +19,7 @@ import {
     message_MandatoryAndRequestorCanEditUpdated,
     type MandatoryAndRequestorCanEditPayload,
 } from "@/types/ProductRequestType.ts";
-import React, { useEffect, useState, useCallback, useRef } from "react";
+import React, { useEffect, useState, useCallback, useRef, useMemo } from "react";
 import { useParams, useNavigate } from "react-router-dom";
 import { DataTable } from "primereact/datatable";
 import { Column } from "primereact/column";
@@ -394,7 +394,22 @@ export function Component() {
                     reloadProductOptionsRef.current?.(productNums);
                     return;
                 }
-                fetchDetail();
+                setRequest((prev: any) => {
+                    if (!prev) return prev;
+                    return {
+                        ...prev,
+                        values: prev.values.map((v: any) => {
+                            if (v.dataType !== dt) return v;
+                            const updated: any = { ...v };
+                            if ("value" in data) updated.value = data.value;
+                            if ("defaultValue" in data) updated.defaultValue = data.defaultValue;
+                            if (data.updatedAt != null) updated.updatedAt = data.updatedAt;
+                            return updated;
+                        }),
+                    };
+                });
+                reloadConsumableOptionsRef.current?.(dt);
+                reloadProductOptionsRef.current?.();
                 return;
             }
             reloadConsumableOptionsRef.current?.(dt);
@@ -408,6 +423,29 @@ export function Component() {
             if (data.productRequest === id || data.requestId === id) {
                 if (dt && pendingOwnActionRef.current.has(dt)) {
                     pendingOwnActionRef.current.delete(dt);
+                    reloadConsumableOptionsRef.current?.(dt);
+                    reloadProductOptionsRef.current?.();
+                    return;
+                }
+                if (dt) {
+                    const cleared = data.cleared === true;
+                    setRequest((prev: any) => {
+                        if (!prev) return prev;
+                        return {
+                            ...prev,
+                            values: prev.values.map((v: any) =>
+                                v.dataType === dt
+                                    ? {
+                                        ...v,
+                                        approvedBy: cleared ? null : (data.approvedBy ?? null),
+                                        approvedAt: cleared ? null : (data.approvedAt ?? null),
+                                        approverName: cleared ? null : v.approverName,
+                                        approverEmail: cleared ? null : v.approverEmail,
+                                      }
+                                    : v
+                            ),
+                        };
+                    });
                     reloadConsumableOptionsRef.current?.(dt);
                     reloadProductOptionsRef.current?.();
                     return;
@@ -433,14 +471,18 @@ export function Component() {
             if (data.productRequest !== id) return;
             setRequest((prev: any) => {
                 if (!prev) return prev;
-                return {
-                    ...prev,
-                    values: prev.values.map((v: any) => ({
-                        ...v,
-                        mandatory: data.mandatory[v.dataType!] ?? v.mandatory,
-                        requestorCanEdit: data.requestorCanEdit[v.dataType!] ?? v.requestorCanEdit,
-                    })),
-                } satisfies typeof prev;
+                let changed = false;
+                const nextValues = prev.values.map((v: any) => {
+                    const newMandatory = data.mandatory[v.dataType!] ?? v.mandatory;
+                    const newRec = data.requestorCanEdit[v.dataType!] ?? v.requestorCanEdit;
+                    if (newMandatory !== v.mandatory || newRec !== v.requestorCanEdit) {
+                        changed = true;
+                        return { ...v, mandatory: newMandatory, requestorCanEdit: newRec };
+                    }
+                    return v;
+                });
+                if (!changed) return prev;
+                return { ...prev, values: nextValues } satisfies typeof prev;
             });
         });
 
@@ -785,7 +827,7 @@ export function Component() {
     );
 
     // Filter values by visibility and attach resolved options for edit fields
-    let visibleValues = (request.values ?? []).filter((v: any) => {
+    const visibleValues = useMemo(() => (request.values ?? []).filter((v: any) => {
         if (v.userRoles?.length === 0) return false;
         if (!v.showByDefault && !showHidden) return false;
         if (filterApplied && !filterIds.has(v.dataType)) return false;
@@ -801,8 +843,6 @@ export function Component() {
             } else if (v.dataTypeKind === "consumable") {
                 editOptions = consumableOptions[v.dataType] ?? [];
             } else {
-                // Product options are fetched per dataType via the
-                // getProductRequestProductValues endpoint (server-side filtered).
                 editOptions = productOptions[v.dataType ?? ""] ?? [];
                 const selectedProductIds: string[] = displayValue == null
                     ? []
@@ -822,7 +862,7 @@ export function Component() {
             resolvedLabel = resolveDisplayName(v, displayValue);
         }
         return { ...v, _editOptions: editOptions, _resolvedLabel: resolvedLabel };
-    });
+    }), [request?.values, showHidden, filterApplied, filterIds, lookupOptions, consumableOptions, productOptions]);
 
     // Collect unique owners for filter dropdown
     const uniqueOwnerNames = [...new Set(
