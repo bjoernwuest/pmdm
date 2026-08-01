@@ -99,13 +99,13 @@ export function Component() {
     // Product types for filter and create dialog
     const [productTypes, setProductTypes] = useState<Array<{ identifier: string; name: string; description: string | null }>>([]);
 
-    const selectedProductType = productTypes.find(pt => pt.identifier === createProductType);
-
     // Create dialog state
     const [showCreateDialog, setShowCreateDialog] = useState(false);
     const [createProductType, setCreateProductType] = useState<string | null>(null);
     const [createProductNumber, setCreateProductNumber] = useState("");
     const [creating, setCreating] = useState(false);
+
+    const selectedProductType = productTypes.find(pt => pt.identifier === createProductType);
 
     // Fetch product requests
     const fetchRequests = useCallback(async () => {
