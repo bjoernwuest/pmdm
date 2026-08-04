@@ -36,6 +36,7 @@ import { Card } from "primereact/card";
 import { Checkbox } from "primereact/checkbox";
 import type { PubSubMessage } from "@/types/PubSubType.ts";
 import { subscribe, unsubscribe } from "@/ui/pubsub.ts";
+import { debugLog } from "@/ui/debug.ts";
 
 export const meta: PageMeta = {
     id: "product-request-detail",
@@ -64,7 +65,6 @@ const STATUS_SEVERITY: Record<string, "info" | "warning" | "success" | "danger">
 const KIND_LABELS: Record<string, string> = {
     calculated: "Calc.",
     boolean: "Bool",
-    numeric: "Num.",
     string: "String",
     lookup: "Lookup",
     consumable: "Consum.",
@@ -75,7 +75,6 @@ const KIND_LABELS: Record<string, string> = {
 const KIND_LABELS_FULL: Record<string, string> = {
     calculated: "Calculated",
     boolean: "Boolean",
-    numeric: "Numeric",
     string: "String",
     lookup: "Lookup",
     consumable: "Consumable",
@@ -468,7 +467,9 @@ export function Component() {
         });
         const sub5 = subscribe({ and: message_MandatoryAndRequestorCanEditUpdated }, (msg: PubSubMessage) => {
             const data = msg.data as MandatoryAndRequestorCanEditPayload;
+            debugLog("pubsub:mandatory", "received", { productRequest: data.productRequest, mandatory: data.mandatory, requestorCanEdit: data.requestorCanEdit });
             if (data.productRequest !== id) return;
+            debugLog("pubsub:mandatory", "own-request", { changedFields: Object.keys(data.mandatory).length + Object.keys(data.requestorCanEdit).length });
             setRequest((prev: any) => {
                 if (!prev) return prev;
                 let changed = false;
@@ -493,11 +494,13 @@ export function Component() {
 
     // Handlers
     const handleValueChange = useCallback(async (dataTypeIdentifier: string, newValue: unknown) => {
+        debugLog("handleValueChange", "entry", { dataTypeIdentifier, newValue, id });
         if (!id) return;
         pendOwnAction(dataTypeIdentifier);
 
         const currentValueRow = requestRef.current?.values?.find((v: any) => v.dataType === dataTypeIdentifier);
         const knownUpdatedAt: string | undefined = (currentValueRow as any)?.updatedAt;
+        debugLog("handleValueChange", "entry", { dataTypeIdentifier, newValue, hasKnownUpdatedAt: !!knownUpdatedAt });
 
         // Pend own actions for on_change calculated data types whose scripts
         // will be recalculated by the server, so the PubSub handler skips the
@@ -525,11 +528,14 @@ export function Component() {
 
         try {
             if (!knownUpdatedAt) {
+                debugLog("handleValueChange", "missing-updatedAt", { dataTypeIdentifier });
                 toast.current?.show({ severity: "error", summary: "Error", detail: "Cannot save: value state not available. Please reload the page.", life: 5000 });
                 pendingOwnActionRef.current.delete(dataTypeIdentifier);
                 return;
             }
+            debugLog("handleValueChange", "api-call", { dataTypeIdentifier, newValue });
             const result = await updateProductRequestValue(id, dataTypeIdentifier, newValue, knownUpdatedAt);
+            debugLog("handleValueChange", "api-response", { dataTypeIdentifier, resultNull: result === null, recalculatedCount: result?.recalculated?.length ?? 0 });
             if (result === null) {
                 toast.current?.show({ severity: "error", summary: "Conflict", detail: "Value was modified by another user", life: 5000 });
                 pendingOwnActionRef.current.delete(dataTypeIdentifier);
@@ -601,6 +607,7 @@ export function Component() {
                 }
             }
         } catch (e: any) {
+            debugLog("handleValueChange", "api-error", { dataTypeIdentifier, message: e.message });
             pendingOwnActionRef.current.delete(dataTypeIdentifier);
             for (const dt of onChangeCalcDts) pendingOwnActionRef.current.delete(dt);
             toast.current?.show({ severity: "error", summary: "Error", detail: e.message, life: 5000 });
@@ -830,7 +837,7 @@ export function Component() {
             }
             return { ...v, _editOptions: editOptions, _resolvedLabel: resolvedLabel };
         });
-    }, [request?.values, showHidden, filterApplied, filterIds, lookupOptions, consumableOptions, productOptions]);
+    }, [request?.values, showHidden, filterApplied, filterIds, lookupOptions, consumableOptions, productOptions, activeEditField]);
 
     // Loading state
     if (loading) {
@@ -1533,6 +1540,7 @@ function InlineEditField({
         prevActiveRef.current = isActive;
 
         if (wasActive && !isActive) {
+            debugLog("InlineEditField", "deactivate", { dataTypeId, savingRef: savingRef.current, editValue, origValue: origValueRef.current, validationError, hasChanged: JSON.stringify(editValue) !== JSON.stringify(origValueRef.current) });
             if (savingRef.current) {
                 // An explicit save is in flight; just reset local state
                 setEditValue(origValueRef.current);
@@ -1563,6 +1571,7 @@ function InlineEditField({
     // --- Persist helpers ---
     const performSave = useCallback(
         async (val: unknown) => {
+            debugLog("InlineEditField", "performSave:start", { dataTypeId, val, type });
             setSaving(true);
             savingRef.current = true;
             try {
@@ -1571,12 +1580,14 @@ function InlineEditField({
                     parsed = val === true;
                 }
                 await onSave(parsed);
+                debugLog("InlineEditField", "performSave:success", { dataTypeId });
                 // Sync local state to the value we just persisted so that
                 // hasChanged correctly becomes false after save and we avoid
                 // a type-mismatch false-positive (e.g. string "5" vs number 5).
                 setEditValue(parsed);
                 origValueRef.current = parsed;
             } catch (_) {
+                debugLog("InlineEditField", "performSave:error", { dataTypeId, error: _ });
                 setEditValue(origValueRef.current);
                 setRenderKey(k => k + 1);
             } finally {
@@ -1590,11 +1601,12 @@ function InlineEditField({
 
     const handleSave = useCallback(() => {
         const err = validate(editValue);
+        const warn = computeRegexWarning(editValue);
+        debugLog("InlineEditField", "handleSave", { dataTypeId, editValue, validationError: err, regexWarning: warn });
         if (err) {
             setValidationError(err);
             return;
         }
-        const warn = computeRegexWarning(editValue);
         if (warn) {
             setValidationError(warn);
             setValidationWarning(null);
@@ -1638,10 +1650,12 @@ function InlineEditField({
 
     // --- Focus / blur handlers for active-field tracking (Task 4) ---
     const handleFocus = useCallback(() => {
+        debugLog("InlineEditField", "focus", { dataTypeId, isActive });
         if (!isActive) onActivate(dataTypeId);
     }, [isActive, onActivate, dataTypeId]);
 
     const handleBlur = useCallback(() => {
+        debugLog("InlineEditField", "blur", { dataTypeId, savingRef: savingRef.current, editValue, origValue: origValueRef.current });
         // Do not deactivate when a save is already in flight.
         if (savingRef.current) return;
         // Clear any stale explicit-save flag that may have been left by a

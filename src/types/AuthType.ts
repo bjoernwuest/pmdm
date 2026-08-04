@@ -41,5 +41,6 @@ export const MeContextResponseSchema = Type.Object({
     user: MeUserSchema,
     permissionNames: Type.Array(Type.String()),
     functionalPermissions: Type.Array(FunctionalPermissionSelectSchema),
+    debugFrontend: Type.Boolean(),
 });
 export type MeContextResponse = Static<typeof MeContextResponseSchema>;

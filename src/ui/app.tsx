@@ -3,6 +3,7 @@ import { Link, matchPath, NavLink, Navigate, Outlet, Route, Routes, useLocation,
 import { buildNavTree, getAccessiblePages, getDefaultPath, getPageByUrn, getVisiblePages } from "./PageRegistry.ts";
 import type { NavGroupItem, PageModule } from "../types/PageType.ts";
 import { apiGet } from "@/ui/api/index.ts";
+import { setDebugFrontend } from "@/ui/debug.ts";
 import type {
     FunctionalPermissionDetailResponseType,
     GroupFunctionalPermissionResponseType,
@@ -15,6 +16,7 @@ type ViewerContext = {
         preferredUsername?: string | null;
     };
     permissionNames: string[];
+    debugFrontend?: boolean;
 };
 
 function Loading() {
@@ -316,9 +318,11 @@ export default function AppLayout() {
         const loadContext = async () => {
             try {
                 const payload = await apiGet<ViewerContext>("/api/me/context");
+                setDebugFrontend(payload.debugFrontend ?? false);
                 if (!cancelled) setContext({
                     user: payload.user,
                     permissionNames: Array.isArray(payload.permissionNames) ? payload.permissionNames : [],
+                    debugFrontend: payload.debugFrontend ?? false,
                 });
             } catch {
                 // Intentionally ignore load errors; auth redirect and fallback UI are handled elsewhere.

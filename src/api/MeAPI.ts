@@ -1,5 +1,6 @@
 import type { ApiInstance } from "@/apps/api.ts";
 import { getMyFunctionalPermissions } from "@/services/Auth.ts";
+import { debugFrontend } from "@/devmode.ts";
 import { Type } from "@sinclair/typebox";
 import { MeContextResponseSchema } from "@/types/AuthType.ts";
 
@@ -18,6 +19,7 @@ export default function register(app: ApiInstance) {
             },
             permissionNames: functionalPermissions.map((permission) => permission.functionalPermissionName),
             functionalPermissions,
+            debugFrontend,
         };
     }, {
         response: {
