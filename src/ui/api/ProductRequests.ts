@@ -29,6 +29,8 @@ export type CreateProductRequestResponse = {
 export type UpdateProductRequestValueResponse = {
     value: ProductRequestValueEnriched;
     recalculated: ProductRequestValueEnriched[];
+    mandatory?: Record<string, boolean>;
+    requestorCanEdit?: Record<string, boolean>;
 };
 
 export type ApproveProductRequestValueResponse = {

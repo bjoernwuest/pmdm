@@ -473,7 +473,12 @@ export default function register(app: ApiInstance): void {
             });
 
             if (result === null) return status(409, { error: "Value was modified by another user" });
-            return { value: result.value, recalculated: result.recalculated };
+            return {
+                value: result.value,
+                recalculated: result.recalculated,
+                mandatory: result.mandatory,
+                requestorCanEdit: result.requestorCanEdit,
+            };
         } catch (e: any) {
             if (e instanceof PermissionDeniedError) {
                 return status(403, { error: e.message });
@@ -502,6 +507,8 @@ export default function register(app: ApiInstance): void {
             200: t.Object({
                 value: t.Any(),
                 recalculated: t.Any(),
+                mandatory: t.Optional(t.Any()),
+                requestorCanEdit: t.Optional(t.Any()),
             }),
             400: t.Object({ error: t.String() }),
             401: t.Object({ error: t.String() }),

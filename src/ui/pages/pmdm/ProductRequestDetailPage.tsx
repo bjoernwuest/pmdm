@@ -566,8 +566,8 @@ export function Component() {
                                 approvedBy: null,
                                 approverName: null,
                                 approverEmail: null,
-                                mandatory: respValue.mandatory ?? v.mandatory,
-                                requestorCanEdit: respValue.requestorCanEdit ?? v.requestorCanEdit,
+                                mandatory: result.mandatory?.[dataTypeIdentifier] ?? v.mandatory,
+                                requestorCanEdit: result.requestorCanEdit?.[dataTypeIdentifier] ?? v.requestorCanEdit,
                             };
                         }
                         const recalc = recalcMap.get(v.dataType);
@@ -577,8 +577,8 @@ export function Component() {
                                 value: recalc.value,
                                 updatedAt: recalc.updatedAt,
                                 updatedBy: recalc.updatedBy,
-                                mandatory: (recalc as any).mandatory ?? v.mandatory,
-                                requestorCanEdit: (recalc as any).requestorCanEdit ?? v.requestorCanEdit,
+                                mandatory: result.mandatory?.[v.dataType] ?? v.mandatory,
+                                requestorCanEdit: result.requestorCanEdit?.[v.dataType] ?? v.requestorCanEdit,
                             };
                         }
                         return v;

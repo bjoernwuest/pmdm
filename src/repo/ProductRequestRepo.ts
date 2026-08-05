@@ -1426,7 +1426,12 @@ export async function updateProductRequestValue(
     dataTypeIdentifier: string,
     value: unknown,
     knownUpdatedAt: string,
-): Promise<{ value: ProductRequestsValuesType; recalculated: ProductRequestsValuesType[] } | null> {
+): Promise<{
+    value: ProductRequestsValuesType;
+    recalculated: ProductRequestsValuesType[];
+    mandatory?: Record<string, boolean>;
+    requestorCanEdit?: Record<string, boolean>;
+} | null> {
     const user = (await getLoggedinUserObject(tx, claims));
     if (!user) throw new Error("User not found");
 
@@ -1652,12 +1657,16 @@ export async function updateProductRequestValue(
 
     // Re-evaluate mandatory & requestorCanEdit scripts for all values.
     // Run unconditionally — these scripts only read data, no mutation cascade.
+    let mandatory: Record<string, boolean> | undefined;
+    let requestorCanEdit: Record<string, boolean> | undefined;
     try {
         const statuses = await reevaluateMandatoryAndRequestorCanEdit(tx, requestId, user.identifier!);
+        mandatory = statuses.mandatory;
+        requestorCanEdit = statuses.requestorCanEdit;
         PubSub.publish(message_MandatoryAndRequestorCanEditUpdated, {
             productRequest: requestId,
-            mandatory: statuses.mandatory,
-            requestorCanEdit: statuses.requestorCanEdit,
+            mandatory,
+            requestorCanEdit,
         });
         for (const inv of statuses.invalidatedApprovals) {
             PubSub.publish(message_ApproveProductRequestValue, inv);
@@ -1666,7 +1675,7 @@ export async function updateProductRequestValue(
         if (devMode) console.error("Mandatory/requestorCanEdit re-evaluation failed:", e);
     }
 
-    return { value: updated as ProductRequestsValuesType, recalculated };
+    return { value: updated as ProductRequestsValuesType, recalculated, mandatory, requestorCanEdit };
 }
 
 // ---------------------------------------------------------------------------
