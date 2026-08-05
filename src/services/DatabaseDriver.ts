@@ -110,6 +110,7 @@ export async function initDatabase(): Promise<void> {
 
     const advisoryLockId = process.env.ADVISORY_LOCK ? BigInt(process.env.ADVISORY_LOCK) : -7482650123549836421n;
     const db = getDatabaseConnection() as DrizzleType;
+    let lockAcquired = false;
     try {
         const umzugMigrationsTable = pgTable("migrations", {
             name: text("name").primaryKey(),
@@ -164,8 +165,12 @@ export async function initDatabase(): Promise<void> {
             logger: devMode ? console : undefined,
         });
 
-        // Lock setzen
-        await db.execute(sql`SELECT pg_advisory_lock(${advisoryLockId})`);
+        const lockResult = await db.execute(sql.raw(`SELECT pg_try_advisory_lock(${advisoryLockId}) AS acquired`));
+        const row = lockResult[0] as { acquired: boolean } | undefined;
+        if (!row || !row.acquired) {
+            throw new Error("Another instance is currently running migrations. The advisory lock is held by a different database session.");
+        }
+        lockAcquired = true;
         if (devMode) console.log("🔒 Database lock acquired.");
 
         const executed = await umzug.up();
@@ -178,11 +183,10 @@ export async function initDatabase(): Promise<void> {
 
     } catch (err) { throw new Error("Applying programmatic migrations failed: " + String(err)); }
     finally {
-        try {
-            // Lock wieder freigeben
-            await db.execute(sql`SELECT pg_advisory_unlock(${advisoryLockId})`);
+        if (lockAcquired) {
+            await db.execute(sql.raw(`SELECT pg_advisory_unlock(${advisoryLockId})`));
             if (devMode) console.log("🔓 Database lock released.");
-        } catch (lockErr) { if (devMode) console.error("Could not release advisory lock:", String(lockErr)); }
+        }
     }
 }
 
