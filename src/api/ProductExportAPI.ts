@@ -19,7 +19,7 @@ import {
 import { ProductRequestStatus } from "@/schema/ProductRequestSchema.ts";
 import { ProductRequests, ProductRequestsValues } from "@/schema/ProductRequestSchema.ts";
 import { ProductExports } from "@/schema/ProductExportSchema.ts";
-import { ProductTypesDataTypesTargetSystems } from "@/schema/ProductTypeSchema.ts";
+import { ProductTypesDataTypesTargetSystems, ProductTypesDataTypes } from "@/schema/ProductTypeSchema.ts";
 import { DataTypeSchema } from "@/schema/DataTypeSchema.ts";
 import { TargetSystems } from "@/schema/TargetSystemSchema.ts";
 import { LookupsValues } from "@/schema/LookupsSchema.ts";
@@ -553,6 +553,7 @@ async function buildExportData(
             identifier: ProductRequests.identifier,
             productNumber: ProductRequests.productNumber,
             productType: ProductRequests.productType,
+            productToUpdate: ProductRequests.productToUpdate,
         })
         .from(ProductRequests)
         .where(inArray(ProductRequests.identifier, requestIds));
@@ -573,9 +574,14 @@ async function buildExportData(
             dataType: ProductTypesDataTypesTargetSystems.dataType,
             name: sql<string>`COALESCE(${ProductTypesDataTypesTargetSystems.name}, ${DataTypeSchema.name})`.as("name"),
             kind: DataTypeSchema.kind,
+            editableOnUpdate: ProductTypesDataTypes.editableOnUpdate,
         })
         .from(ProductTypesDataTypesTargetSystems)
         .innerJoin(DataTypeSchema, eq(ProductTypesDataTypesTargetSystems.dataType, DataTypeSchema.identifier))
+        .leftJoin(ProductTypesDataTypes, and(
+            eq(ProductTypesDataTypes.productType, productTypeId),
+            eq(ProductTypesDataTypes.dataType, ProductTypesDataTypesTargetSystems.dataType),
+        ))
         .where(and(
             eq(ProductTypesDataTypesTargetSystems.productType, productTypeId),
             eq(ProductTypesDataTypesTargetSystems.targetSystem, targetSystemId),
@@ -584,6 +590,9 @@ async function buildExportData(
 
     const headers = ["productNumber", ...dataTypeAssignments.map((a) => a.name!)];
     const dtMap = new Map(dataTypeAssignments.map((a) => [a.dataType, a.name!]));
+    const editableOnUpdateMap = new Map<string, boolean>(
+        dataTypeAssignments.map((a) => [a.dataType, a.editableOnUpdate ?? true]),
+    );
     const lookupDtIds = new Set(dataTypeAssignments.filter((a) => a.kind === "lookup").map((a) => a.dataType));
     const consumableDtIds = new Set(dataTypeAssignments.filter((a) => a.kind === "consumable").map((a) => a.dataType));
 
@@ -639,7 +648,13 @@ async function buildExportData(
     for (const request of requests) {
         const values = allProductValues.filter((v) => v.productRequest === request.identifier);
         const row: any = { productNumber: request.productNumber };
+        const isUpdateRequest = !!request.productToUpdate;
         for (const [dtId, dtName] of dtMap) {
+            if (isUpdateRequest && editableOnUpdateMap.get(dtId) === false) {
+                row[dtName] = "";
+                continue;
+            }
+
             const val = values.find((v) => v.dataType === dtId);
             const resolved = val ? (val.value ?? val.defaultValue) : null;
             if (resolved === "null" || resolved === null) {
