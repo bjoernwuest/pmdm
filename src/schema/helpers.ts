@@ -20,7 +20,7 @@ export const identifierColumnType = (name: string) => uuid(name);
  */
 export const Identifier = { identifier: identifierColumnType("identifier").primaryKey().default(sql`uuidv7()`) }
 
-export const timestampColumnType = (name: string) => timestamp(name, { mode: "string" });
+export const timestampColumnType = (name: string) => timestamp(name, { mode: "string", withTimezone: true });
 /**
  * An object representing timestamp fields for a database record.
  *

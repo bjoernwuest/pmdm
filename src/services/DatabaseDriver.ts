@@ -62,6 +62,9 @@ export function getDatabaseConnection(): DBClient {
                 max: 10,
                 idle_timeout: 20,
                 connect_timeout: 10,
+                connection: {
+                    timezone: 'UTC',
+                },
             });
         } catch (error) {
             console.error("Failed to connect to database: ", error);
@@ -113,7 +116,7 @@ export async function initDatabase(): Promise<void> {
     try {
         const umzugMigrationsTable = pgTable("migrations", {
             name: text("name").primaryKey(),
-            appliedAt: timestamp("applied_at").defaultNow().notNull(),
+            appliedAt: timestamp("applied_at", { mode: "string", withTimezone: true }).defaultNow().notNull(),
         });
 
         type Context = { db: DrizzleType };
@@ -152,7 +155,7 @@ export async function initDatabase(): Promise<void> {
             storage: {
                 async executed({ context }) {
                     try {
-                        await context.db.execute(sql`CREATE TABLE IF NOT EXISTS "migrations" ("name" text PRIMARY KEY, "applied_at" timestamp DEFAULT now() NOT NULL);`);
+                        await context.db.execute(sql`CREATE TABLE IF NOT EXISTS "migrations" ("name" text PRIMARY KEY, "applied_at" timestamptz DEFAULT now() NOT NULL);`);
                         const result = await context.db.select({ name: umzugMigrationsTable.name }).from(umzugMigrationsTable);
                         return result.map(r => r.name);
                     } catch (e) { return []; }
