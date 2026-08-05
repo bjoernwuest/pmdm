@@ -80,7 +80,7 @@ export async function upsertConfigEntry(
     const rows = await db.insert(ConfigEntry).values(entry).onConflictDoUpdate({
         target: [ConfigEntry.domain, ConfigEntry.key],
         set: {
-            value: entry.value,
+            value: entry.value ?? null,
         }
     }).returning();
 
