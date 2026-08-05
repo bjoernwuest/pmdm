@@ -26,7 +26,8 @@ export const Identifier = { identifier: identifierColumnType("identifier").prima
  * @param name Physical column name.
  * @returns Timestamp column builder configured with `mode: "string"`.
  */
-export const timestampColumnType = (name: string) => timestamp(name, { mode: "string" });
+export const timestampColumnType = (name: string) => timestamp(name, { mode: "string", withTimezone: true });
+
 /**
  * An object representing timestamp fields for a database record.
  *
