@@ -44,7 +44,7 @@ export default function register(app: ApiInstance) {
             tags: ["Audit"],
             summary: "Get audit log entries",
             description:
-                "Retrieve paginated audit log entries. Supports optional filtering via JSONPath (`jsonPathFilter`) and free-text search (`search`). Requires 'read_audit_log' permission.",
+                "Retrieve paginated audit log entries. Supports optional filtering via JSONPath (`jsonPathFilter`) and free-text search (`search`). Requires 'FP_READ_AUDIT_LOG' permission.",
             parameters: [
                 {
                     name: "X-API-Key",
@@ -115,7 +115,7 @@ export default function register(app: ApiInstance) {
             tags: ["Audit"],
             summary: "Clear audit log",
             description:
-                "Deletes all existing audit log entries and adds a new entry recording who cleared the log. Requires 'clear_audit_log' permission.",
+                "Deletes all existing audit log entries and adds a new entry recording who cleared the log. Requires 'FP_CLEAR_AUDIT_LOG' permission.",
             parameters: [
                 {
                     name: "X-API-Key",
