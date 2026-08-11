@@ -87,7 +87,7 @@ export default function register(app: ApiInstance) {
         detail: {
             tags: ["API Key"],
             summary: "Get paged API key list",
-            description: "Retrieve API keys with metadata and assigned permission names. Authenticate with an API key using the X-API-Key header.",
+            description: "Retrieve API keys with metadata and assigned permission names. Requires FP_VIEW_API_KEYS permission. Authenticate with an API key using the X-API-Key header.",
             parameters: [
                 {
                     name: "X-API-Key",
@@ -179,7 +179,7 @@ export default function register(app: ApiInstance) {
         detail: {
             tags: ["API Key"],
             summary: "Get API key details",
-            description: "Retrieve one API key with metadata and editable permission assignment context. Authenticate with an API key using the X-API-Key header.",
+            description: "Retrieve one API key with metadata and editable permission assignment context. Requires FP_VIEW_API_KEYS permission. Authenticate with an API key using the X-API-Key header.",
             parameters: [
                 {
                     name: "X-API-Key",
@@ -249,7 +249,7 @@ export default function register(app: ApiInstance) {
         detail: {
             tags: ["API Key"],
             summary: "Create API key",
-            description: "Create a new API key and return the plaintext key once. Authenticate with an API key using the X-API-Key header.",
+            description: "Create a new API key and return the plaintext key once. Requires FP_CREATE_API_KEYS permission. Must be called by a human user (not via API key). Authenticate with an API key using the X-API-Key header.",
             parameters: [
                 {
                     name: "X-API-Key",
@@ -392,7 +392,7 @@ export default function register(app: ApiInstance) {
         detail: {
             tags: ["API Key"],
             summary: "Disable an API key",
-            description: "Permanently disable an API key with optimistic locking. A disabled key can no longer authenticate. Requires FP_PROLONG_API_KEYS permission. Must be called by a human user.",
+            description: "Permanently disable an API key with optimistic locking. A disabled key can no longer authenticate. Requires FP_PROLONG_API_KEYS permission. Must be called by a human user (not via API key).",
             parameters: [
                 {
                     name: "X-API-Key",
@@ -438,7 +438,7 @@ export default function register(app: ApiInstance) {
         detail: {
             tags: ["API Key"],
             summary: "Replace API key functional permissions",
-            description: "Replaces all functional permissions assigned to an API key with optimistic locking. Requires FP_PROLONG_API_KEYS permission. Must be called by a human user.",
+            description: "Replaces all functional permissions assigned to an API key with optimistic locking. Requires FP_PROLONG_API_KEYS permission. Must be called by a human user (not via API key).",
             parameters: [
                 {
                     name: "X-API-Key",

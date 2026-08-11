@@ -4,7 +4,7 @@
 /.env
 /tests/.env.test
 /bun.lock
-/bun-starter.iml
+/*.iml
 /package-lock.json
 /TODO.md
 /debug_analysis/
