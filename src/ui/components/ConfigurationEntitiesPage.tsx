@@ -255,7 +255,7 @@ export function ConfigurationEntitiesPage<T extends ConfigurationEntity = Config
             const refs = labelRefs.current.get(row.identifier);
             if (refs) {
                 refs.name.current?.setText(row.name, { entityId: row.identifier, field: "name" });
-                refs.status.current?.setText(row.disabled ? "Disabled" : "Enabled", { entityId: row.identifier, field: "status" });
+                refs.status.current?.setText(row.disabled ? "Inactive" : "Enabled", { entityId: row.identifier, field: "status" });
                 refs.created.current?.setText(formatTimestamp(row.createdAt), { entityId: row.identifier, field: "created" });
                 refs.updated.current?.setText(formatTimestamp(row.updatedAt), { entityId: row.identifier, field: "updated" });
             }
@@ -290,7 +290,7 @@ export function ConfigurationEntitiesPage<T extends ConfigurationEntity = Config
             }
             if (tags.includes("disable")) {
                 const disabled = data?.disabled === true;
-                refs.status.current?.setText(disabled ? "Disabled" : "Enabled", { entityId, field: "status" });
+                refs.status.current?.setText(disabled ? "Inactive" : "Enabled", { entityId, field: "status" });
             }
 
             // Cancel inline editing if the edited entity was updated externally
@@ -368,7 +368,7 @@ export function ConfigurationEntitiesPage<T extends ConfigurationEntity = Config
                     <Toggle<boolean>
                         variant="toggle"
                         value={showDisabled}
-                        options={[{ value: true, label: "Show disabled" }, { value: false, label: "Hide disabled" }]}
+                        options={[{ value: true, label: "Show inactive" }, { value: false, label: "Hide inactive" }]}
                         onChange={(t) => updateQuery({ showDisabled: t.getValue(), page: 1 })}
                     />
                 </div>
@@ -398,7 +398,7 @@ export function ConfigurationEntitiesPage<T extends ConfigurationEntity = Config
                                 <tr>
                                     <SortableHeader label="Identifier" sortKey="identifier" sortConfig={sortConfig} onSort={handleSort} />
                                     <SortableHeader label="Name" sortKey="name" sortConfig={sortConfig} onSort={handleSort} />
-                                    <SortableHeader label="Disabled" sortKey="disabled" sortConfig={sortConfig} onSort={handleSort} />
+                                    <SortableHeader label="Inactive" sortKey="disabled" sortConfig={sortConfig} onSort={handleSort} />
                                     <SortableHeader label="Created at" sortKey="createdAt" sortConfig={sortConfig} onSort={handleSort} />
                                     <SortableHeader label="Updated at" sortKey="updatedAt" sortConfig={sortConfig} onSort={handleSort} />
                                     <SortableHeader label="Created by" sortKey="createdBy" sortConfig={sortConfig} onSort={handleSort} />
@@ -489,7 +489,7 @@ export function ConfigurationEntitiesPage<T extends ConfigurationEntity = Config
                                                     }}
                                                     title={canManage ? (row.disabled ? "Enable" : "Disable") : undefined}
                                                 >
-                                                    <Label ref={refs.status} size="small" text={row.disabled ? "Disabled" : "Enabled"} />
+                                                    <Label ref={refs.status} size="small" text={row.disabled ? "Inactive" : "Enabled"} />
                                                 </button>
                                             </td>
                                             <td><Label ref={refs.created} size="small" text={formatTimestamp(row.createdAt)} /></td>

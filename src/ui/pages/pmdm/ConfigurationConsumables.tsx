@@ -34,7 +34,7 @@ export function Component() {
             viewPermissionName={FP_VIEW_CONSUMABLES.functionalPermissionName}
             managePermissionName={FP_MANAGE_CONSUMABLES.functionalPermissionName}
             pubSubTopics={[{ and: message_CreateConsumable }, { and: message_UpdateConsumable }, { and: message_DisableConsumable }]}
-            extraColumnHeaders={["Enabled values", "Disabled values", "Used values"]}
+            extraColumnHeaders={["Enabled values", "Inactive values", "Used values"]}
             rowHref={(row) => `/configuration/consumables/${encodeURIComponent(row.identifier)}${location.search}`}
             createdEntityHref={(row) => `/configuration/consumables/${encodeURIComponent(row.identifier)}${location.search}`}
             renderExtraCells={(row) => [row.enabledValueCount, row.disabledValueCount, row.usedValueCount]}

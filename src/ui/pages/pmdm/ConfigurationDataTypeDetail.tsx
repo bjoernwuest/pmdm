@@ -1024,11 +1024,11 @@ export function Component() {
                                 className={`mui-pill ${detail.disabled ? "admin-configuration-status-chip-disabled" : "admin-configuration-status-chip-enabled"}`}
                                 onClick={() => void handleToggleDisabled()}
                             >
-                                {detail.disabled ? "Disabled" : "Enabled"}
+                                {detail.disabled ? "Inactive" : "Enabled"}
                             </button>
                         ) : (
                             <span className={`mui-pill ${detail.disabled ? "admin-configuration-status-chip-disabled" : "admin-configuration-status-chip-enabled"}`}>
-                                {detail.disabled ? "Disabled" : "Enabled"}
+                                {detail.disabled ? "Inactive" : "Enabled"}
                             </span>
                         )}
                     </div>

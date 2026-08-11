@@ -288,7 +288,7 @@ export function Component() {
         const id = productType.identifier;
         nameLabelRef.current?.setText(productType.name, { productTypeId: id, field: "name" });
         descriptionLabelRef.current?.setText(productType.description ?? "-", { productTypeId: id, field: "description" });
-        statusRef.current?.setText(productType.disabled ? "Disabled" : "Enabled", { productTypeId: id, field: "status" });
+        statusRef.current?.setText(productType.disabled ? "Inactive" : "Enabled", { productTypeId: id, field: "status" });
         createdRef.current?.setText(formatTimestamp(productType.createdAt), { productTypeId: id, field: "created" });
         updatedRef.current?.setText(formatTimestamp(productType.updatedAt), { productTypeId: id, field: "updated" });
         identifierRef.current?.setText(productType.identifier, { productTypeId: id, field: "identifier" });
@@ -512,7 +512,7 @@ export function Component() {
                 }
                 if (tags.includes(TAG_DISABLE)) {
                     const disabled = data?.disabled === true;
-                    statusRef.current?.setText(disabled ? "Disabled" : "Enabled", { productTypeId: producttypeid, field: "status" });
+                    statusRef.current?.setText(disabled ? "Inactive" : "Enabled", { productTypeId: producttypeid, field: "status" });
                     statusToggleRef.current?.setValue(disabled, { productTypeId: producttypeid, field: "disabled", updatedAt: (data?.updatedAt as string) ?? productType.updatedAt });
                 }
             },
@@ -1031,12 +1031,12 @@ export function Component() {
                                 value={productType.disabled}
                                 options={[
                                     { value: false, label: "Enabled" },
-                                    { value: true, label: "Disabled" },
+                                    { value: true, label: "Inactive" },
                                 ]}
                                 onChange={(t) => { void handleToggleDisabled(t); }}
                             />
                         ) : (
-                            <Label ref={statusRef} size="small" text={productType.disabled ? "Disabled" : "Enabled"} />
+                            <Label ref={statusRef} size="small" text={productType.disabled ? "Inactive" : "Enabled"} />
                         )}
                     </div>
                     <div>

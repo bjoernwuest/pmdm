@@ -186,7 +186,7 @@ export function Component() {
                         </p>
                     </div>
                     <div style={{ textAlign: "right" }}>
-                        <Tag value={product.disabled ? "Disabled" : "Active"} severity={product.disabled ? "danger" : "success"} style={{ marginBottom: "0.25rem" }} />
+                        <Tag value={product.disabled ? "Inactive" : "Active"} severity={product.disabled ? "danger" : "success"} style={{ marginBottom: "0.25rem" }} />
                         <p style={{ margin: 0, fontSize: "0.85rem", color: "var(--text-color-secondary)" }}>
                             Updated: {new Date(product.updatedAt).toISOString()}
                         </p>

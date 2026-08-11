@@ -238,7 +238,7 @@ export function Component() {
             const refs = valueLabelRefs.current.get(row.identifier);
             if (refs) {
                 refs.name.current?.setText(row.name, { consumableId: row.consumableIdentifier, valueId: row.identifier, field: "name" });
-                refs.status.current?.setText(row.disabled ? "Disabled" : "Enabled", { consumableId: row.consumableIdentifier, valueId: row.identifier, field: "status" });
+                refs.status.current?.setText(row.disabled ? "Inactive" : "Enabled", { consumableId: row.consumableIdentifier, valueId: row.identifier, field: "status" });
                 refs.created.current?.setText(formatTimestamp(row.createdAt), { consumableId: row.consumableIdentifier, valueId: row.identifier, field: "created" });
                 refs.updated.current?.setText(formatTimestamp(row.updatedAt), { consumableId: row.consumableIdentifier, valueId: row.identifier, field: "updated" });
             }
@@ -314,7 +314,7 @@ export function Component() {
                 }
                 if (tags.includes(TAG_DISABLE)) {
                     const disabled = data?.disabled === true;
-                    refs.status.current?.setText(disabled ? "Disabled" : "Enabled", { valueId, field: "status" });
+                    refs.status.current?.setText(disabled ? "Inactive" : "Enabled", { valueId, field: "status" });
                 }
 
                 // Cancel inline editing if the edited value was updated externally
@@ -661,8 +661,8 @@ export function Component() {
     // --- Toggle option constants ---------------------------------------------
 
     const showDisabledOptions = useMemo(() => [
-        { value: true, label: "Show disabled" },
-        { value: false, label: "Hide disabled" },
+        { value: true, label: "Show inactive" },
+        { value: false, label: "Hide inactive" },
     ] as const, []);
 
     const showUsedOptions = useMemo(() => [
@@ -672,7 +672,7 @@ export function Component() {
 
     const statusOptions = useMemo(() => [
         { value: false, label: "Enabled" },
-        { value: true, label: "Disabled" },
+        { value: true, label: "Inactive" },
     ] as const, []);
 
     return (
@@ -760,7 +760,7 @@ export function Component() {
                                     <tr>
                                         <th>Identifier</th>
                                         <th>Name</th>
-                                        <th>Disabled</th>
+                                        <th>Inactive</th>
                                         <th>Used</th>
                                         <th>Created at</th>
                                         <th>Updated at</th>

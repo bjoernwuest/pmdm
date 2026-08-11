@@ -40,7 +40,7 @@ function isBooleanEntry(entry: NotificationConfigEntry): boolean {
 
 function formatValue(entry: NotificationConfigEntry): string {
     const val = entry.value;
-    if (entry.type === "boolean") return val === true ? "Enabled" : "Disabled";
+    if (entry.type === "boolean") return val === true ? "Enabled" : "Inactive";
     if (val === null || val === undefined) return "(empty)";
     return String(val);
 }
@@ -110,7 +110,7 @@ function ConfigRow({ entry, onUpdate }: { entry: NotificationConfigEntry; onUpda
                     <Toggle
                         variant="toggle"
                         value={entry.value === true}
-                        options={[{ value: true, label: "Enabled" }, { value: false, label: "Disabled" }]}
+                        options={[{ value: true, label: "Enabled" }, { value: false, label: "Inactive" }]}
                         onChange={(t) => { void handleToggle(t); }}
                     />
                 ) : editing ? (

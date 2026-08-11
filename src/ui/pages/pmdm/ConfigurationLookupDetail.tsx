@@ -243,7 +243,7 @@ export function Component() {
             const refs = valueLabelRefs.current.get(row.identifier);
             if (refs) {
                 refs.name.current?.setText(row.name, { lookupId: row.lookupIdentifier, valueId: row.identifier, field: "name" });
-                refs.status.current?.setText(row.disabled ? "Disabled" : "Enabled", { lookupId: row.lookupIdentifier, valueId: row.identifier, field: "status" });
+                refs.status.current?.setText(row.disabled ? "Inactive" : "Enabled", { lookupId: row.lookupIdentifier, valueId: row.identifier, field: "status" });
                 refs.created.current?.setText(formatTimestamp(row.createdAt), { lookupId: row.lookupIdentifier, valueId: row.identifier, field: "created" });
                 refs.updated.current?.setText(formatTimestamp(row.updatedAt), { lookupId: row.lookupIdentifier, valueId: row.identifier, field: "updated" });
             }
@@ -328,7 +328,7 @@ export function Component() {
                 }
                 if (tags.includes(TAG_DISABLE)) {
                     const disabled = data?.disabled === true;
-                    refs.status.current?.setText(disabled ? "Disabled" : "Enabled", { valueId, field: "status" });
+                    refs.status.current?.setText(disabled ? "Inactive" : "Enabled", { valueId, field: "status" });
                 }
 
                 // Cancel inline editing if the edited value was updated externally
@@ -811,13 +811,13 @@ export function Component() {
     // --- Toggle option constants ---------------------------------------------
 
     const showDisabledOptions = useMemo(() => [
-        { value: true, label: "Show disabled" },
-        { value: false, label: "Hide disabled" },
+        { value: true, label: "Show inactive" },
+        { value: false, label: "Hide inactive" },
     ] as const, []);
 
     const statusOptions = useMemo(() => [
         { value: false, label: "Enabled" },
-        { value: true, label: "Disabled" },
+        { value: true, label: "Inactive" },
     ] as const, []);
 
     return (
@@ -909,7 +909,7 @@ export function Component() {
                                     <tr>
                                         <th>Identifier</th>
                                         <th>Name</th>
-                                        <th>Disabled</th>
+                                        <th>Inactive</th>
                                         <th>Source system identifier</th>
                                         <th>Created at</th>
                                         <th>Updated at</th>

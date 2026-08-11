@@ -350,7 +350,7 @@ export function Component() {
 
     // Templates
     const disabledBody = (row: any) => (
-        <Tag value={row.disabled ? "Disabled" : "Active"} severity={row.disabled ? "danger" : "success"} />
+        <Tag value={row.disabled ? "Inactive" : "Active"} severity={row.disabled ? "danger" : "success"} />
     );
 
     const updatedAtBody = (row: any) => {
@@ -410,7 +410,7 @@ export function Component() {
                 <Column field="productNumber" header="Product #" sortable />
                 <Column field="productTypeName" header="Product Type" sortable />
                 <Column field="updatedAt" header="Updated At" body={updatedAtBody} sortable />
-                <Column field="disabled" header="Disabled" body={disabledBody} sortable />
+                <Column field="disabled" header="Inactive" body={disabledBody} sortable />
                 <Column header="Actions" body={actionsBody} style={{ width: "100px" }} />
             </DataTable>
 

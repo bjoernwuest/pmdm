@@ -34,7 +34,7 @@ export function Component() {
             viewPermissionName={FP_VIEW_LOOKUPS.functionalPermissionName}
             managePermissionName={FP_MANAGE_LOOKUPS.functionalPermissionName}
             pubSubTopics={[{ and: message_CreateLookup }, { and: message_UpdateLookup }, { and: message_DisableLookup }]}
-            extraColumnHeaders={["Enabled values", "Disabled values"]}
+            extraColumnHeaders={["Enabled values", "Inactive values"]}
             rowHref={(row) => `/configuration/lookups/${encodeURIComponent(row.identifier)}${location.search}`}
             createdEntityHref={(row) => `/configuration/lookups/${encodeURIComponent(row.identifier)}${location.search}`}
             renderExtraCells={(row) => [row.enabledValueCount, row.disabledValueCount]}
