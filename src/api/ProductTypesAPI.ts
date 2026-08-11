@@ -132,7 +132,7 @@ export default function register(app: ApiInstance): void {
         detail: {
             tags: ["Product type"],
             summary: "List assigned data types for a product type",
-            description: "Returns all DataType assignments for a product type, joined with DataType name/kind/description and owner BusinessDomain name.",
+            description: "Returns all DataType assignments for a product type, joined with DataType name/kind/description and owner BusinessDomain name. Requires FP_DO_CONFIGURATION AND FP_VIEW_PRODUCT_TYPES.",
             parameters: [
                 { name: "X-API-Key", in: "header", description: "API key for authentication", schema: { type: "string" }, required: false },
             ],
@@ -181,7 +181,7 @@ export default function register(app: ApiInstance): void {
         detail: {
             tags: ["Product type"],
             summary: "Assign a data type to a product type",
-            description: "Creates a ProductTypesDataTypes row linking a DataType to a ProductType.",
+            description: "Creates a ProductTypesDataTypes row linking a DataType to a ProductType. Requires FP_DO_CONFIGURATION AND FP_MANAGE_PRODUCT_TYPES.",
             parameters: [
                 { name: "X-API-Key", in: "header", description: "API key for authentication", schema: { type: "string" }, required: false },
             ],
@@ -223,7 +223,7 @@ export default function register(app: ApiInstance): void {
         detail: {
             tags: ["Product type"],
             summary: "Unassign a data type from a product type",
-            description: "Deletes a ProductTypesDataTypes row.",
+            description: "Deletes a ProductTypesDataTypes row. Requires FP_DO_CONFIGURATION AND FP_MANAGE_PRODUCT_TYPES.",
             parameters: [
                 { name: "X-API-Key", in: "header", description: "API key for authentication", schema: { type: "string" }, required: false },
             ],
@@ -272,7 +272,7 @@ export default function register(app: ApiInstance): void {
         detail: {
             tags: ["Product type"],
             summary: "Update a data type assignment",
-            description: "Updates mutable fields on a ProductTypesDataTypes row (owner, mandatory, editableOnUpdate, requestorCanEdit, config).",
+            description: "Updates mutable fields on a ProductTypesDataTypes row (owner, mandatory, editableOnUpdate, requestorCanEdit, config). Requires FP_DO_CONFIGURATION AND FP_MANAGE_PRODUCT_TYPES.",
             parameters: [
                 { name: "X-API-Key", in: "header", description: "API key for authentication", schema: { type: "string" }, required: false },
             ],
@@ -336,7 +336,7 @@ export default function register(app: ApiInstance): void {
         detail: {
             tags: ["Product type"],
             summary: "List assigned target systems for a product type data type assignment",
-            description: "Returns all TargetSystem assignments for a ProductType+DataType pair, joined with TargetSystem name.",
+            description: "Returns all TargetSystem assignments for a ProductType+DataType pair, joined with TargetSystem name. Requires FP_DO_CONFIGURATION AND FP_VIEW_PRODUCT_TYPES.",
             parameters: [
                 { name: "X-API-Key", in: "header", description: "API key for authentication", schema: { type: "string" }, required: false },
             ],
@@ -394,7 +394,7 @@ export default function register(app: ApiInstance): void {
         detail: {
             tags: ["Product type"],
             summary: "Assign a target system to a product type data type",
-            description: "Creates a ProductTypesDataTypesTargetSystems row linking a TargetSystem.",
+            description: "Creates a ProductTypesDataTypesTargetSystems row linking a TargetSystem. Requires FP_DO_CONFIGURATION AND FP_MANAGE_PRODUCT_TYPES.",
             parameters: [
                 { name: "X-API-Key", in: "header", description: "API key for authentication", schema: { type: "string" }, required: false },
             ],
@@ -445,7 +445,7 @@ export default function register(app: ApiInstance): void {
         detail: {
             tags: ["Product type"],
             summary: "Unassign a target system from a product type data type",
-            description: "Deletes a ProductTypesDataTypesTargetSystems row.",
+            description: "Deletes a ProductTypesDataTypesTargetSystems row. Requires FP_DO_CONFIGURATION AND FP_MANAGE_PRODUCT_TYPES.",
             parameters: [
                 { name: "X-API-Key", in: "header", description: "API key for authentication", schema: { type: "string" }, required: false },
             ],
@@ -497,7 +497,7 @@ export default function register(app: ApiInstance): void {
         detail: {
             tags: ["Product type"],
             summary: "Update a target system assignment name",
-            description: "Updates the name override on a ProductTypesDataTypesTargetSystems row.",
+            description: "Updates the name override on a ProductTypesDataTypesTargetSystems row. Requires FP_DO_CONFIGURATION AND FP_MANAGE_PRODUCT_TYPES.",
             parameters: [
                 { name: "X-API-Key", in: "header", description: "API key for authentication", schema: { type: "string" }, required: false },
             ],
@@ -543,7 +543,7 @@ export default function register(app: ApiInstance): void {
         detail: {
             tags: ["Product type"],
             summary: "Get product type data type permissions",
-            description: "Returns all group-role assignments for a ProductType+DataType assignment, including group names.",
+            description: "Returns all group-role assignments for a ProductType+DataType assignment, including group names. Requires FP_DO_CONFIGURATION AND FP_VIEW_PRODUCT_TYPES.",
             parameters: [
                 { name: "X-API-Key", in: "header", description: "API key for authentication", schema: { type: "string" }, required: false },
             ],
@@ -612,7 +612,7 @@ export default function register(app: ApiInstance): void {
         detail: {
             tags: ["Product type"],
             summary: "Grant product type data type permission",
-            description: "Grants a role (viewer/writer/approver) to a group for a ProductType+DataType assignment.",
+            description: "Grants a role (viewer/writer/approver) to a group for a ProductType+DataType assignment. Requires FP_DO_CONFIGURATION AND FP_MANAGE_PRODUCT_TYPES.",
             parameters: [
                 { name: "X-API-Key", in: "header", description: "API key for authentication", schema: { type: "string" }, required: false },
             ],
@@ -664,7 +664,7 @@ export default function register(app: ApiInstance): void {
         detail: {
             tags: ["Product type"],
             summary: "Revoke product type data type permission",
-            description: "Revokes a role assignment from a group for a ProductType+DataType assignment.",
+            description: "Revokes a role assignment from a group for a ProductType+DataType assignment. Requires FP_DO_CONFIGURATION AND FP_MANAGE_PRODUCT_TYPES.",
             parameters: [
                 { name: "X-API-Key", in: "header", description: "API key for authentication", schema: { type: "string" }, required: false },
             ],
@@ -723,7 +723,7 @@ export default function register(app: ApiInstance): void {
         detail: {
             tags: ["Product type"],
             summary: "Update product type data type permission",
-            description: "Updates the showByDefault flag on a ProductType+DataType permission.",
+            description: "Updates the showByDefault flag on a ProductType+DataType permission. Requires FP_DO_CONFIGURATION AND FP_MANAGE_PRODUCT_TYPES.",
             parameters: [
                 { name: "X-API-Key", in: "header", description: "API key for authentication", schema: { type: "string" }, required: false },
             ],
@@ -771,7 +771,7 @@ export default function register(app: ApiInstance): void {
         detail: {
             tags: ["Product type"],
             summary: "Get previous approval dependencies",
-            description: "Returns all previous-approval dependencies for a ProductType+DataType assignment, including depends-on data type names.",
+            description: "Returns all previous-approval dependencies for a ProductType+DataType assignment, including depends-on data type names. Requires FP_DO_CONFIGURATION AND FP_VIEW_PRODUCT_TYPES.",
             parameters: [
                 { name: "X-API-Key", in: "header", description: "API key for authentication", schema: { type: "string" }, required: false },
             ],
@@ -821,7 +821,7 @@ export default function register(app: ApiInstance): void {
         detail: {
             tags: ["Product type"],
             summary: "Add previous approval dependency",
-            description: "Adds a previous-approval dependency: the assigned data type requires the given depends-on data type to be approved first. Rejects self-dependencies and cycles.",
+            description: "Adds a previous-approval dependency: the assigned data type requires the given depends-on data type to be approved first. Rejects self-dependencies and cycles. Requires FP_DO_CONFIGURATION AND FP_MANAGE_PRODUCT_TYPES.",
             parameters: [
                 { name: "X-API-Key", in: "header", description: "API key for authentication", schema: { type: "string" }, required: false },
             ],
@@ -865,7 +865,7 @@ export default function register(app: ApiInstance): void {
         detail: {
             tags: ["Product type"],
             summary: "Remove previous approval dependency",
-            description: "Removes a previous-approval dependency for a ProductType+DataType assignment.",
+            description: "Removes a previous-approval dependency for a ProductType+DataType assignment. Requires FP_DO_CONFIGURATION AND FP_MANAGE_PRODUCT_TYPES.",
             parameters: [
                 { name: "X-API-Key", in: "header", description: "API key for authentication", schema: { type: "string" }, required: false },
             ],
@@ -907,7 +907,7 @@ export default function register(app: ApiInstance): void {
         detail: {
             tags: ["Product type"],
             summary: "Get product type permissions",
-            description: "Returns all group-role assignments for a product type, including group names.",
+            description: "Returns all group-role assignments for a product type, including group names. Requires FP_DO_CONFIGURATION AND FP_VIEW_PRODUCT_TYPES.",
             parameters: [
                 { name: "X-API-Key", in: "header", description: "API key for authentication", schema: { type: "string" }, required: false },
             ],
@@ -967,7 +967,7 @@ export default function register(app: ApiInstance): void {
         detail: {
             tags: ["Product type"],
             summary: "Grant product type permission",
-            description: "Grants the cancel role to a group for a product type.",
+            description: "Grants the cancel role to a group for a product type. Requires FP_DO_CONFIGURATION AND FP_MANAGE_PRODUCT_TYPES.",
             parameters: [
                 { name: "X-API-Key", in: "header", description: "API key for authentication", schema: { type: "string" }, required: false },
             ],
@@ -1015,7 +1015,7 @@ export default function register(app: ApiInstance): void {
         detail: {
             tags: ["Product type"],
             summary: "Revoke product type permission",
-            description: "Revokes the cancel role from a group for a product type.",
+            description: "Revokes the cancel role from a group for a product type. Requires FP_DO_CONFIGURATION AND FP_MANAGE_PRODUCT_TYPES.",
             parameters: [
                 { name: "X-API-Key", in: "header", description: "API key for authentication", schema: { type: "string" }, required: false },
             ],

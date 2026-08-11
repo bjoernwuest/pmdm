@@ -238,10 +238,10 @@ export function registerConfigurationEntityRoutes<
             401: t.String(),
             403: t.String(),
         },
-        detail: {
+            detail: {
             tags: [singularLabel],
             summary: `Get paged ${pluralLabel}`,
-            description: `Returns ${pluralLabel} with pagination metadata and optional inclusion of disabled entries.`,
+            description: `Returns ${pluralLabel} with pagination metadata and optional inclusion of disabled entries. Requires '${options.viewPermission.functionalPermissionName}'${options.alternativeListViewPermissions ? ' or ' + options.alternativeListViewPermissions.map(p => p.functionalPermissionName).join(' or ') : ''}${options.gatekeeperPermission ? '. Also requires \'' + options.gatekeeperPermission.functionalPermissionName + '\' gatekeeper permission.' : '.'}`,
             parameters: [
                 { name: "X-API-Key", in: "header", description: "API key for authentication", schema: { type: "string" }, required: false },
             ],
@@ -276,7 +276,7 @@ export function registerConfigurationEntityRoutes<
         detail: {
             tags: [singularLabel],
             summary: `Get ${options.entityLabel.toLowerCase()} by identifier`,
-            description: `Returns a single ${options.entityLabel.toLowerCase()} including disabled entries.`,
+            description: `Returns a single ${options.entityLabel.toLowerCase()} including disabled entries.${options.gatekeeperPermission ? ' Requires \'' + options.gatekeeperPermission.functionalPermissionName + '\' AND \'' + options.viewPermission.functionalPermissionName + '\'.' : ' Requires \'' + options.viewPermission.functionalPermissionName + '\'.'}`,
             parameters: [
                 { name: "X-API-Key", in: "header", description: "API key for authentication", schema: { type: "string" }, required: false },
             ],
@@ -317,7 +317,7 @@ export function registerConfigurationEntityRoutes<
         detail: {
             tags: [singularLabel],
             summary: `Create ${options.entityLabel.toLowerCase()}`,
-            description: `Creates a new ${options.entityLabel.toLowerCase()} if the name is unique.`,
+            description: `Creates a new ${options.entityLabel.toLowerCase()} if the name is unique.${options.gatekeeperPermission ? ' Requires \'' + options.gatekeeperPermission.functionalPermissionName + '\' AND \'' + options.managePermission.functionalPermissionName + '\'.' : ' Requires \'' + options.managePermission.functionalPermissionName + '\'.'}`,
             parameters: [
                 { name: "X-API-Key", in: "header", description: "API key for authentication", schema: { type: "string" }, required: false },
             ],
@@ -368,7 +368,7 @@ export function registerConfigurationEntityRoutes<
         detail: {
             tags: [singularLabel],
             summary: `Rename ${options.entityLabel.toLowerCase()}`,
-            description: `Updates the ${options.entityLabel.toLowerCase()} name using optimistic locking via knownUpdatedAt.`,
+            description: `Updates the ${options.entityLabel.toLowerCase()} name using optimistic locking via knownUpdatedAt.${options.gatekeeperPermission ? ' Requires \'' + options.gatekeeperPermission.functionalPermissionName + '\' AND \'' + options.managePermission.functionalPermissionName + '\'.' : ' Requires \'' + options.managePermission.functionalPermissionName + '\'.'}`,
             parameters: [
                 { name: "X-API-Key", in: "header", description: "API key for authentication", schema: { type: "string" }, required: false },
             ],
@@ -418,7 +418,7 @@ export function registerConfigurationEntityRoutes<
         detail: {
             tags: [singularLabel],
             summary: `Enable or disable ${options.entityLabel.toLowerCase()}`,
-            description: `Sets the disabled flag using optimistic locking via knownUpdatedAt.`,
+            description: `Sets the disabled flag using optimistic locking via knownUpdatedAt.${options.gatekeeperPermission ? ' Requires \'' + options.gatekeeperPermission.functionalPermissionName + '\' AND \'' + options.managePermission.functionalPermissionName + '\'.' : ' Requires \'' + options.managePermission.functionalPermissionName + '\'.'}`,
             parameters: [
                 { name: "X-API-Key", in: "header", description: "API key for authentication", schema: { type: "string" }, required: false },
             ],

@@ -76,7 +76,7 @@ export default function register(app: ApiInstance): void {
         detail: {
             tags: ["Product Exports"],
             summary: "List product exports",
-            description: "Returns a paginated list of product requests in importing status with their export status per target system.",
+            description: "Returns a paginated list of product requests in importing status with their export status per target system. Requires FP_VIEW_PRODUCT_EXPORTS.",
             parameters: [
                 { name: "X-API-Key", in: "header", description: "API key for authentication", schema: { type: "string" }, required: false },
             ],
@@ -190,7 +190,7 @@ export default function register(app: ApiInstance): void {
         detail: {
             tags: ["Product Exports"],
             summary: "Export product requests for a target system",
-            description: "Exports selected product requests as XLSX, CSV, or JSON file for a target system. Marks the product requests as exported.",
+            description: "Exports selected product requests as XLSX, CSV, or JSON file for a target system. Marks the product requests as exported. Requires FP_EXPORT_PRODUCT_REQUESTS.",
             parameters: [
                 { name: "X-API-Key", in: "header", description: "API key for authentication", schema: { type: "string" }, required: false },
             ],
@@ -350,7 +350,7 @@ export default function register(app: ApiInstance): void {
         detail: {
             tags: ["Product Exports"],
             summary: "Import export/import status from Excel",
-            description: "Imports export and import status from an uploaded XLSX file. Returns summary with counts and errors.",
+            description: "Imports export and import status from an uploaded XLSX file. Returns summary with counts and errors. Requires FP_EXPORT_PRODUCT_REQUESTS or FP_CONFIRM_IMPORT per row.",
             parameters: [
                 { name: "X-API-Key", in: "header", description: "API key for authentication", schema: { type: "string" }, required: false },
             ],

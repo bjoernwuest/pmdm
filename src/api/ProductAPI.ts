@@ -115,7 +115,7 @@ export default function register(app: ApiInstance): void {
         detail: {
             tags: ["Products"],
             summary: "List products",
-            description: "Returns a paginated list of products with optional filtering.",
+            description: "Returns a paginated list of products with optional filtering. Requires FP_VIEW_PRODUCTS.",
             parameters: [
                 { name: "X-API-Key", in: "header", description: "API key for authentication", schema: { type: "string" }, required: false },
             ],
@@ -166,7 +166,7 @@ export default function register(app: ApiInstance): void {
         detail: {
             tags: ["Products"],
             summary: "Download product import template",
-            description: "Generates and downloads an XLSX template for importing products of the given product type.",
+            description: "Generates and downloads an XLSX template for importing products of the given product type. Requires FP_VIEW_PRODUCTS.",
             parameters: [
                 { name: "X-API-Key", in: "header", description: "API key for authentication", schema: { type: "string" }, required: false },
             ],
@@ -250,7 +250,7 @@ export default function register(app: ApiInstance): void {
         detail: {
             tags: ["Products"],
             summary: "Import products from XLSX",
-            description: "Imports products from an uploaded XLSX file. Returns created count and errors.",
+            description: "Imports products from an uploaded XLSX file. Returns created count and errors. Requires FP_CREATE_PRODUCT.",
             parameters: [
                 { name: "X-API-Key", in: "header", description: "API key for authentication", schema: { type: "string" }, required: false },
             ],
@@ -284,7 +284,7 @@ export default function register(app: ApiInstance): void {
         detail: {
             tags: ["Products"],
             summary: "Get product detail",
-            description: "Returns a single product with viewer-filtered values.",
+            description: "Returns a single product with viewer-filtered values. Requires FP_VIEW_PRODUCTS.",
             parameters: [
                 { name: "X-API-Key", in: "header", description: "API key for authentication", schema: { type: "string" }, required: false },
             ],
@@ -329,7 +329,7 @@ export default function register(app: ApiInstance): void {
         detail: {
             tags: ["Products"],
             summary: "Create product",
-            description: "Creates a new product with optional data type values.",
+            description: "Creates a new product with optional data type values. Requires FP_CREATE_PRODUCT.",
             parameters: [
                 { name: "X-API-Key", in: "header", description: "API key for authentication", schema: { type: "string" }, required: false },
             ],
@@ -374,7 +374,7 @@ export default function register(app: ApiInstance): void {
         detail: {
             tags: ["Products"],
             summary: "Update product",
-            description: "Updates product fields and optionally data type values. Requires optimistic lock timestamp.",
+            description: "Updates product fields and optionally data type values. Requires optimistic lock timestamp. Requires FP_UPDATE_PRODUCT.",
             parameters: [
                 { name: "X-API-Key", in: "header", description: "API key for authentication", schema: { type: "string" }, required: false },
             ],
@@ -415,7 +415,7 @@ export default function register(app: ApiInstance): void {
         detail: {
             tags: ["Products"],
             summary: "Toggle product disabled status",
-            description: "Enables or disables a product. Requires optimistic lock timestamp.",
+            description: "Enables or disables a product. Requires optimistic lock timestamp. Requires FP_DISABLE_PRODUCT.",
             parameters: [
                 { name: "X-API-Key", in: "header", description: "API key for authentication", schema: { type: "string" }, required: false },
             ],
@@ -457,7 +457,7 @@ export default function register(app: ApiInstance): void {
         detail: {
             tags: ["Products"],
             summary: "Request product update",
-            description: "Creates a product request to update an existing product. Returns the product request identifier for client-side redirect.",
+            description: "Creates a product request to update an existing product. Returns the product request identifier for client-side redirect. Requires FP_REQUEST_PRODUCT_UPDATE.",
             parameters: [
                 { name: "X-API-Key", in: "header", description: "API key for authentication", schema: { type: "string" }, required: false },
             ],
@@ -503,7 +503,7 @@ export default function register(app: ApiInstance): void {
         detail: {
             tags: ["Products"],
             summary: "Create product copy request",
-            description: "Creates a product request to create a copy of an existing product. An optional target product number can be provided; otherwise one is auto-generated.",
+            description: "Creates a product request to create a copy of an existing product. An optional target product number can be provided; otherwise one is auto-generated. Requires FP_CREATE_PRODUCT_COPY.",
             parameters: [
                 { name: "X-API-Key", in: "header", description: "API key for authentication", schema: { type: "string" }, required: false },
             ],

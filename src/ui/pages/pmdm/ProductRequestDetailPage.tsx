@@ -839,6 +839,24 @@ export function Component() {
         });
     }, [request?.values, showHidden, filterApplied, filterIds, lookupOptions, consumableOptions, productOptions, activeEditField]);
 
+    // Filter popup – narrowed data types and their IDs for the checkbox list
+    const filteredPopupValues = useMemo(() => {
+        return (request?.values ?? []).filter((v: any) => {
+            if (v.userRoles?.length === 0) return false;
+            if (!v.showByDefault && !showHidden) return false;
+            if (filterPopupKind && v.dataTypeKind !== filterPopupKind) return false;
+            if (filterPopupName && !v.dataTypeName.toLowerCase().includes(filterPopupName.toLowerCase())) return false;
+            if (filterPopupOwner && v.businessDomainName !== filterPopupOwner) return false;
+            if (filterPopupApproval === "approved" && !v.approvedBy) return false;
+            if (filterPopupApproval === "unapproved" && v.approvedBy) return false;
+            return true;
+        });
+    }, [request?.values, showHidden, filterPopupKind, filterPopupName, filterPopupOwner, filterPopupApproval]);
+    const filteredPopupIds = useMemo(
+        () => filteredPopupValues.map((v: any) => v.dataType as string),
+        [filteredPopupValues],
+    );
+
     // Loading state
     if (loading) {
         return (
@@ -1373,18 +1391,33 @@ export function Component() {
                     </div>
                 </div>
 
+                {/* Select / deselect buttons for currently shown checkboxes */}
+                <div style={{ display: "flex", gap: "0.5rem", marginBottom: "0.5rem" }}>
+                    <Button
+                        label="Select all"
+                        icon="pi pi-check-square"
+                        className="p-button-text p-button-sm"
+                        onClick={() => setFilterIds((prev) => {
+                            const next = new Set(prev);
+                            for (const id of filteredPopupIds) next.add(id);
+                            return next;
+                        })}
+                    />
+                    <Button
+                        label="Deselect all"
+                        icon="pi pi-stop-circle"
+                        className="p-button-text p-button-sm"
+                        onClick={() => setFilterIds((prev) => {
+                            const next = new Set(prev);
+                            for (const id of filteredPopupIds) next.delete(id);
+                            return next;
+                        })}
+                    />
+                </div>
+
                 {/* Checkbox list narrowed by the controls above */}
                 <div style={{ maxHeight: "380px", overflowY: "auto", borderTop: "1px solid var(--surface-border)", paddingTop: "0.5rem" }}>
-                    {(request?.values ?? []).filter((v: any) => {
-                        if (v.userRoles?.length === 0) return false;
-                        if (!v.showByDefault && !showHidden) return false;
-                        if (filterPopupKind && v.dataTypeKind !== filterPopupKind) return false;
-                        if (filterPopupName && !v.dataTypeName.toLowerCase().includes(filterPopupName.toLowerCase())) return false;
-                        if (filterPopupOwner && v.businessDomainName !== filterPopupOwner) return false;
-                        if (filterPopupApproval === "approved" && !v.approvedBy) return false;
-                        if (filterPopupApproval === "unapproved" && v.approvedBy) return false;
-                        return true;
-                    }).map((v: any) => (
+                    {filteredPopupValues.map((v: any) => (
                         <div key={v.dataType} style={{ display: "flex", alignItems: "center", gap: "0.5rem", padding: "0.25rem 0" }}>
                             <Checkbox
                                 checked={filterIds.has(v.dataType)}
@@ -1403,16 +1436,7 @@ export function Component() {
                             </span>
                         </div>
                     ))}
-                    {(request?.values ?? []).filter((v: any) => {
-                        if (v.userRoles?.length === 0) return false;
-                        if (!v.showByDefault && !showHidden) return false;
-                        if (filterPopupKind && v.dataTypeKind !== filterPopupKind) return false;
-                        if (filterPopupName && !v.dataTypeName.toLowerCase().includes(filterPopupName.toLowerCase())) return false;
-                        if (filterPopupOwner && v.businessDomainName !== filterPopupOwner) return false;
-                        if (filterPopupApproval === "approved" && !v.approvedBy) return false;
-                        if (filterPopupApproval === "unapproved" && v.approvedBy) return false;
-                        return true;
-                    }).length === 0 && (
+                    {filteredPopupValues.length === 0 && (
                         <p style={{ textAlign: "center", color: "var(--text-color-secondary)", padding: "1rem" }}>
                             No data types match the filter criteria.
                         </p>

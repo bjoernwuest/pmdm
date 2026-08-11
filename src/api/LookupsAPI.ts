@@ -250,6 +250,9 @@ export default function register(app: ApiInstance) {
     app.get("/lookups/:lookupid/export", async (context) => {
         const claims = context.session?.idTokenClaims ?? context.tokenClaims ?? {};
         const authz = await authorize(context.dbClient, claims, [FP_DO_CONFIGURATION, FP_VIEW_LOOKUPS]);
+        if (!authz.some((perm) => perm.identifier === FP_DO_CONFIGURATION.identifier)) {
+            return status(403, `Permission denied. Required: ${FP_DO_CONFIGURATION.functionalPermissionName}`);
+        }
         if (!authz.some((perm) => perm.identifier === FP_VIEW_LOOKUPS.identifier)) return status(403, `Permission denied. Required: ${FP_VIEW_LOOKUPS.functionalPermissionName}`);
 
         const lookup = await LookupRepo.getByIdentifier(context.dbClient, context.params.lookupid, true);
@@ -268,7 +271,7 @@ export default function register(app: ApiInstance) {
         detail: {
             tags: ["Lookup"],
             summary: "Export lookup values to XLSX",
-            description: "Downloads all values of a lookup as an XLSX spreadsheet.",
+            description: "Downloads all values of a lookup as an XLSX spreadsheet. Requires FP_DO_CONFIGURATION AND FP_VIEW_LOOKUPS.",
             parameters: [
                 { name: "X-API-Key", in: "header", description: "API key for authentication", schema: { type: "string" }, required: false },
             ],
@@ -283,7 +286,7 @@ export default function register(app: ApiInstance) {
 
     app.get("/lookups/:lookupid/export-template", async (context) => {
         const claims = context.session?.idTokenClaims ?? context.tokenClaims ?? {};
-        const authz = await authorize(context.dbClient, claims, [FP_DO_CONFIGURATION, FP_VIEW_LOOKUPS]);
+        const authz = await authorize(context.dbClient, claims, [FP_VIEW_LOOKUPS]);
         if (!authz.some((perm) => perm.identifier === FP_VIEW_LOOKUPS.identifier)) return status(403, `Permission denied. Required: ${FP_VIEW_LOOKUPS.functionalPermissionName}`);
 
         const lookup = await LookupRepo.getByIdentifier(context.dbClient, context.params.lookupid, true);
@@ -296,7 +299,7 @@ export default function register(app: ApiInstance) {
         detail: {
             tags: ["Lookup"],
             summary: "Download lookup import template",
-            description: "Downloads an XLSX template for importing lookup values.",
+            description: "Downloads an XLSX template for importing lookup values. Requires FP_VIEW_LOOKUPS.",
             parameters: [
                 { name: "X-API-Key", in: "header", description: "API key for authentication", schema: { type: "string" }, required: false },
             ],
@@ -312,6 +315,9 @@ export default function register(app: ApiInstance) {
     app.post("/lookups/:lookupid/import", async (context) => {
         const claims = context.session?.idTokenClaims ?? context.tokenClaims ?? {};
         const authz = await authorize(context.dbClient, claims, [FP_DO_CONFIGURATION, FP_MANAGE_LOOKUPS]);
+        if (!authz.some((perm) => perm.identifier === FP_DO_CONFIGURATION.identifier)) {
+            return status(403, `Permission denied. Required: ${FP_DO_CONFIGURATION.functionalPermissionName}`);
+        }
         if (!authz.some((perm) => perm.identifier === FP_MANAGE_LOOKUPS.identifier)) return status(403, `Permission denied. Required: ${FP_MANAGE_LOOKUPS.functionalPermissionName}`);
 
         const lookup = await LookupRepo.getByIdentifier(context.dbClient, context.params.lookupid, true);
@@ -422,7 +428,7 @@ export default function register(app: ApiInstance) {
         detail: {
             tags: ["Lookup"],
             summary: "Import lookup values from XLSX",
-            description: "Imports lookup values from an XLSX spreadsheet and returns a downloadable error report when validation fails.",
+            description: "Imports lookup values from an XLSX spreadsheet and returns a downloadable error report when validation fails. Requires FP_DO_CONFIGURATION AND FP_MANAGE_LOOKUPS.",
             parameters: [
                 { name: "X-API-Key", in: "header", description: "API key for authentication", schema: { type: "string" }, required: false },
             ],
@@ -442,7 +448,7 @@ export default function register(app: ApiInstance) {
 
     app.get("/lookups/:lookupid/values", async (context) => {
         const claims = context.session?.idTokenClaims ?? context.tokenClaims ?? {};
-        const authz = await authorize(context.dbClient, claims, [FP_DO_CONFIGURATION, FP_VIEW_LOOKUPS, FP_READ_PRODUCT_FILTER]);
+        const authz = await authorize(context.dbClient, claims, [FP_VIEW_LOOKUPS, FP_READ_PRODUCT_FILTER]);
         if (!authz.some((perm) => perm.identifier === FP_VIEW_LOOKUPS.identifier || perm.identifier === FP_READ_PRODUCT_FILTER.identifier)) return status(403, `Permission denied. Required: ${FP_VIEW_LOOKUPS.functionalPermissionName}`);
 
         const lookup = await LookupRepo.getByIdentifier(context.dbClient, context.params.lookupid);
@@ -477,13 +483,16 @@ export default function register(app: ApiInstance) {
         detail: {
             tags: ["Lookup"],
             summary: "Get paged lookup values",
-            description: "Returns lookup values with pagination metadata and optional inclusion of disabled entries.",
+            description: "Returns lookup values with pagination metadata and optional inclusion of disabled entries. Requires FP_VIEW_LOOKUPS or FP_READ_PRODUCT_FILTER.",
         },
     });
 
     app.post("/lookups/:lookupid/values", async (context) => {
         const claims = context.session?.idTokenClaims ?? context.tokenClaims ?? {};
         const authz = await authorize(context.dbClient, claims, [FP_DO_CONFIGURATION, FP_MANAGE_LOOKUPS]);
+        if (!authz.some((perm) => perm.identifier === FP_DO_CONFIGURATION.identifier)) {
+            return status(403, `Permission denied. Required: ${FP_DO_CONFIGURATION.functionalPermissionName}`);
+        }
         if (!authz.some((perm) => perm.identifier === FP_MANAGE_LOOKUPS.identifier)) return status(403, `Permission denied. Required: ${FP_MANAGE_LOOKUPS.functionalPermissionName}`);
 
         const lookup = await LookupRepo.getByIdentifier(context.dbClient, context.params.lookupid);
@@ -513,13 +522,16 @@ export default function register(app: ApiInstance) {
         detail: {
             tags: ["Lookup"],
             summary: "Create lookup value",
-            description: "Creates a new lookup value for the selected lookup.",
+            description: "Creates a new lookup value for the selected lookup. Requires FP_DO_CONFIGURATION AND FP_MANAGE_LOOKUPS.",
         },
     });
 
     app.put("/lookups/:lookupid/values/:valueid", async (context) => {
         const claims = context.session?.idTokenClaims ?? context.tokenClaims ?? {};
         const authz = await authorize(context.dbClient, claims, [FP_DO_CONFIGURATION, FP_MANAGE_LOOKUPS]);
+        if (!authz.some((perm) => perm.identifier === FP_DO_CONFIGURATION.identifier)) {
+            return status(403, `Permission denied. Required: ${FP_DO_CONFIGURATION.functionalPermissionName}`);
+        }
         if (!authz.some((perm) => perm.identifier === FP_MANAGE_LOOKUPS.identifier)) return status(403, `Permission denied. Required: ${FP_MANAGE_LOOKUPS.functionalPermissionName}`);
 
         const name = context.body.name.trim();
@@ -552,13 +564,16 @@ export default function register(app: ApiInstance) {
         detail: {
             tags: ["Lookup"],
             summary: "Rename lookup value",
-            description: "Updates the lookup value name using optimistic locking via knownUpdatedAt.",
+            description: "Updates the lookup value name using optimistic locking via knownUpdatedAt. Requires FP_DO_CONFIGURATION AND FP_MANAGE_LOOKUPS.",
         },
     });
 
     app.patch("/lookups/:lookupid/values/:valueid/disabled", async (context) => {
         const claims = context.session?.idTokenClaims ?? context.tokenClaims ?? {};
         const authz = await authorize(context.dbClient, claims, [FP_DO_CONFIGURATION, FP_MANAGE_LOOKUPS]);
+        if (!authz.some((perm) => perm.identifier === FP_DO_CONFIGURATION.identifier)) {
+            return status(403, `Permission denied. Required: ${FP_DO_CONFIGURATION.functionalPermissionName}`);
+        }
         if (!authz.some((perm) => perm.identifier === FP_MANAGE_LOOKUPS.identifier)) return status(403, `Permission denied. Required: ${FP_MANAGE_LOOKUPS.functionalPermissionName}`);
 
         const updated = await runInTransaction(context.dbClient, async (tx) => {
@@ -589,7 +604,7 @@ export default function register(app: ApiInstance) {
         detail: {
             tags: ["Lookup"],
             summary: "Enable or disable lookup value",
-            description: "Sets the disabled flag for a lookup value using optimistic locking via knownUpdatedAt.",
+            description: "Sets the disabled flag for a lookup value using optimistic locking via knownUpdatedAt. Requires FP_DO_CONFIGURATION AND FP_MANAGE_LOOKUPS.",
         },
     });
 }

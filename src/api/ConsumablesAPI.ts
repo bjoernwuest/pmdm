@@ -240,6 +240,9 @@ export default function register(app: ApiInstance) {
     app.get("/consumables/:consumableid/export", async (context) => {
         const claims = context.session?.idTokenClaims ?? context.tokenClaims ?? {};
         const authz = await authorize(context.dbClient, claims, [FP_DO_CONFIGURATION, FP_VIEW_CONSUMABLES]);
+        if (!authz.some((perm) => perm.identifier === FP_DO_CONFIGURATION.identifier)) {
+            return status(403, `Permission denied. Required: ${FP_DO_CONFIGURATION.functionalPermissionName}`);
+        }
         if (!authz.some((perm) => perm.identifier === FP_VIEW_CONSUMABLES.identifier)) return status(403, `Permission denied. Required: ${FP_VIEW_CONSUMABLES.functionalPermissionName}`);
 
         const consumable = await ConsumableRepo.getByIdentifier(context.dbClient, context.params.consumableid, true);
@@ -258,7 +261,7 @@ export default function register(app: ApiInstance) {
         detail: {
             tags: ["Consumable"],
             summary: "Export consumable values to XLSX",
-            description: "Downloads all values of a consumable as an XLSX spreadsheet.",
+            description: "Downloads all values of a consumable as an XLSX spreadsheet. Requires FP_DO_CONFIGURATION AND FP_VIEW_CONSUMABLES.",
             parameters: [
                 { name: "X-API-Key", in: "header", description: "API key for authentication", schema: { type: "string" }, required: false },
             ],
@@ -273,7 +276,7 @@ export default function register(app: ApiInstance) {
 
     app.get("/consumables/:consumableid/export-template", async (context) => {
         const claims = context.session?.idTokenClaims ?? context.tokenClaims ?? {};
-        const authz = await authorize(context.dbClient, claims, [FP_DO_CONFIGURATION, FP_VIEW_CONSUMABLES]);
+        const authz = await authorize(context.dbClient, claims, [FP_VIEW_CONSUMABLES]);
         if (!authz.some((perm) => perm.identifier === FP_VIEW_CONSUMABLES.identifier)) return status(403, `Permission denied. Required: ${FP_VIEW_CONSUMABLES.functionalPermissionName}`);
 
         const consumable = await ConsumableRepo.getByIdentifier(context.dbClient, context.params.consumableid, true);
@@ -286,7 +289,7 @@ export default function register(app: ApiInstance) {
         detail: {
             tags: ["Consumable"],
             summary: "Download consumable import template",
-            description: "Downloads an XLSX template for importing consumable values.",
+            description: "Downloads an XLSX template for importing consumable values. Requires FP_VIEW_CONSUMABLES.",
             parameters: [
                 { name: "X-API-Key", in: "header", description: "API key for authentication", schema: { type: "string" }, required: false },
             ],
@@ -302,6 +305,9 @@ export default function register(app: ApiInstance) {
     app.post("/consumables/:consumableid/import", async (context) => {
         const claims = context.session?.idTokenClaims ?? context.tokenClaims ?? {};
         const authz = await authorize(context.dbClient, claims, [FP_DO_CONFIGURATION, FP_MANAGE_CONSUMABLES]);
+        if (!authz.some((perm) => perm.identifier === FP_DO_CONFIGURATION.identifier)) {
+            return status(403, `Permission denied. Required: ${FP_DO_CONFIGURATION.functionalPermissionName}`);
+        }
         if (!authz.some((perm) => perm.identifier === FP_MANAGE_CONSUMABLES.identifier)) return status(403, `Permission denied. Required: ${FP_MANAGE_CONSUMABLES.functionalPermissionName}`);
 
         const consumable = await ConsumableRepo.getByIdentifier(context.dbClient, context.params.consumableid, true);
@@ -412,7 +418,7 @@ export default function register(app: ApiInstance) {
         detail: {
             tags: ["Consumable"],
             summary: "Import consumable values from XLSX",
-            description: "Imports consumable values from an XLSX spreadsheet and returns a downloadable error report when validation fails.",
+            description: "Imports consumable values from an XLSX spreadsheet and returns a downloadable error report when validation fails. Requires FP_DO_CONFIGURATION AND FP_MANAGE_CONSUMABLES.",
             parameters: [
                 { name: "X-API-Key", in: "header", description: "API key for authentication", schema: { type: "string" }, required: false },
             ],
@@ -432,7 +438,7 @@ export default function register(app: ApiInstance) {
 
     app.get("/consumables/:consumableid/values", async (context) => {
         const claims = context.session?.idTokenClaims ?? context.tokenClaims ?? {};
-        const authz = await authorize(context.dbClient, claims, [FP_DO_CONFIGURATION, FP_VIEW_CONSUMABLES, FP_READ_PRODUCT_FILTER]);
+        const authz = await authorize(context.dbClient, claims, [FP_VIEW_CONSUMABLES, FP_READ_PRODUCT_FILTER]);
         if (!authz.some((perm) => perm.identifier === FP_VIEW_CONSUMABLES.identifier || perm.identifier === FP_READ_PRODUCT_FILTER.identifier)) return status(403, `Permission denied. Required: ${FP_VIEW_CONSUMABLES.functionalPermissionName}`);
 
         const consumable = await ConsumableRepo.getByIdentifier(context.dbClient, context.params.consumableid);
@@ -477,13 +483,16 @@ export default function register(app: ApiInstance) {
         detail: {
             tags: ["Consumable"],
             summary: "Get paged consumable values",
-            description: "Returns consumable values with pagination metadata and optional inclusion of disabled and used entries.",
+            description: "Returns consumable values with pagination metadata and optional inclusion of disabled and used entries. Requires FP_VIEW_CONSUMABLES or FP_READ_PRODUCT_FILTER.",
         },
     });
 
     app.post("/consumables/:consumableid/values", async (context) => {
         const claims = context.session?.idTokenClaims ?? context.tokenClaims ?? {};
         const authz = await authorize(context.dbClient, claims, [FP_DO_CONFIGURATION, FP_MANAGE_CONSUMABLES]);
+        if (!authz.some((perm) => perm.identifier === FP_DO_CONFIGURATION.identifier)) {
+            return status(403, `Permission denied. Required: ${FP_DO_CONFIGURATION.functionalPermissionName}`);
+        }
         if (!authz.some((perm) => perm.identifier === FP_MANAGE_CONSUMABLES.identifier)) return status(403, `Permission denied. Required: ${FP_MANAGE_CONSUMABLES.functionalPermissionName}`);
 
         const consumable = await ConsumableRepo.getByIdentifier(context.dbClient, context.params.consumableid);
@@ -513,13 +522,16 @@ export default function register(app: ApiInstance) {
         detail: {
             tags: ["Consumable"],
             summary: "Create consumable value",
-            description: "Creates a new consumable value for the selected consumable.",
+            description: "Creates a new consumable value for the selected consumable. Requires FP_DO_CONFIGURATION AND FP_MANAGE_CONSUMABLES.",
         },
     });
 
     app.put("/consumables/:consumableid/values/:valueid", async (context) => {
         const claims = context.session?.idTokenClaims ?? context.tokenClaims ?? {};
         const authz = await authorize(context.dbClient, claims, [FP_DO_CONFIGURATION, FP_MANAGE_CONSUMABLES]);
+        if (!authz.some((perm) => perm.identifier === FP_DO_CONFIGURATION.identifier)) {
+            return status(403, `Permission denied. Required: ${FP_DO_CONFIGURATION.functionalPermissionName}`);
+        }
         if (!authz.some((perm) => perm.identifier === FP_MANAGE_CONSUMABLES.identifier)) return status(403, `Permission denied. Required: ${FP_MANAGE_CONSUMABLES.functionalPermissionName}`);
 
         const name = context.body.name.trim();
@@ -552,13 +564,16 @@ export default function register(app: ApiInstance) {
         detail: {
             tags: ["Consumable"],
             summary: "Rename consumable value",
-            description: "Updates the consumable value name using optimistic locking via knownUpdatedAt.",
+            description: "Updates the consumable value name using optimistic locking via knownUpdatedAt. Requires FP_DO_CONFIGURATION AND FP_MANAGE_CONSUMABLES.",
         },
     });
 
     app.patch("/consumables/:consumableid/values/:valueid", async (context) => {
         const claims = context.session?.idTokenClaims ?? context.tokenClaims ?? {};
         const authz = await authorize(context.dbClient, claims, [FP_DO_CONFIGURATION, FP_MANAGE_CONSUMABLES]);
+        if (!authz.some((perm) => perm.identifier === FP_DO_CONFIGURATION.identifier)) {
+            return status(403, `Permission denied. Required: ${FP_DO_CONFIGURATION.functionalPermissionName}`);
+        }
         if (!authz.some((perm) => perm.identifier === FP_MANAGE_CONSUMABLES.identifier)) return status(403, `Permission denied. Required: ${FP_MANAGE_CONSUMABLES.functionalPermissionName}`);
 
         const body = context.body as Record<string, unknown>;
@@ -599,7 +614,7 @@ export default function register(app: ApiInstance) {
         detail: {
             tags: ["Consumable"],
             summary: "Update consumable value flags",
-            description: "Updates disabled or isUsed flags for a consumable value using optimistic locking via knownUpdatedAt.",
+            description: "Updates disabled or isUsed flags for a consumable value using optimistic locking via knownUpdatedAt. Requires FP_DO_CONFIGURATION AND FP_MANAGE_CONSUMABLES.",
         },
     });
 }

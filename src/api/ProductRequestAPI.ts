@@ -142,7 +142,7 @@ export default function register(app: ApiInstance): void {
             tags: ["Product Requests"],
             summary: "Create product request",
             description:
-                "Creates a new product request. Mode 'new' creates from scratch, 'update' creates an update request for an existing product, 'copy' creates a copy request from an existing product.",
+                "Creates a new product request. Mode 'new' creates from scratch, 'update' creates an update request for an existing product, 'copy' creates a copy request from an existing product. Requires FP_CREATE_PRODUCT (mode=new), FP_REQUEST_PRODUCT_UPDATE (mode=update), or FP_CREATE_PRODUCT_COPY (mode=copy).",
             parameters: [
                 { name: "X-API-Key", in: "header", description: "API key for authentication", schema: { type: "string" }, required: false },
             ],
@@ -210,7 +210,7 @@ export default function register(app: ApiInstance): void {
             tags: ["Product Requests"],
             summary: "List product requests",
             description:
-                "Returns a paginated list of product requests with optional filtering by status, product type, product number search, and actionable filter.",
+                "Returns a paginated list of product requests with optional filtering by status, product type, product number search, and actionable filter. Requires FP_VIEW_PRODUCTS.",
             parameters: [
                 { name: "X-API-Key", in: "header", description: "API key for authentication", schema: { type: "string" }, required: false },
             ],
@@ -254,7 +254,7 @@ export default function register(app: ApiInstance): void {
             tags: ["Product Requests"],
             summary: "Approve all values on a product request",
             description:
-                "Approves all unapproved data type values that the current user has Approver role for. Returns the count of approved values, identifiers of skipped data types, and whether the request progressed to importing. Values with a stale `updatedAt` (concurrent modification) are skipped.",
+                "Approves all unapproved data type values that the current user has Approver role for. Returns the count of approved values, identifiers of skipped data types, and whether the request progressed to importing. Values with a stale `updatedAt` (concurrent modification) are skipped. Authorization is role-based (Approver role on data types) — no functional permission required.",
             parameters: [
                 { name: "X-API-Key", in: "header", description: "API key for authentication", schema: { type: "string" }, required: false },
             ],
@@ -295,7 +295,7 @@ export default function register(app: ApiInstance): void {
             tags: ["Product Requests"],
             summary: "Get product request detail",
             description:
-                "Returns a single product request with enriched data type values, filtered by the current user's view permissions.",
+                "Returns a single product request with enriched data type values, filtered by the current user's view permissions. Requires FP_VIEW_PRODUCTS.",
             parameters: [
                 { name: "X-API-Key", in: "header", description: "API key for authentication", schema: { type: "string" }, required: false },
             ],
@@ -349,7 +349,7 @@ export default function register(app: ApiInstance): void {
             tags: ["Product Requests"],
             summary: "Get lookup values for a data type on a product request",
             description:
-                "Returns all lookup values (including disabled ones) for the lookup backing a lookup-kind data type, scoped to the current user's data-type-level Viewer/Writer/Approver role on the product request. Access is governed by the same role model as the product request detail endpoint — not by the Configuration-area FP_VIEW_LOOKUPS permission. Used by the UI to populate selection dropdowns and resolve display names.",
+                "Returns all lookup values (including disabled ones) for the lookup backing a lookup-kind data type, scoped to the current user's data-type-level Viewer/Writer/Approver role on the product request. Requires FP_VIEW_PRODUCTS. Access to individual values is governed by the same role model as the product request detail endpoint — not by the Configuration-area FP_VIEW_LOOKUPS permission.",
             parameters: [
                 { name: "X-API-Key", in: "header", description: "API key for authentication", schema: { type: "string" }, required: false },
             ],
@@ -397,7 +397,7 @@ export default function register(app: ApiInstance): void {
             tags: ["Product Requests"],
             summary: "Get consumable values for a data type on a product request",
             description:
-                "Returns all consumable values (including disabled and already-used ones) for the consumable backing a consumable-kind data type, scoped to the current user's data-type-level Viewer/Writer/Approver role on the product request. Access is governed by the same role model as the product request detail endpoint — not by the Configuration-area FP_VIEW_CONSUMABLES permission. Used by the UI to populate selection dropdowns and resolve display names.",
+                "Returns all consumable values (including disabled and already-used ones) for the consumable backing a consumable-kind data type, scoped to the current user's data-type-level Viewer/Writer/Approver role on the product request. Requires FP_VIEW_PRODUCTS. Access to individual values is governed by the same role model as the product request detail endpoint — not by the Configuration-area FP_VIEW_CONSUMABLES permission.",
             parameters: [
                 { name: "X-API-Key", in: "header", description: "API key for authentication", schema: { type: "string" }, required: false },
             ],
@@ -451,7 +451,7 @@ export default function register(app: ApiInstance): void {
             tags: ["Product Requests"],
             summary: "Get candidate products for a product-kind data type on a product request",
             description:
-                "Returns the candidate products for a product-kind data type, scoped to the current user's data-type-level Viewer/Writer/Approver role on the product request, with the data type's filter script applied. Mirrors the lookup/consumable dropdown endpoints. Used by the UI to populate the product selection dropdown.",
+                "Returns the candidate products for a product-kind data type, scoped to the current user's data-type-level Viewer/Writer/Approver role on the product request, with the data type's filter script applied. Mirrors the lookup/consumable dropdown endpoints. Requires FP_VIEW_PRODUCTS.",
             parameters: [
                 { name: "X-API-Key", in: "header", description: "API key for authentication", schema: { type: "string" }, required: false },
             ],
@@ -498,7 +498,7 @@ export default function register(app: ApiInstance): void {
             tags: ["Product Requests"],
             summary: "Update a data type value on a product request",
             description:
-                "Updates the value for a specific data type on an open product request. Requires Writer role or requestorCanEdit permission. Uses optimistic locking via knownUpdatedAt — returns 409 if the value was modified by another user.",
+                "Updates the value for a specific data type on an open product request. Authorization is role-based: requires Writer role or requestorCanEdit permission on the data type. Uses optimistic locking via knownUpdatedAt — returns 409 if the value was modified by another user.",
             parameters: [
                 { name: "X-API-Key", in: "header", description: "API key for authentication", schema: { type: "string" }, required: false },
             ],
@@ -551,7 +551,7 @@ export default function register(app: ApiInstance): void {
             tags: ["Product Requests"],
             summary: "Approve a single data type value",
             description:
-                "Approves a specific data type value on an open product request. Requires Approver role. Uses optimistic locking via knownUpdatedAt — returns 409 if the value was modified by another user. Returns whether the request progressed to importing.",
+                "Approves a specific data type value on an open product request. Authorization is role-based: requires Approver role on the data type. Uses optimistic locking via knownUpdatedAt — returns 409 if the value was modified by another user. Returns whether the request progressed to importing.",
             parameters: [
                 { name: "X-API-Key", in: "header", description: "API key for authentication", schema: { type: "string" }, required: false },
             ],
@@ -590,7 +590,7 @@ export default function register(app: ApiInstance): void {
             tags: ["Product Requests"],
             summary: "Cancel a product request",
             description:
-                "Cancels an open product request. Requires cancel role permission on the product type.",
+                "Cancels an open product request. Authorization is role-based: requires cancel role permission on the product type.",
             parameters: [
                 { name: "X-API-Key", in: "header", description: "API key for authentication", schema: { type: "string" }, required: false },
             ],

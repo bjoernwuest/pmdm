@@ -108,7 +108,7 @@ export default function register(app: ApiInstance): void {
         detail: {
             tags: ["Data type"],
             summary: "Get data type permissions",
-            description: "Returns all group-role assignments for a data type, including group names.",
+            description: "Returns all group-role assignments for a data type, including group names. Requires FP_DO_CONFIGURATION AND FP_VIEW_DATA_TYPES.",
             parameters: [
                 { name: "X-API-Key", in: "header", description: "API key for authentication", schema: { type: "string" }, required: false },
             ],
@@ -168,7 +168,7 @@ export default function register(app: ApiInstance): void {
         detail: {
             tags: ["Data type"],
             summary: "Grant data type permission",
-            description: "Grants a role (viewer/writer/approver) to a group for a data type.",
+            description: "Grants a role (viewer/writer/approver) to a group for a data type. Requires FP_DO_CONFIGURATION AND FP_MANAGE_DATA_TYPES.",
             parameters: [
                 { name: "X-API-Key", in: "header", description: "API key for authentication", schema: { type: "string" }, required: false },
             ],
@@ -219,7 +219,7 @@ export default function register(app: ApiInstance): void {
         detail: {
             tags: ["Data type"],
             summary: "Revoke data type permission",
-            description: "Revokes a role assignment from a group for a data type.",
+            description: "Revokes a role assignment from a group for a data type. Requires FP_DO_CONFIGURATION AND FP_MANAGE_DATA_TYPES.",
             parameters: [
                 { name: "X-API-Key", in: "header", description: "API key for authentication", schema: { type: "string" }, required: false },
             ],
@@ -281,7 +281,7 @@ export default function register(app: ApiInstance): void {
         detail: {
             tags: ["Data type"],
             summary: "Update data type permission",
-            description: "Updates the showByDefault flag on a data type permission.",
+            description: "Updates the showByDefault flag on a data type permission. Requires FP_DO_CONFIGURATION AND FP_MANAGE_DATA_TYPES.",
             parameters: [
                 { name: "X-API-Key", in: "header", description: "API key for authentication", schema: { type: "string" }, required: false },
             ],
