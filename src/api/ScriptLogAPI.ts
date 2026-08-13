@@ -53,9 +53,9 @@ export default function register(app: ApiInstance) {
                 total: Type.Number(),
                 page: Type.Number(),
                 pageSize: Type.Number(),
-            }),
-            401: Type.String(),
-            403: Type.String(),
+            }, { description: "Paginated script log entries with pagination metadata." }),
+            401: Type.String({ description: "Unauthenticated – missing or invalid session, API key, or bearer token." }),
+            403: Type.String({ description: "Permission denied – the authenticated principal lacks the required functional permission." }),
         },
         detail: {
             tags: ["Script Log"],
@@ -140,9 +140,9 @@ export default function register(app: ApiInstance) {
             ],
         },
         response: {
-            200: Type.Object({ success: Type.Boolean(), deletedCount: Type.Number() }),
-            401: Type.String(),
-            403: Type.String(),
+            200: Type.Object({ success: Type.Boolean(), deletedCount: Type.Number() }, { description: "Confirmation of the cleared script log with the number of deleted entries." }),
+            401: Type.String({ description: "Unauthenticated – missing or invalid session, API key, or bearer token." }),
+            403: Type.String({ description: "Permission denied – the authenticated principal lacks the required functional permission." }),
         },
     });
 }

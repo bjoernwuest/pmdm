@@ -51,7 +51,11 @@ export default function register(app: ApiInstance) {
             pageSize: Type.Optional(Type.Union([Type.Number({ minimum: 1 }), Type.String()])),
             includeInactive: Type.Optional(Type.Union([Type.Boolean(), Type.String()])),
         }),
-        response: {200: UsersResponseSchema, 401: Type.String(), 403: Type.String()},
+        response: {
+            200: {...UsersResponseSchema, description: "Paginated list of users with pagination metadata and inactive-inclusion flag."},
+            401: Type.String({ description: "Unauthenticated – missing or invalid session, API key, or bearer token." }),
+            403: Type.String({ description: "Permission denied – the authenticated principal lacks the required functional permission." }),
+        },
         detail: {
             tags: ["Users & Groups"],
             summary: "Get paged user list",
@@ -126,7 +130,12 @@ export default function register(app: ApiInstance) {
         query: Type.Object({
             includeInactive: Type.Optional(Type.Union([Type.Boolean(), Type.String()])),
         }),
-        response: {200: UserDetailsResponseSchema, 401: Type.String(), 403: Type.String(), 404: Type.String()},
+        response: {
+            200: {...UserDetailsResponseSchema, description: "A single user with assigned groups, functional permissions, and the inactive-inclusion flag."},
+            401: Type.String({ description: "Unauthenticated – missing or invalid session, API key, or bearer token." }),
+            403: Type.String({ description: "Permission denied – the authenticated principal lacks the required functional permission." }),
+            404: Type.String({ description: "Not found – no user with this identifier exists." }),
+        },
         detail: {
             tags: ["Users & Groups"],
             summary: "Get user details",

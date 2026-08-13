@@ -23,8 +23,8 @@ export default function register(app: ApiInstance) {
         };
     }, {
         response: {
-            200: MeContextResponseSchema,
-            401: Type.String(),
+            200: {...MeContextResponseSchema, description: "The authenticated user's identity, permission names, full functional permission list, and frontend debug flag."},
+            401: Type.String({ description: "Unauthenticated – missing or invalid session, API key, or bearer token." }),
         },
         detail: {
             tags: ["Auth"],

@@ -60,13 +60,13 @@ export default function register(app: ApiInstance) {
                 summary: "Get notification config entries",
                 description: "Returns all notification configuration entries. Requires FP_NOTIFICATIONS.",
                 parameters: [
-                    { name: "X-API-Key", in: "header", description: "API key for authentication", schema: { type: "string" }, required: false },
+                    { name: "X-API-Key", in: "header", description: "API key used for authentication.", schema: { type: "string", example: "your-api-key" }, required: false },
                 ],
             },
             response: {
-                200: Type.Array(ConfigEntryUiSchema),
-                401: Type.String(),
-                403: Type.String(),
+                200: Type.Array(ConfigEntryUiSchema, { description: "All notification configuration entries in their UI representation." }),
+                401: Type.String({ description: "Unauthenticated – missing or invalid session, API key, or bearer token." }),
+                403: Type.String({ description: "Permission denied – the authenticated principal lacks the required functional permission." }),
             },
         },
     );
@@ -114,7 +114,14 @@ export default function register(app: ApiInstance) {
                 summary: "Update a notification config entry",
                 description: "Updates a single notification config entry with optimistic locking. Requires FP_NOTIFICATIONS.",
                 parameters: [
-                    { name: "X-API-Key", in: "header", description: "API key for authentication", schema: { type: "string" }, required: false },
+                    { name: "X-API-Key", in: "header", description: "API key used for authentication.", schema: { type: "string", example: "your-api-key" }, required: false },
+                    {
+                        name: "key",
+                        description: "The notification configuration key to update.",
+                        in: "path",
+                        required: true,
+                        schema: { type: "string" },
+                    },
                 ],
             },
             params: t.Object({
@@ -125,11 +132,11 @@ export default function register(app: ApiInstance) {
                 knownValue: t.Any(),
             }),
             response: {
-                200: ConfigEntryUiSchema,
-                401: Type.String(),
-                403: Type.String(),
-                404: Type.String(),
-                409: Type.Object({ error: Type.String(), currentValue: Type.Any() }),
+                200: {...ConfigEntryUiSchema, description: "The updated notification configuration entry."},
+                401: Type.String({ description: "Unauthenticated – missing or invalid session, API key, or bearer token." }),
+                403: Type.String({ description: "Permission denied – the authenticated principal lacks the required functional permission." }),
+                404: Type.String({ description: "Not found – no notification configuration entry with this key exists." }),
+                409: Type.Object({ error: Type.String(), currentValue: Type.Any() }, { description: "Conflict – the entry was modified by another session; currentValue contains the latest value." }),
             },
         },
     );
@@ -153,7 +160,7 @@ export default function register(app: ApiInstance) {
                 summary: "Send notification digest out-of-sequence",
                 description: "Triggers out-of-sequence delivery. Requires FP_NOTIFICATIONS.",
                 parameters: [
-                    { name: "X-API-Key", in: "header", description: "API key for authentication", schema: { type: "string" }, required: false },
+                    { name: "X-API-Key", in: "header", description: "API key used for authentication.", schema: { type: "string", example: "your-api-key" }, required: false },
                 ],
             },
             body: t.Object({
@@ -161,9 +168,9 @@ export default function register(app: ApiInstance) {
                 groupIds: t.Optional(t.Array(t.String())),
             }),
             response: {
-                200: Type.Object({ sentTo: Type.Any() }),
-                401: Type.String(),
-                403: Type.String(),
+                200: Type.Object({ sentTo: Type.Any() }, { description: "The list of recipients the notification digest was sent to." }),
+                401: Type.String({ description: "Unauthenticated – missing or invalid session, API key, or bearer token." }),
+                403: Type.String({ description: "Permission denied – the authenticated principal lacks the required functional permission." }),
             },
         },
     );
@@ -186,7 +193,7 @@ export default function register(app: ApiInstance) {
                 summary: "Simulate notification digest",
                 description: "Generates a preview of the digest email for a user or group. Requires FP_NOTIFICATIONS.",
                 parameters: [
-                    { name: "X-API-Key", in: "header", description: "API key for authentication", schema: { type: "string" }, required: false },
+                    { name: "X-API-Key", in: "header", description: "API key used for authentication.", schema: { type: "string", example: "your-api-key" }, required: false },
                 ],
             },
             body: t.Object({
@@ -194,9 +201,9 @@ export default function register(app: ApiInstance) {
                 groupId: t.Optional(t.String()),
             }),
             response: {
-                200: Type.Any(),
-                401: Type.String(),
-                403: Type.String(),
+                200: Type.Any({ description: "The simulated notification digest email preview." }),
+                401: Type.String({ description: "Unauthenticated – missing or invalid session, API key, or bearer token." }),
+                403: Type.String({ description: "Permission denied – the authenticated principal lacks the required functional permission." }),
             },
         },
     );
@@ -224,7 +231,7 @@ export default function register(app: ApiInstance) {
                 summary: "List users for notification target selection",
                 description: "Returns all active users for the send/simulate user dropdowns. Requires FP_NOTIFICATIONS.",
                 parameters: [
-                    { name: "X-API-Key", in: "header", description: "API key for authentication", schema: { type: "string" }, required: false },
+                    { name: "X-API-Key", in: "header", description: "API key used for authentication.", schema: { type: "string", example: "your-api-key" }, required: false },
                 ],
             },
             response: {
@@ -233,9 +240,9 @@ export default function register(app: ApiInstance) {
                     firstName: Type.String(),
                     lastName: Type.String(),
                     email: Type.String(),
-                })),
-                401: Type.String(),
-                403: Type.String(),
+                }), { description: "All active users with identifier, first name, last name, and email." }),
+                401: Type.String({ description: "Unauthenticated – missing or invalid session, API key, or bearer token." }),
+                403: Type.String({ description: "Permission denied – the authenticated principal lacks the required functional permission." }),
             },
         },
     );
@@ -261,16 +268,16 @@ export default function register(app: ApiInstance) {
                 summary: "List groups for notification target selection",
                 description: "Returns all active groups for the send/simulate group dropdowns. Requires FP_NOTIFICATIONS.",
                 parameters: [
-                    { name: "X-API-Key", in: "header", description: "API key for authentication", schema: { type: "string" }, required: false },
+                    { name: "X-API-Key", in: "header", description: "API key used for authentication.", schema: { type: "string", example: "your-api-key" }, required: false },
                 ],
             },
             response: {
                 200: Type.Array(Type.Object({
                     identifier: Type.String({ format: "uuid" }),
                     groupName: Type.String(),
-                })),
-                401: Type.String(),
-                403: Type.String(),
+                }), { description: "All active groups with identifier and group name." }),
+                401: Type.String({ description: "Unauthenticated – missing or invalid session, API key, or bearer token." }),
+                403: Type.String({ description: "Permission denied – the authenticated principal lacks the required functional permission." }),
             },
         },
     );

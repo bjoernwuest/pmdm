@@ -89,7 +89,7 @@ export async function getProductRequests(
 ): Promise<ProductRequestListResponse> {
     const params = new URLSearchParams({ page: String(page), pageSize: String(pageSize) });
     if (filters?.status?.length) params.set("status", filters.status.join(","));
-    if (filters?.productTypeIdentifier) params.set("productTypeIdentifier", filters.productTypeIdentifier);
+    if (typeof filters?.productTypeIdentifier === "string" && filters.productTypeIdentifier) params.set("productTypeIdentifier", filters.productTypeIdentifier);
     if (filters?.productNumberContains) params.set("productNumberContains", filters.productNumberContains);
     if (filters?.actionFilter) params.set("actionFilter", filters.actionFilter);
     return apiGet<ProductRequestListResponse>(`${BASE}?${params.toString()}`);

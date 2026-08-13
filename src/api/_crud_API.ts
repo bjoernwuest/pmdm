@@ -234,16 +234,37 @@ export function registerConfigurationEntityRoutes<
                 total: t.Number({ minimum: 0 }),
                 availablePageSizes: t.Array(t.Number({ minimum: 1 })),
                 includeDisabled: t.Boolean(),
-            } as any),
-            401: t.String(),
-            403: t.String(),
+            } as any, { description: `Paged ${pluralLabel} with pagination metadata and disabled-inclusion flag.` }),
+            401: t.String({ description: "Unauthenticated – missing or invalid session, API key, or bearer token." }),
+            403: t.String({ description: "Permission denied – the authenticated principal lacks the required functional permission." }),
         },
             detail: {
             tags: [singularLabel],
             summary: `Get paged ${pluralLabel}`,
             description: `Returns ${pluralLabel} with pagination metadata and optional inclusion of disabled entries. Requires '${options.viewPermission.functionalPermissionName}'${options.alternativeListViewPermissions ? ' or ' + options.alternativeListViewPermissions.map(p => p.functionalPermissionName).join(' or ') : ''}${options.gatekeeperPermission ? '. Also requires \'' + options.gatekeeperPermission.functionalPermissionName + '\' gatekeeper permission.' : '.'}`,
             parameters: [
-                { name: "X-API-Key", in: "header", description: "API key for authentication", schema: { type: "string" }, required: false },
+                { name: "X-API-Key", in: "header", description: "API key used for authentication.", schema: { type: "string", example: "your-api-key" }, required: false },
+                {
+                    name: "page",
+                    description: "Zero-based page number for pagination. Defaults to 0.",
+                    in: "query",
+                    required: false,
+                    schema: { type: "integer", minimum: 0, default: 0 },
+                },
+                {
+                    name: "pageSize",
+                    description: "Number of entries per page. Must be one of the available page sizes returned by the server. Defaults to the first available size.",
+                    in: "query",
+                    required: false,
+                    schema: { type: "integer", minimum: 1 },
+                },
+                {
+                    name: "includeDisabled",
+                    description: `Include disabled ${pluralLabel} in the results. Accepts 'true', '1', true (boolean). Defaults to false.`,
+                    in: "query",
+                    required: false,
+                    schema: { type: "string", enum: ["true", "1", "false", "0"], default: "false" },
+                },
             ],
         },
     });
@@ -268,17 +289,24 @@ export function registerConfigurationEntityRoutes<
     }, {
         params: t.Object({ [options.routeParam]: t.String({ format: "uuid" }) } as any),
         response: {
-            200: t.Object({ [options.detailResponseKey]: (options.detailEntitySchema ?? options.entitySchema) as any }),
-            401: t.String(),
-            403: t.String(),
-            404: t.String(),
+            200: t.Object({ [options.detailResponseKey]: (options.detailEntitySchema ?? options.entitySchema) as any }, { description: `A single ${options.entityLabel.toLowerCase()} including disabled entries.` }),
+            401: t.String({ description: "Unauthenticated – missing or invalid session, API key, or bearer token." }),
+            403: t.String({ description: "Permission denied – the authenticated principal lacks the required functional permission." }),
+            404: t.String({ description: "Not found – the referenced resource does not exist." }),
         },
         detail: {
             tags: [singularLabel],
             summary: `Get ${options.entityLabel.toLowerCase()} by identifier`,
             description: `Returns a single ${options.entityLabel.toLowerCase()} including disabled entries.${options.gatekeeperPermission ? ' Requires \'' + options.gatekeeperPermission.functionalPermissionName + '\' AND \'' + options.viewPermission.functionalPermissionName + '\'.' : ' Requires \'' + options.viewPermission.functionalPermissionName + '\'.'}`,
             parameters: [
-                { name: "X-API-Key", in: "header", description: "API key for authentication", schema: { type: "string" }, required: false },
+                { name: "X-API-Key", in: "header", description: "API key used for authentication.", schema: { type: "string", example: "your-api-key" }, required: false },
+                {
+                    name: options.routeParam,
+                    description: `UUID of the ${options.entityLabel.toLowerCase()} to retrieve.`,
+                    in: "path",
+                    required: true,
+                    schema: { type: "string", format: "uuid" },
+                },
             ],
         },
     });
@@ -309,17 +337,17 @@ export function registerConfigurationEntityRoutes<
     }, {
         body: (options.createBodySchema ?? t.Object({ name: t.String({ minLength: 1, maxLength: 255 }) })) as any,
         response: {
-            200: t.Object({ [options.detailResponseKey]: options.entitySchema } as any),
-            401: t.String(),
-            403: t.String(),
-            409: t.String(),
+            200: t.Object({ [options.detailResponseKey]: options.entitySchema } as any, { description: `The newly created ${options.entityLabel.toLowerCase()}.` }),
+            401: t.String({ description: "Unauthenticated – missing or invalid session, API key, or bearer token." }),
+            403: t.String({ description: "Permission denied – the authenticated principal lacks the required functional permission." }),
+            409: t.String({ description: `Conflict – a ${options.entityLabel.toLowerCase()} with this name already exists.` }),
         },
         detail: {
             tags: [singularLabel],
             summary: `Create ${options.entityLabel.toLowerCase()}`,
             description: `Creates a new ${options.entityLabel.toLowerCase()} if the name is unique.${options.gatekeeperPermission ? ' Requires \'' + options.gatekeeperPermission.functionalPermissionName + '\' AND \'' + options.managePermission.functionalPermissionName + '\'.' : ' Requires \'' + options.managePermission.functionalPermissionName + '\'.'}`,
             parameters: [
-                { name: "X-API-Key", in: "header", description: "API key for authentication", schema: { type: "string" }, required: false },
+                { name: "X-API-Key", in: "header", description: "API key used for authentication.", schema: { type: "string", example: "your-api-key" }, required: false },
             ],
         },
     });
@@ -359,18 +387,25 @@ export function registerConfigurationEntityRoutes<
             knownUpdatedAt: t.String(),
         })) as any,
         response: {
-            200: t.Object({ [options.detailResponseKey]: options.entitySchema } as any),
-            401: t.String(),
-            403: t.String(),
-            404: t.String(),
-            409: t.String(),
+            200: t.Object({ [options.detailResponseKey]: options.entitySchema } as any, { description: `The updated ${options.entityLabel.toLowerCase()}.` }),
+            401: t.String({ description: "Unauthenticated – missing or invalid session, API key, or bearer token." }),
+            403: t.String({ description: "Permission denied – the authenticated principal lacks the required functional permission." }),
+            404: t.String({ description: "Not found – the referenced resource does not exist." }),
+            409: t.String({ description: `Conflict – optimistic locking failed; the ${options.entityLabel.toLowerCase()} was modified by another user.` }),
         },
         detail: {
             tags: [singularLabel],
             summary: `Rename ${options.entityLabel.toLowerCase()}`,
             description: `Updates the ${options.entityLabel.toLowerCase()} name using optimistic locking via knownUpdatedAt.${options.gatekeeperPermission ? ' Requires \'' + options.gatekeeperPermission.functionalPermissionName + '\' AND \'' + options.managePermission.functionalPermissionName + '\'.' : ' Requires \'' + options.managePermission.functionalPermissionName + '\'.'}`,
             parameters: [
-                { name: "X-API-Key", in: "header", description: "API key for authentication", schema: { type: "string" }, required: false },
+                { name: "X-API-Key", in: "header", description: "API key used for authentication.", schema: { type: "string", example: "your-api-key" }, required: false },
+                {
+                    name: options.routeParam,
+                    description: `UUID of the ${options.entityLabel.toLowerCase()} to update.`,
+                    in: "path",
+                    required: true,
+                    schema: { type: "string", format: "uuid" },
+                },
             ],
         },
     });
@@ -409,18 +444,25 @@ export function registerConfigurationEntityRoutes<
             knownUpdatedAt: t.String(),
         }),
         response: {
-            200: t.Object({ [options.detailResponseKey]: options.entitySchema } as any),
-            401: t.String(),
-            403: t.String(),
-            404: t.String(),
-            409: t.String(),
+            200: t.Object({ [options.detailResponseKey]: options.entitySchema } as any, { description: `The ${options.entityLabel.toLowerCase()} with updated disabled status.` }),
+            401: t.String({ description: "Unauthenticated – missing or invalid session, API key, or bearer token." }),
+            403: t.String({ description: "Permission denied – the authenticated principal lacks the required functional permission." }),
+            404: t.String({ description: "Not found – the referenced resource does not exist." }),
+            409: t.String({ description: `Conflict – optimistic locking failed; the ${options.entityLabel.toLowerCase()} was modified by another user.` }),
         },
         detail: {
             tags: [singularLabel],
             summary: `Enable or disable ${options.entityLabel.toLowerCase()}`,
             description: `Sets the disabled flag using optimistic locking via knownUpdatedAt.${options.gatekeeperPermission ? ' Requires \'' + options.gatekeeperPermission.functionalPermissionName + '\' AND \'' + options.managePermission.functionalPermissionName + '\'.' : ' Requires \'' + options.managePermission.functionalPermissionName + '\'.'}`,
             parameters: [
-                { name: "X-API-Key", in: "header", description: "API key for authentication", schema: { type: "string" }, required: false },
+                { name: "X-API-Key", in: "header", description: "API key used for authentication.", schema: { type: "string", example: "your-api-key" }, required: false },
+                {
+                    name: options.routeParam,
+                    description: `UUID of the ${options.entityLabel.toLowerCase()} to enable or disable.`,
+                    in: "path",
+                    required: true,
+                    schema: { type: "string", format: "uuid" },
+                },
             ],
         },
     });

@@ -92,7 +92,7 @@ export function Component() {
 
     // Filter state
     const [filterStatus, setFilterStatus] = useState<string[]>(["open"]);
-    const [filterProductType, setFilterProductType] = useState<string | null>(null);
+    const [filterProductType, setFilterProductType] = useState<string>("all");
     const [filterProductNumber, setFilterProductNumber] = useState("");
     const [filterAction, setFilterAction] = useState<string>("provide_or_approve");
 
@@ -113,7 +113,7 @@ export function Component() {
         try {
             const result = await getProductRequests(page, pageSize, {
                 status: filterStatus.length > 0 ? filterStatus : undefined,
-                productTypeIdentifier: filterProductType ?? undefined,
+                productTypeIdentifier: filterProductType !== "all" ? filterProductType : undefined,
                 productNumberContains: filterProductNumber || undefined,
                 actionFilter: filterAction !== "all"
                     ? (filterAction as "provide_or_approve" | "provide_value" | "approve_value")
@@ -227,7 +227,7 @@ export function Component() {
     };
 
     const productTypeOptions = [
-        { label: "All", value: "" },
+        { label: "All", value: "all" },
         ...productTypes.map((pt) => ({ label: pt.name, value: pt.identifier })),
     ];
 
@@ -281,7 +281,7 @@ export function Component() {
                     <Dropdown
                         value={filterProductType}
                         options={productTypeOptions}
-                        onChange={(e) => { setFilterProductType(e.value || null); setPage(0); }}
+                        onChange={(e) => { setFilterProductType(typeof e.value === "string" && e.value ? e.value : "all"); setPage(0); }}
                         placeholder="Product Type"
                     />
                 </div>

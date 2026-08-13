@@ -17,11 +17,11 @@ const UserProfileConfigEntrySchema = Type.Object({
     userValue: Type.Any(),
     inputFormat: Type.String(),
     outputFormat: Type.String(),
-});
+}, { description: "A single user-profile configuration entry with the global default value and the current user's override." });
 
 const UserProfileConfigResponseSchema = Type.Object({
     entries: Type.Array(UserProfileConfigEntrySchema),
-});
+}, { description: "All user-profile configuration entries with global default and per-user override values." });
 
 const UserProfileConfigUpdateSchema = Type.Object({
     value: Type.Any(),
@@ -94,7 +94,7 @@ export default function register(app: ApiInstance) {
         },
         response: {
             200: UserProfileConfigResponseSchema,
-            401: Type.String(),
+            401: Type.String({ description: "Unauthenticated – no user identity could be resolved from the session." }),
         },
     });
 
@@ -168,6 +168,13 @@ export default function register(app: ApiInstance) {
             description: "Upserts the current user's override for a specific user-configurable entry. Session-only. Send value=null to reset to default.",
             parameters: [
                 {
+                    name: "X-API-Key",
+                    description: "API key used for authentication. This endpoint additionally requires an authenticated browser session.",
+                    in: "header",
+                    required: false,
+                    schema: { type: "string", example: "your-api-key" },
+                },
+                {
                     name: "domain",
                     description: "The configuration domain.",
                     in: "path",
@@ -185,14 +192,14 @@ export default function register(app: ApiInstance) {
         },
         response: {
             200: UserProfileConfigEntrySchema,
-            400: Type.Union([Type.String(), ErrorResponseSchema]),
-            401: Type.String(),
-            403: Type.String(),
-            404: Type.String(),
+            400: Type.Union([Type.String(), ErrorResponseSchema], { description: "Invalid request – the provided value failed parsing or input-format validation." }),
+            401: Type.String({ description: "Unauthenticated – no user identity could be resolved from the session." }),
+            403: Type.String({ description: "Permission denied – this endpoint can only be modified via a browser session." }),
+            404: Type.String({ description: "Not found – the configuration entry does not exist or is not user-configurable." }),
             409: Type.Object({
                 error: Type.String(),
                 currentValue: Type.Any(),
-            }),
+            }, { description: "Conflict – the profile entry was modified in another tab; currentValue contains the latest value." }),
         },
     });
 }

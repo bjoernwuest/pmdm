@@ -5,7 +5,7 @@ import { HealthResponseSchema } from "@/types/ApiType.ts";
 export default function register(app: ApiInstance) {
   app.get("/health", () => ({ status: "ok", ts: new Date().toISOString() }), {
     response: {
-      200: HealthResponseSchema,
+      200: {...HealthResponseSchema, description: "Server health status and current timestamp."},
     },
     detail: {
       tags: ["Health"],

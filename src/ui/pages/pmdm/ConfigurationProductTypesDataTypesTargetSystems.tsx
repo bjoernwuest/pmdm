@@ -303,7 +303,7 @@ export function Component() {
         let cancelled = false;
         void apiGet<{ groups: { identifier: string; groupName: string }[] }>("/api/groups?page=0&pageSize=1000").then((payload) => {
             if (cancelled) return;
-            setAllGroups((payload.groups ?? []).map((g) => ({ identifier: g.identifier, name: g.groupName })));
+            setAllGroups((payload.groups ?? []).map((g) => ({ identifier: g.identifier, name: g.groupName })).sort((a, b) => a.name.localeCompare(b.name)));
         }).catch(() => undefined);
         return () => { cancelled = true; };
     }, [canView]);

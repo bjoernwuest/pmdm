@@ -42,9 +42,9 @@ export default function register(app: ApiInstance) {
             search: Type.Optional(Type.String()),
         }),
         response: {
-            200: AuditLogResponseSchema,
-            401: Type.String(),
-            403: Type.String(),
+            200: {...AuditLogResponseSchema, description: "Paginated audit log entries with pagination metadata."},
+            401: Type.String({ description: "Unauthenticated – missing or invalid session, API key, or bearer token." }),
+            403: Type.String({ description: "Permission denied – the authenticated principal lacks the required functional permission." }),
         },
         detail: {
             tags: ["Audit"],
@@ -133,9 +133,9 @@ export default function register(app: ApiInstance) {
             ],
         },
         response: {
-            200: AuditLogClearResponseSchema,
-            401: Type.String(),
-            403: Type.String(),
+            200: {...AuditLogClearResponseSchema, description: "Confirmation of the cleared audit log with the number of deleted entries."},
+            401: Type.String({ description: "Unauthenticated – missing or invalid session, API key, or bearer token." }),
+            403: Type.String({ description: "Permission denied – the authenticated principal lacks the required functional permission." }),
         },
     });
 }

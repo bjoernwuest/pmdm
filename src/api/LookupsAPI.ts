@@ -273,14 +273,21 @@ export default function register(app: ApiInstance) {
             summary: "Export lookup values to XLSX",
             description: "Downloads all values of a lookup as an XLSX spreadsheet. Requires FP_DO_CONFIGURATION AND FP_VIEW_LOOKUPS.",
             parameters: [
-                { name: "X-API-Key", in: "header", description: "API key for authentication", schema: { type: "string" }, required: false },
+                { name: "X-API-Key", in: "header", description: "API key used for authentication.", schema: { type: "string", example: "your-api-key" }, required: false },
+                {
+                    name: "lookupid",
+                    description: "UUID of the lookup whose values are exported.",
+                    in: "path",
+                    required: true,
+                    schema: { type: "string", format: "uuid" },
+                },
             ],
         },
         response: {
-            200: t.Any(),
-            401: t.String(),
-            403: t.String(),
-            404: t.String(),
+            200: t.Any({ description: "XLSX spreadsheet with all lookup values (application/vnd.openxmlformats-officedocument.spreadsheetml.sheet)." }),
+            401: t.String({ description: "Unauthenticated – missing or invalid session, API key, or bearer token." }),
+            403: t.String({ description: "Permission denied – the authenticated principal lacks the required functional permission." }),
+            404: t.String({ description: "Not found – no lookup with this identifier exists." }),
         },
     });
 
@@ -301,14 +308,21 @@ export default function register(app: ApiInstance) {
             summary: "Download lookup import template",
             description: "Downloads an XLSX template for importing lookup values. Requires FP_VIEW_LOOKUPS.",
             parameters: [
-                { name: "X-API-Key", in: "header", description: "API key for authentication", schema: { type: "string" }, required: false },
+                { name: "X-API-Key", in: "header", description: "API key used for authentication.", schema: { type: "string", example: "your-api-key" }, required: false },
+                {
+                    name: "lookupid",
+                    description: "UUID of the lookup for which the XLSX import template is generated.",
+                    in: "path",
+                    required: true,
+                    schema: { type: "string", format: "uuid" },
+                },
             ],
         },
         response: {
-            200: t.Any(),
-            401: t.String(),
-            403: t.String(),
-            404: t.String(),
+            200: t.Any({ description: "XLSX import template file (application/vnd.openxmlformats-officedocument.spreadsheetml.sheet)." }),
+            401: t.String({ description: "Unauthenticated – missing or invalid session, API key, or bearer token." }),
+            403: t.String({ description: "Permission denied – the authenticated principal lacks the required functional permission." }),
+            404: t.String({ description: "Not found – no lookup with this identifier exists." }),
         },
     });
 
@@ -430,15 +444,22 @@ export default function register(app: ApiInstance) {
             summary: "Import lookup values from XLSX",
             description: "Imports lookup values from an XLSX spreadsheet and returns a downloadable error report when validation fails. Requires FP_DO_CONFIGURATION AND FP_MANAGE_LOOKUPS.",
             parameters: [
-                { name: "X-API-Key", in: "header", description: "API key for authentication", schema: { type: "string" }, required: false },
+                { name: "X-API-Key", in: "header", description: "API key used for authentication.", schema: { type: "string", example: "your-api-key" }, required: false },
+                {
+                    name: "lookupid",
+                    description: "UUID of the lookup whose values are imported.",
+                    in: "path",
+                    required: true,
+                    schema: { type: "string", format: "uuid" },
+                },
             ],
         },
         response: {
-            200: t.Object({ created: t.Number(), updated: t.Number() }),
-            400: t.Any(),
-            401: t.String(),
-            403: t.String(),
-            404: t.String(),
+            200: t.Object({ created: t.Number(), updated: t.Number() }, { description: "Import result with the number of created and updated lookup values." }),
+            400: t.Any({ description: "Invalid request – missing file, malformed XLSX, or a validation error report workbook (XLSX) describing per-row errors." }),
+            401: t.String({ description: "Unauthenticated – missing or invalid session, API key, or bearer token." }),
+            403: t.String({ description: "Permission denied – the authenticated principal lacks the required functional permission." }),
+            404: t.String({ description: "Not found – no lookup with this identifier exists." }),
         },
     });
 
@@ -475,15 +496,46 @@ export default function register(app: ApiInstance) {
                 pageSize: t.Number({ minimum: 1 }),
                 availablePageSizes: t.Array(t.Number({ minimum: 1 })),
                 includeDisabled: t.Boolean(),
-            }),
-            401: t.String(),
-            403: t.String(),
-            404: t.String(),
+            }, { description: "Paged lookup values with pagination metadata and disabled-inclusion flag." }),
+            401: t.String({ description: "Unauthenticated – missing or invalid session, API key, or bearer token." }),
+            403: t.String({ description: "Permission denied – the authenticated principal lacks the required functional permission." }),
+            404: t.String({ description: "Not found – no lookup with this identifier exists." }),
         },
         detail: {
             tags: ["Lookup"],
             summary: "Get paged lookup values",
             description: "Returns lookup values with pagination metadata and optional inclusion of disabled entries. Requires FP_VIEW_LOOKUPS or FP_READ_PRODUCT_FILTER.",
+            parameters: [
+                { name: "X-API-Key", in: "header", description: "API key used for authentication.", schema: { type: "string", example: "your-api-key" }, required: false },
+                {
+                    name: "lookupid",
+                    description: "UUID of the lookup whose values are listed.",
+                    in: "path",
+                    required: true,
+                    schema: { type: "string", format: "uuid" },
+                },
+                {
+                    name: "page",
+                    description: "Zero-based page number for pagination. Defaults to 0.",
+                    in: "query",
+                    required: false,
+                    schema: { type: "integer", minimum: 0, default: 0 },
+                },
+                {
+                    name: "pageSize",
+                    description: "Number of values per page. Must be one of the available page sizes returned by the server. Defaults to the first available size.",
+                    in: "query",
+                    required: false,
+                    schema: { type: "integer", minimum: 1 },
+                },
+                {
+                    name: "includeDisabled",
+                    description: "Include disabled values in the results. Accepts 'true', '1', true (boolean). Defaults to false.",
+                    in: "query",
+                    required: false,
+                    schema: { type: "string", enum: ["true", "1", "false", "0"], default: "false" },
+                },
+            ],
         },
     });
 
@@ -512,17 +564,27 @@ export default function register(app: ApiInstance) {
         params: t.Object({ lookupid: t.String({ format: "uuid" }) }),
         body: t.Object({ name: t.String({ minLength: 1, maxLength: 255 }), sourceSystemIdentifier: t.Optional(t.Union([t.String(), t.Null()])) }),
         response: {
-            200: LookupsValuesSelectSchema,
-            400: t.String(),
-            401: t.String(),
-            403: t.String(),
-            404: t.String(),
-            409: t.String(),
+            200: {...LookupsValuesSelectSchema, description: "The newly created lookup value."},
+            400: t.String({ description: "Invalid request – the name must not be empty." }),
+            401: t.String({ description: "Unauthenticated – missing or invalid session, API key, or bearer token." }),
+            403: t.String({ description: "Permission denied – the authenticated principal lacks the required functional permission." }),
+            404: t.String({ description: "Not found – no lookup with this identifier exists." }),
+            409: t.String({ description: "Conflict – a lookup value with this name already exists." }),
         },
         detail: {
             tags: ["Lookup"],
             summary: "Create lookup value",
             description: "Creates a new lookup value for the selected lookup. Requires FP_DO_CONFIGURATION AND FP_MANAGE_LOOKUPS.",
+            parameters: [
+                { name: "X-API-Key", in: "header", description: "API key used for authentication.", schema: { type: "string", example: "your-api-key" }, required: false },
+                {
+                    name: "lookupid",
+                    description: "UUID of the lookup the new value belongs to.",
+                    in: "path",
+                    required: true,
+                    schema: { type: "string", format: "uuid" },
+                },
+            ],
         },
     });
 
@@ -554,17 +616,34 @@ export default function register(app: ApiInstance) {
         params: t.Object({ lookupid: t.String({ format: "uuid" }), valueid: t.String({ format: "uuid" }) }),
         body: t.Object({ name: t.String({ minLength: 1, maxLength: 255 }), knownUpdatedAt: t.String() }),
         response: {
-            200: LookupsValuesSelectSchema,
-            400: t.String(),
-            401: t.String(),
-            403: t.String(),
-            404: t.String(),
-            409: t.String(),
+            200: {...LookupsValuesSelectSchema, description: "The renamed lookup value."},
+            400: t.String({ description: "Invalid request – the name must not be empty." }),
+            401: t.String({ description: "Unauthenticated – missing or invalid session, API key, or bearer token." }),
+            403: t.String({ description: "Permission denied – the authenticated principal lacks the required functional permission." }),
+            404: t.String({ description: "Not found – the lookup value does not exist." }),
+            409: t.String({ description: "Conflict – optimistic locking failed; the lookup value was modified by another user." }),
         },
         detail: {
             tags: ["Lookup"],
             summary: "Rename lookup value",
             description: "Updates the lookup value name using optimistic locking via knownUpdatedAt. Requires FP_DO_CONFIGURATION AND FP_MANAGE_LOOKUPS.",
+            parameters: [
+                { name: "X-API-Key", in: "header", description: "API key used for authentication.", schema: { type: "string", example: "your-api-key" }, required: false },
+                {
+                    name: "lookupid",
+                    description: "UUID of the lookup the value belongs to.",
+                    in: "path",
+                    required: true,
+                    schema: { type: "string", format: "uuid" },
+                },
+                {
+                    name: "valueid",
+                    description: "UUID of the lookup value to rename.",
+                    in: "path",
+                    required: true,
+                    schema: { type: "string", format: "uuid" },
+                },
+            ],
         },
     });
 
@@ -595,16 +674,33 @@ export default function register(app: ApiInstance) {
         params: t.Object({ lookupid: t.String({ format: "uuid" }), valueid: t.String({ format: "uuid" }) }),
         body: t.Object({ disabled: t.Boolean(), knownUpdatedAt: t.String() }),
         response: {
-            200: LookupsValuesSelectSchema,
-            401: t.String(),
-            403: t.String(),
-            404: t.String(),
-            409: t.String(),
+            200: {...LookupsValuesSelectSchema, description: "The lookup value with updated disabled status."},
+            401: t.String({ description: "Unauthenticated – missing or invalid session, API key, or bearer token." }),
+            403: t.String({ description: "Permission denied – the authenticated principal lacks the required functional permission." }),
+            404: t.String({ description: "Not found – the lookup value does not exist." }),
+            409: t.String({ description: "Conflict – optimistic locking failed; the lookup value was modified by another user." }),
         },
         detail: {
             tags: ["Lookup"],
             summary: "Enable or disable lookup value",
             description: "Sets the disabled flag for a lookup value using optimistic locking via knownUpdatedAt. Requires FP_DO_CONFIGURATION AND FP_MANAGE_LOOKUPS.",
+            parameters: [
+                { name: "X-API-Key", in: "header", description: "API key used for authentication.", schema: { type: "string", example: "your-api-key" }, required: false },
+                {
+                    name: "lookupid",
+                    description: "UUID of the lookup the value belongs to.",
+                    in: "path",
+                    required: true,
+                    schema: { type: "string", format: "uuid" },
+                },
+                {
+                    name: "valueid",
+                    description: "UUID of the lookup value to enable or disable.",
+                    in: "path",
+                    required: true,
+                    schema: { type: "string", format: "uuid" },
+                },
+            ],
         },
     });
 }

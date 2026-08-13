@@ -343,7 +343,7 @@ export function Component() {
         if (!canView) return;
         let cancelled = false;
         void apiGet<{ groups: { identifier: string; groupName: string }[] }>(`/api/groups?page=0&pageSize=9999`).then((payload) => {
-            if (!cancelled) setAllGroups(payload.groups.map((g) => ({ identifier: g.identifier, name: g.groupName })));
+            if (!cancelled) setAllGroups(payload.groups.map((g) => ({ identifier: g.identifier, name: g.groupName })).sort((a, b) => a.name.localeCompare(b.name)));
         }).catch(() => undefined);
         return () => { cancelled = true; };
     }, [canView]);
@@ -1264,6 +1264,9 @@ export function Component() {
             {/* C. Product Type Permissions (cancel role) */}
             <CollapsibleSection title="Permissions" defaultExpanded>
                 <div className="admin-datatype-permission-panel admin-top-gap">
+                    <p style={{ marginBottom: "0.5rem", color: "var(--at-text-secondary)" }}>
+                        Can cancel request of this product type.
+                    </p>
                     {canManage ? (
                         <div className="admin-top-gap">
                             <FilterableDropdown
@@ -1291,39 +1294,41 @@ export function Component() {
                         {productTypePermissions.length === 0 ? (
                             <span style={{ color: "var(--at-text-secondary)", fontStyle: "italic" }}>No groups have cancel permission</span>
                         ) : (
-                            productTypePermissions.map((perm) => (
-                                <span
-                                    key={perm.groupIdentifier}
-                                    className="mui-pill"
-                                    style={{
-                                        display: "inline-flex",
-                                        alignItems: "center",
-                                        gap: "6px",
-                                        background: "var(--at-surface-100)",
-                                        border: "1px solid var(--at-surface-border)",
-                                    }}
-                                >
-                                    {perm.groupName} ({perm.role})
-                                    {canManage ? (
-                                        <button
-                                            type="button"
-                                            className="admin-datatype-chip-remove"
-                                            onClick={() => void handleRevokeProductTypePermission(perm.groupIdentifier)}
-                                            title={`Remove ${perm.groupName}`}
-                                            style={{
-                                                border: "none",
-                                                background: "transparent",
-                                                cursor: "pointer",
-                                                padding: "0 2px",
-                                                fontSize: "0.85rem",
-                                                color: "var(--at-text-secondary)",
-                                            }}
-                                        >
-                                            <i className="pi pi-times" aria-hidden="true" />
-                                        </button>
-                                    ) : null}
-                                </span>
-                            ))
+                            [...productTypePermissions]
+                                .sort((a, b) => a.groupName.localeCompare(b.groupName))
+                                .map((perm) => (
+                                    <span
+                                        key={perm.groupIdentifier}
+                                        className="mui-pill"
+                                        style={{
+                                            display: "inline-flex",
+                                            alignItems: "center",
+                                            gap: "6px",
+                                            background: "var(--at-surface-100)",
+                                            border: "1px solid var(--at-surface-border)",
+                                        }}
+                                    >
+                                        {perm.groupName} ({perm.role})
+                                        {canManage ? (
+                                            <button
+                                                type="button"
+                                                className="admin-datatype-chip-remove"
+                                                onClick={() => void handleRevokeProductTypePermission(perm.groupIdentifier)}
+                                                title={`Remove ${perm.groupName}`}
+                                                style={{
+                                                    border: "none",
+                                                    background: "transparent",
+                                                    cursor: "pointer",
+                                                    padding: "0 2px",
+                                                    fontSize: "0.85rem",
+                                                    color: "var(--at-text-secondary)",
+                                                }}
+                                            >
+                                                <i className="pi pi-times" aria-hidden="true" />
+                                            </button>
+                                        ) : null}
+                                    </span>
+                                ))
                         )}
                     </div>
                 </div>

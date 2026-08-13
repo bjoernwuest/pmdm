@@ -183,7 +183,7 @@ const QueryBuilder: React.FC<QueryBuilderProps> = ({
         return createEmptyGroup();
     });
     const [quickProductNumber, setQuickProductNumber] = useState(currentPayload?.productNumberContains ?? "");
-    const [quickProductType, setQuickProductType] = useState(currentPayload?.productTypeIdentifier ?? "");
+    const [quickProductType, setQuickProductType] = useState(currentPayload?.productTypeIdentifier ?? "any");
     const [quickDisabled, setQuickDisabled] = useState<string>(
         currentPayload?.disabled === true ? "disabled" : currentPayload?.disabled === false ? "active" : "any",
     );
@@ -199,7 +199,7 @@ const QueryBuilder: React.FC<QueryBuilderProps> = ({
                 setTree(createEmptyGroup());
             }
             setQuickProductNumber(currentPayload?.productNumberContains ?? "");
-            setQuickProductType(currentPayload?.productTypeIdentifier ?? "");
+            setQuickProductType(currentPayload?.productTypeIdentifier ?? "any");
             setQuickDisabled(
                 currentPayload?.disabled === true ? "disabled" : currentPayload?.disabled === false ? "active" : "any",
             );
@@ -269,7 +269,7 @@ const QueryBuilder: React.FC<QueryBuilderProps> = ({
     }, [tree]);
 
     const handleApply = useCallback(() => {
-        const hasQuickFilter = quickProductNumber || quickProductType || quickDisabled !== "any";
+        const hasQuickFilter = !!quickProductNumber || quickProductType !== "any" || quickDisabled !== "any";
         const ruleCount = countRules(tree);
 
         if (!hasQuickFilter && ruleCount === 0) {
@@ -309,7 +309,7 @@ const QueryBuilder: React.FC<QueryBuilderProps> = ({
             criteria,
             expression,
             productNumberContains: quickProductNumber || undefined,
-            productTypeIdentifier: quickProductType || undefined,
+            productTypeIdentifier: quickProductType !== "any" ? quickProductType : undefined,
             disabled: quickDisabled === "disabled" ? true : quickDisabled === "active" ? false : undefined,
         };
 
@@ -553,10 +553,10 @@ const QueryBuilder: React.FC<QueryBuilderProps> = ({
                     <Dropdown
                         value={quickProductType}
                         options={[
-                            { label: "(Any)", value: "" },
+                            { label: "(Any)", value: "any" },
                             ...productTypes.map((pt) => ({ label: pt.name, value: pt.identifier })),
                         ]}
-                        onChange={(e) => setQuickProductType(e.value)}
+                        onChange={(e) => setQuickProductType(typeof e.value === "string" ? e.value : "any")}
                         placeholder="Product Type"
                         style={{ minWidth: "180px" }}
                         filter

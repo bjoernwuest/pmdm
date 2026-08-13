@@ -117,7 +117,56 @@ export default function register(app: ApiInstance): void {
             summary: "List products",
             description: "Returns a paginated list of products with optional filtering. Requires FP_VIEW_PRODUCTS.",
             parameters: [
-                { name: "X-API-Key", in: "header", description: "API key for authentication", schema: { type: "string" }, required: false },
+                { name: "X-API-Key", in: "header", description: "API key used for authentication.", schema: { type: "string", example: "your-api-key" }, required: false },
+                {
+                    name: "page",
+                    description: "Zero-based page number for pagination. Defaults to 0.",
+                    in: "query",
+                    required: false,
+                    schema: { type: "integer", minimum: 0, default: 0 },
+                },
+                {
+                    name: "pageSize",
+                    description: "Number of products per page. Must be one of the available page sizes returned by the server. Defaults to the first available size.",
+                    in: "query",
+                    required: false,
+                    schema: { type: "integer", minimum: 1 },
+                },
+                {
+                    name: "includeDisabled",
+                    description: "Include disabled products in the results. Accepts 'true'. Defaults to false.",
+                    in: "query",
+                    required: false,
+                    schema: { type: "string", enum: ["true", "false"], default: "false" },
+                },
+                {
+                    name: "productNumberContains",
+                    description: "Filters products whose product number contains this substring (case-insensitive).",
+                    in: "query",
+                    required: false,
+                    schema: { type: "string" },
+                },
+                {
+                    name: "productTypeIdentifier",
+                    description: "Filters products by the UUID of their product type.",
+                    in: "query",
+                    required: false,
+                    schema: { type: "string", format: "uuid" },
+                },
+                {
+                    name: "disabled",
+                    description: "Filters products by disabled status. Accepts 'true' or 'false'; omitted to not filter.",
+                    in: "query",
+                    required: false,
+                    schema: { type: "string", enum: ["true", "false"] },
+                },
+                {
+                    name: "filter",
+                    description: "JSON string with criteria and a boolean expression for advanced filtering of product values (e.g. {'criteria':[...],'expression':'1 AND 2'}).",
+                    in: "query",
+                    required: false,
+                    schema: { type: "string" },
+                },
             ],
         },
         response: {
@@ -129,9 +178,9 @@ export default function register(app: ApiInstance): void {
                 total: t.Number(),
                 availablePageSizes: t.Array(t.Number()),
                 includeDisabled: t.Boolean(),
-            }),
-            401: t.String(),
-            403: t.String(),
+            }, { description: "Paginated list of products with pagination metadata, effective viewer permissions, and disabled-inclusion flag." }),
+            401: t.String({ description: "Unauthenticated – missing or invalid session, API key, or bearer token." }),
+            403: t.String({ description: "Permission denied – the authenticated principal lacks the required functional permission." }),
         },
     });
 
@@ -168,14 +217,21 @@ export default function register(app: ApiInstance): void {
             summary: "Download product import template",
             description: "Generates and downloads an XLSX template for importing products of the given product type. Requires FP_VIEW_PRODUCTS.",
             parameters: [
-                { name: "X-API-Key", in: "header", description: "API key for authentication", schema: { type: "string" }, required: false },
+                { name: "X-API-Key", in: "header", description: "API key used for authentication.", schema: { type: "string", example: "your-api-key" }, required: false },
+                {
+                    name: "productTypeIdentifier",
+                    description: "Identifier of the product type for which the XLSX import template is generated.",
+                    in: "path",
+                    required: true,
+                    schema: { type: "string" },
+                },
             ],
         },
         response: {
-            200: t.Any(),
-            401: t.String(),
-            403: t.String(),
-            404: t.String(),
+            200: t.Any({ description: "XLSX import template file (application/vnd.openxmlformats-officedocument.spreadsheetml.sheet)." }),
+            401: t.String({ description: "Unauthenticated – missing or invalid session, API key, or bearer token." }),
+            403: t.String({ description: "Permission denied – the authenticated principal lacks the required functional permission." }),
+            404: t.String({ description: "Not found – the referenced product type does not exist." }),
         },
     });
 
@@ -252,15 +308,15 @@ export default function register(app: ApiInstance): void {
             summary: "Import products from XLSX",
             description: "Imports products from an uploaded XLSX file. Returns created count and errors. Requires FP_CREATE_PRODUCT.",
             parameters: [
-                { name: "X-API-Key", in: "header", description: "API key for authentication", schema: { type: "string" }, required: false },
+                { name: "X-API-Key", in: "header", description: "API key used for authentication.", schema: { type: "string", example: "your-api-key" }, required: false },
             ],
         },
         response: {
-            200: t.Any(),
-            400: t.String(),
-            401: t.String(),
-            403: t.String(),
-            404: t.String(),
+            200: t.Any({ description: "Import result summary with counts of created and updated products and per-row errors." }),
+            400: t.String({ description: "Invalid request – missing file, malformed XLSX, or invalid template structure." }),
+            401: t.String({ description: "Unauthenticated – missing or invalid session, API key, or bearer token." }),
+            403: t.String({ description: "Permission denied – the authenticated principal lacks the required functional permission." }),
+            404: t.String({ description: "Not found – the product type referenced in the XLSX does not exist." }),
         },
     });
 
@@ -286,14 +342,21 @@ export default function register(app: ApiInstance): void {
             summary: "Get product detail",
             description: "Returns a single product with viewer-filtered values. Requires FP_VIEW_PRODUCTS.",
             parameters: [
-                { name: "X-API-Key", in: "header", description: "API key for authentication", schema: { type: "string" }, required: false },
+                { name: "X-API-Key", in: "header", description: "API key used for authentication.", schema: { type: "string", example: "your-api-key" }, required: false },
+                {
+                    name: "productNumber",
+                    description: "Product number of the product to retrieve.",
+                    in: "path",
+                    required: true,
+                    schema: { type: "string" },
+                },
             ],
         },
         response: {
-            200: t.Object({ product: t.Any() }),
-            401: t.String(),
-            403: t.String(),
-            404: t.String(),
+            200: t.Object({ product: t.Any() }, { description: "A single product with viewer-filtered data type values." }),
+            401: t.String({ description: "Unauthenticated – missing or invalid session, API key, or bearer token." }),
+            403: t.String({ description: "Permission denied – the authenticated principal lacks the required functional permission." }),
+            404: t.String({ description: "Not found – no product with this product number exists." }),
         },
     });
 
@@ -331,15 +394,15 @@ export default function register(app: ApiInstance): void {
             summary: "Create product",
             description: "Creates a new product with optional data type values. Requires FP_CREATE_PRODUCT.",
             parameters: [
-                { name: "X-API-Key", in: "header", description: "API key for authentication", schema: { type: "string" }, required: false },
+                { name: "X-API-Key", in: "header", description: "API key used for authentication.", schema: { type: "string", example: "your-api-key" }, required: false },
             ],
         },
         response: {
-            200: t.Object({ product: t.Any() }),
-            401: t.String(),
-            403: t.String(),
-            404: t.String(),
-            500: t.String(),
+            200: t.Object({ product: t.Any() }, { description: "The newly created product." }),
+            401: t.String({ description: "Unauthenticated – missing or invalid session, API key, or bearer token." }),
+            403: t.String({ description: "Permission denied – the authenticated principal lacks the required functional permission." }),
+            404: t.String({ description: "Not found – the referenced product type does not exist." }),
+            500: t.String({ description: "Internal server error." }),
         },
     });
 
@@ -376,14 +439,21 @@ export default function register(app: ApiInstance): void {
             summary: "Update product",
             description: "Updates product fields and optionally data type values. Requires optimistic lock timestamp. Requires FP_UPDATE_PRODUCT.",
             parameters: [
-                { name: "X-API-Key", in: "header", description: "API key for authentication", schema: { type: "string" }, required: false },
+                { name: "X-API-Key", in: "header", description: "API key used for authentication.", schema: { type: "string", example: "your-api-key" }, required: false },
+                {
+                    name: "productNumber",
+                    description: "Product number of the product to update.",
+                    in: "path",
+                    required: true,
+                    schema: { type: "string" },
+                },
             ],
         },
         response: {
-            200: t.Object({ product: t.Any() }),
-            401: t.String(),
-            403: t.String(),
-            409: t.String(),
+            200: t.Object({ product: t.Any() }, { description: "The updated product." }),
+            401: t.String({ description: "Unauthenticated – missing or invalid session, API key, or bearer token." }),
+            403: t.String({ description: "Permission denied – the authenticated principal lacks the required functional permission." }),
+            409: t.String({ description: "Conflict – optimistic locking failed; the product was modified by another user." }),
         },
     });
 
@@ -417,14 +487,21 @@ export default function register(app: ApiInstance): void {
             summary: "Toggle product disabled status",
             description: "Enables or disables a product. Requires optimistic lock timestamp. Requires FP_DISABLE_PRODUCT.",
             parameters: [
-                { name: "X-API-Key", in: "header", description: "API key for authentication", schema: { type: "string" }, required: false },
+                { name: "X-API-Key", in: "header", description: "API key used for authentication.", schema: { type: "string", example: "your-api-key" }, required: false },
+                {
+                    name: "productNumber",
+                    description: "Product number of the product to enable or disable.",
+                    in: "path",
+                    required: true,
+                    schema: { type: "string" },
+                },
             ],
         },
         response: {
-            200: t.Object({ product: t.Any() }),
-            401: t.String(),
-            403: t.String(),
-            409: t.String(),
+            200: t.Object({ product: t.Any() }, { description: "The product with updated disabled status." }),
+            401: t.String({ description: "Unauthenticated – missing or invalid session, API key, or bearer token." }),
+            403: t.String({ description: "Permission denied – the authenticated principal lacks the required functional permission." }),
+            409: t.String({ description: "Conflict – optimistic locking failed; the product was modified by another user." }),
         },
     });
 
@@ -459,14 +536,21 @@ export default function register(app: ApiInstance): void {
             summary: "Request product update",
             description: "Creates a product request to update an existing product. Returns the product request identifier for client-side redirect. Requires FP_REQUEST_PRODUCT_UPDATE.",
             parameters: [
-                { name: "X-API-Key", in: "header", description: "API key for authentication", schema: { type: "string" }, required: false },
+                { name: "X-API-Key", in: "header", description: "API key used for authentication.", schema: { type: "string", example: "your-api-key" }, required: false },
+                {
+                    name: "productNumber",
+                    description: "Product number of the product for which an update request is created.",
+                    in: "path",
+                    required: true,
+                    schema: { type: "string" },
+                },
             ],
         },
         response: {
-            200: t.Object({ productRequestId: t.String() }),
-            401: t.String(),
-            403: t.String(),
-            404: t.String(),
+            200: t.Object({ productRequestId: t.String() }, { description: "Identifier of the created product update request for client-side redirect." }),
+            401: t.String({ description: "Unauthenticated – missing or invalid session, API key, or bearer token." }),
+            403: t.String({ description: "Permission denied – the authenticated principal lacks the required functional permission." }),
+            404: t.String({ description: "Not found – no product with this product number exists." }),
         },
     });
 
@@ -505,14 +589,21 @@ export default function register(app: ApiInstance): void {
             summary: "Create product copy request",
             description: "Creates a product request to create a copy of an existing product. An optional target product number can be provided; otherwise one is auto-generated. Requires FP_CREATE_PRODUCT_COPY.",
             parameters: [
-                { name: "X-API-Key", in: "header", description: "API key for authentication", schema: { type: "string" }, required: false },
+                { name: "X-API-Key", in: "header", description: "API key used for authentication.", schema: { type: "string", example: "your-api-key" }, required: false },
+                {
+                    name: "productNumber",
+                    description: "Product number of the product to copy.",
+                    in: "path",
+                    required: true,
+                    schema: { type: "string" },
+                },
             ],
         },
         response: {
-            200: t.Object({ productRequestId: t.String() }),
-            401: t.String(),
-            403: t.String(),
-            404: t.String(),
+            200: t.Object({ productRequestId: t.String() }, { description: "Identifier of the created product copy request for client-side redirect." }),
+            401: t.String({ description: "Unauthenticated – missing or invalid session, API key, or bearer token." }),
+            403: t.String({ description: "Permission denied – the authenticated principal lacks the required functional permission." }),
+            404: t.String({ description: "Not found – no product with this product number exists." }),
         },
     });
 }

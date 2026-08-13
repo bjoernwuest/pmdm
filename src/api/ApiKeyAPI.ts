@@ -83,7 +83,11 @@ export default function register(app: ApiInstance) {
             includeDisabled,
         };
     }, {
-        response: { 200: ApiKeysResponseSchema, 401: Type.String(), 403: Type.String() },
+        response: {
+            200: {...ApiKeysResponseSchema, description: "Paginated list of API keys with metadata, assigned permission names, and pagination metadata."},
+            401: Type.String({ description: "Unauthenticated – missing or invalid session, API key, or bearer token." }),
+            403: Type.String({ description: "Permission denied – the authenticated principal lacks the required functional permission." }),
+        },
         detail: {
             tags: ["API Key"],
             summary: "Get paged API key list",
@@ -175,7 +179,12 @@ export default function register(app: ApiInstance) {
             relatedUsers,
         };
     }, {
-        response: { 200: ApiKeyDetailSchema, 401: Type.String(), 403: Type.String(), 404: Type.String() },
+        response: {
+            200: {...ApiKeyDetailSchema, description: "A single API key with metadata, assigned permission identifiers, all available permissions, and related user information."},
+            401: Type.String({ description: "Unauthenticated – missing or invalid session, API key, or bearer token." }),
+            403: Type.String({ description: "Permission denied – the authenticated principal lacks the required functional permission." }),
+            404: Type.String({ description: "Not found – no API key with this identifier exists." }),
+        },
         detail: {
             tags: ["API Key"],
             summary: "Get API key details",
@@ -241,10 +250,10 @@ export default function register(app: ApiInstance) {
     }, {
         body: ApiKeyCreateBodySchema,
         response: {
-            200: ApiKeyCreatedResponseSchema,
-            401: Type.String(),
-            403: Type.String(),
-            500: Type.String(),
+            200: {...ApiKeyCreatedResponseSchema, description: "The created API key's identifier, plaintext key (shown only once), expiry, key length, and validity in days."},
+            401: Type.String({ description: "Unauthenticated – missing or invalid session, API key, or bearer token." }),
+            403: Type.String({ description: "Permission denied – the authenticated principal lacks the required functional permission, or the request was not made by a human user." }),
+            500: Type.String({ description: "Internal server error." }),
         },
         detail: {
             tags: ["API Key"],
@@ -280,7 +289,12 @@ export default function register(app: ApiInstance) {
         return { updatedAt: updated.updatedAt };
     }, {
         body: ApiKeyUpdateMetadataBodySchema,
-        response: { 200: ApiKeyUpdatedAtResponseSchema, 401: Type.String(), 403: Type.String(), 409: Type.String() },
+        response: {
+            200: {...ApiKeyUpdatedAtResponseSchema, description: "The new updatedAt timestamp of the modified API key."},
+            401: Type.String({ description: "Unauthenticated – missing or invalid session, API key, or bearer token." }),
+            403: Type.String({ description: "Permission denied – the authenticated principal lacks the required functional permission." }),
+            409: Type.String({ description: "Conflict – optimistic locking failed; the API key was modified by another user." }),
+        },
         detail: {
             tags: ["API Key"],
             summary: "Update API key metadata",
@@ -332,10 +346,10 @@ export default function register(app: ApiInstance) {
     }, {
         body: ApiKeyProlongBodySchema,
         response: {
-            200: ApiKeyProlongResponseSchema,
-            401: Type.String(),
-            403: Type.String(),
-            409: Type.String(),
+            200: {...ApiKeyProlongResponseSchema, description: "The updated API key expiry information including new updatedAt, expiresAt, and last prolongation metadata."},
+            401: Type.String({ description: "Unauthenticated – missing or invalid session, API key, or bearer token." }),
+            403: Type.String({ description: "Permission denied – the authenticated principal lacks the required functional permission, or the request was not made by a human user." }),
+            409: Type.String({ description: "Conflict – optimistic locking failed; the API key was modified, disabled, or no longer exists." }),
         },
         detail: {
             tags: ["API Key"],
@@ -384,10 +398,10 @@ export default function register(app: ApiInstance) {
     }, {
         body: OptimisticLockBodySchema,
         response: {
-            200: ApiKeyDisableResponseSchema,
-            401: Type.String(),
-            403: Type.String(),
-            409: Type.String(),
+            200: {...ApiKeyDisableResponseSchema, description: "The disabled API key's updatedAt, disabled flag, and disable metadata."},
+            401: Type.String({ description: "Unauthenticated – missing or invalid session, API key, or bearer token." }),
+            403: Type.String({ description: "Permission denied – the authenticated principal lacks the required functional permission, or the request was not made by a human user." }),
+            409: Type.String({ description: "Conflict – optimistic locking failed; the API key was modified, already disabled, or no longer exists." }),
         },
         detail: {
             tags: ["API Key"],
@@ -434,7 +448,12 @@ export default function register(app: ApiInstance) {
         return { success: true };
     }, {
         body: ApiKeyPermissionsBodySchema,
-        response: { 200: SuccessResponseSchema, 401: Type.String(), 403: Type.String(), 409: Type.String() },
+        response: {
+            200: {...SuccessResponseSchema, description: "Generic success confirmation for the permission replacement."},
+            401: Type.String({ description: "Unauthenticated – missing or invalid session, API key, or bearer token." }),
+            403: Type.String({ description: "Permission denied – the authenticated principal lacks the required functional permission, or the request was not made by a human user." }),
+            409: Type.String({ description: "Conflict – optimistic locking failed; the API key was modified by another user." }),
+        },
         detail: {
             tags: ["API Key"],
             summary: "Replace API key functional permissions",
@@ -473,7 +492,12 @@ export default function register(app: ApiInstance) {
         return { success: true };
     }, {
         body: OptimisticLockBodySchema,
-        response: { 200: SuccessResponseSchema, 401: Type.String(), 403: Type.String(), 409: Type.String() },
+        response: {
+            200: {...SuccessResponseSchema, description: "Generic success confirmation for the deletion."},
+            401: Type.String({ description: "Unauthenticated – missing or invalid session, API key, or bearer token." }),
+            403: Type.String({ description: "Permission denied – the authenticated principal lacks the required functional permission." }),
+            409: Type.String({ description: "Conflict – optimistic locking failed; the API key was modified by another user." }),
+        },
         detail: {
             tags: ["API Key"],
             summary: "Delete an API key",

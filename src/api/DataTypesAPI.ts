@@ -110,14 +110,21 @@ export default function register(app: ApiInstance): void {
             summary: "Get data type permissions",
             description: "Returns all group-role assignments for a data type, including group names. Requires FP_DO_CONFIGURATION AND FP_VIEW_DATA_TYPES.",
             parameters: [
-                { name: "X-API-Key", in: "header", description: "API key for authentication", schema: { type: "string" }, required: false },
+                { name: "X-API-Key", in: "header", description: "API key used for authentication.", schema: { type: "string", example: "your-api-key" }, required: false },
+                {
+                    name: "datatypeid",
+                    description: "UUID of the data type whose permissions are listed.",
+                    in: "path",
+                    required: true,
+                    schema: { type: "string", format: "uuid" },
+                },
             ],
         },
         response: {
-            200: t.Object({ permissions: t.Array(t.Any()) }),
-            401: t.String(),
-            403: t.String(),
-            404: t.String(),
+            200: t.Object({ permissions: t.Array(t.Any()) }, { description: "All group-role assignments for the data type." }),
+            401: t.String({ description: "Unauthenticated – missing or invalid session, API key, or bearer token." }),
+            403: t.String({ description: "Permission denied – the authenticated principal lacks the required functional permission." }),
+            404: t.String({ description: "Not found – no data type with this identifier exists." }),
         },
     });
 
@@ -170,15 +177,22 @@ export default function register(app: ApiInstance): void {
             summary: "Grant data type permission",
             description: "Grants a role (viewer/writer/approver) to a group for a data type. Requires FP_DO_CONFIGURATION AND FP_MANAGE_DATA_TYPES.",
             parameters: [
-                { name: "X-API-Key", in: "header", description: "API key for authentication", schema: { type: "string" }, required: false },
+                { name: "X-API-Key", in: "header", description: "API key used for authentication.", schema: { type: "string", example: "your-api-key" }, required: false },
+                {
+                    name: "datatypeid",
+                    description: "UUID of the data type the permission is granted for.",
+                    in: "path",
+                    required: true,
+                    schema: { type: "string", format: "uuid" },
+                },
             ],
         },
         response: {
-            200: t.Object({ permission: t.Any() }),
-            401: t.String(),
-            403: t.String(),
-            404: t.String(),
-            500: t.String(),
+            200: t.Object({ permission: t.Any() }, { description: "The newly created permission assignment including the group name." }),
+            401: t.String({ description: "Unauthenticated – missing or invalid session, API key, or bearer token." }),
+            403: t.String({ description: "Permission denied – the authenticated principal lacks the required functional permission." }),
+            404: t.String({ description: "Not found – no data type with this identifier exists." }),
+            500: t.String({ description: "Internal server error." }),
         },
     });
 
@@ -221,14 +235,21 @@ export default function register(app: ApiInstance): void {
             summary: "Revoke data type permission",
             description: "Revokes a role assignment from a group for a data type. Requires FP_DO_CONFIGURATION AND FP_MANAGE_DATA_TYPES.",
             parameters: [
-                { name: "X-API-Key", in: "header", description: "API key for authentication", schema: { type: "string" }, required: false },
+                { name: "X-API-Key", in: "header", description: "API key used for authentication.", schema: { type: "string", example: "your-api-key" }, required: false },
+                {
+                    name: "datatypeid",
+                    description: "UUID of the data type the permission is revoked from.",
+                    in: "path",
+                    required: true,
+                    schema: { type: "string", format: "uuid" },
+                },
             ],
         },
         response: {
-            200: t.Any(),
-            401: t.String(),
-            403: t.String(),
-            404: t.String(),
+            200: t.Any({ description: "Empty success response after revoking the permission assignment." }),
+            401: t.String({ description: "Unauthenticated – missing or invalid session, API key, or bearer token." }),
+            403: t.String({ description: "Permission denied – the authenticated principal lacks the required functional permission." }),
+            404: t.String({ description: "Not found – the data type or permission assignment does not exist." }),
         },
     });
 
@@ -283,16 +304,30 @@ export default function register(app: ApiInstance): void {
             summary: "Update data type permission",
             description: "Updates the showByDefault flag on a data type permission. Requires FP_DO_CONFIGURATION AND FP_MANAGE_DATA_TYPES.",
             parameters: [
-                { name: "X-API-Key", in: "header", description: "API key for authentication", schema: { type: "string" }, required: false },
+                { name: "X-API-Key", in: "header", description: "API key used for authentication.", schema: { type: "string", example: "your-api-key" }, required: false },
+                {
+                    name: "datatypeid",
+                    description: "UUID of the data type the permission belongs to.",
+                    in: "path",
+                    required: true,
+                    schema: { type: "string", format: "uuid" },
+                },
+                {
+                    name: "permid",
+                    description: "Permission identifier encoding the group UUID and role, separated by '__'.",
+                    in: "path",
+                    required: true,
+                    schema: { type: "string" },
+                },
             ],
         },
         response: {
-            200: t.Object({ permission: t.Any() }),
-            400: t.String(),
-            401: t.String(),
-            403: t.String(),
-            404: t.String(),
-            409: t.String(),
+            200: t.Object({ permission: t.Any() }, { description: "The updated permission assignment." }),
+            400: t.String({ description: "Invalid request – the permission identifier format is invalid." }),
+            401: t.String({ description: "Unauthenticated – missing or invalid session, API key, or bearer token." }),
+            403: t.String({ description: "Permission denied – the authenticated principal lacks the required functional permission." }),
+            404: t.String({ description: "Not found – no data type with this identifier exists." }),
+            409: t.String({ description: "Conflict – optimistic locking failed; the permission assignment was modified by another user." }),
         },
     });
 }

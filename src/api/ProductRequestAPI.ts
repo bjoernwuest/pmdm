@@ -144,17 +144,17 @@ export default function register(app: ApiInstance): void {
             description:
                 "Creates a new product request. Mode 'new' creates from scratch, 'update' creates an update request for an existing product, 'copy' creates a copy request from an existing product. Requires FP_CREATE_PRODUCT (mode=new), FP_REQUEST_PRODUCT_UPDATE (mode=update), or FP_CREATE_PRODUCT_COPY (mode=copy).",
             parameters: [
-                { name: "X-API-Key", in: "header", description: "API key for authentication", schema: { type: "string" }, required: false },
+                { name: "X-API-Key", in: "header", description: "API key used for authentication.", schema: { type: "string", example: "your-api-key" }, required: false },
             ],
         },
         response: {
-            200: t.Object({ productRequestId: t.String() }),
-            400: t.String(),
-            401: t.String(),
-            403: t.String(),
-            404: t.String(),
-            409: t.Object({ error: t.String(), conflict: t.Boolean(), existingProductNumber: t.Optional(t.String()) }),
-            500: t.Object({ error: t.String() }),
+            200: t.Object({ productRequestId: t.String() }, { description: "Identifier of the created product request for client-side redirect." }),
+            400: t.String({ description: "Invalid request – invalid mode or missing mode-specific required field." }),
+            401: t.String({ description: "Unauthenticated – missing or invalid session, API key, or bearer token." }),
+            403: t.String({ description: "Permission denied – the authenticated principal lacks the required functional permission." }),
+            404: t.String({ description: "Not found – the source product does not exist." }),
+            409: t.Object({ error: t.String(), conflict: t.Boolean(), existingProductNumber: t.Optional(t.String()) }, { description: "Conflict – a product with the requested product number already exists." }),
+            500: t.Object({ error: t.String() }, { description: "Internal server error." }),
         },
     });
 
@@ -173,7 +173,8 @@ export default function register(app: ApiInstance): void {
         const pageSize = Math.max(1, Number(context.query.pageSize ?? availablePageSizes[0] ?? 20));
 
         const statusParam = context.query.status as string | undefined;
-        const productTypeIdentifier = context.query.productTypeIdentifier as string | undefined;
+        const rawProductTypeIdentifier = context.query.productTypeIdentifier;
+        const productTypeIdentifier = typeof rawProductTypeIdentifier === "string" && rawProductTypeIdentifier.length > 0 ? rawProductTypeIdentifier : undefined;
         const productNumberContains = context.query.productNumberContains as string | undefined;
         const actionFilter = context.query.actionFilter as string | undefined;
 
@@ -212,7 +213,49 @@ export default function register(app: ApiInstance): void {
             description:
                 "Returns a paginated list of product requests with optional filtering by status, product type, product number search, and actionable filter. Requires FP_VIEW_PRODUCTS.",
             parameters: [
-                { name: "X-API-Key", in: "header", description: "API key for authentication", schema: { type: "string" }, required: false },
+                { name: "X-API-Key", in: "header", description: "API key used for authentication.", schema: { type: "string", example: "your-api-key" }, required: false },
+                {
+                    name: "page",
+                    description: "Zero-based page number for pagination. Defaults to 0.",
+                    in: "query",
+                    required: false,
+                    schema: { type: "integer", minimum: 0, default: 0 },
+                },
+                {
+                    name: "pageSize",
+                    description: "Number of product requests per page. Must be one of the available page sizes returned by the server. Defaults to the first available size.",
+                    in: "query",
+                    required: false,
+                    schema: { type: "integer", minimum: 1 },
+                },
+                {
+                    name: "status",
+                    description: "Comma-separated list of product request statuses to filter by.",
+                    in: "query",
+                    required: false,
+                    schema: { type: "string" },
+                },
+                {
+                    name: "productTypeIdentifier",
+                    description: "Filters product requests by the UUID of their product type.",
+                    in: "query",
+                    required: false,
+                    schema: { type: "string", format: "uuid" },
+                },
+                {
+                    name: "productNumberContains",
+                    description: "Filters product requests whose product number contains this substring (case-insensitive).",
+                    in: "query",
+                    required: false,
+                    schema: { type: "string" },
+                },
+                {
+                    name: "actionFilter",
+                    description: "Filters product requests by pending action. One of 'provide_or_approve', 'provide_value', or 'approve_value'.",
+                    in: "query",
+                    required: false,
+                    schema: { type: "string", enum: ["provide_or_approve", "provide_value", "approve_value"] },
+                },
             ],
         },
         response: {
@@ -222,9 +265,9 @@ export default function register(app: ApiInstance): void {
                 pageSize: t.Number(),
                 total: t.Number(),
                 availablePageSizes: t.Array(t.Number()),
-            }),
-            401: t.String(),
-            403: t.String(),
+            }, { description: "Paginated list of product requests with pagination metadata." }),
+            401: t.String({ description: "Unauthenticated – missing or invalid session, API key, or bearer token." }),
+            403: t.String({ description: "Permission denied – the authenticated principal lacks the required functional permission." }),
         },
     });
 
@@ -256,7 +299,14 @@ export default function register(app: ApiInstance): void {
             description:
                 "Approves all unapproved data type values that the current user has Approver role for. Returns the count of approved values, identifiers of skipped data types, and whether the request progressed to importing. Values with a stale `updatedAt` (concurrent modification) are skipped. Authorization is role-based (Approver role on data types) — no functional permission required.",
             parameters: [
-                { name: "X-API-Key", in: "header", description: "API key for authentication", schema: { type: "string" }, required: false },
+                { name: "X-API-Key", in: "header", description: "API key used for authentication.", schema: { type: "string", example: "your-api-key" }, required: false },
+                {
+                    name: "id",
+                    description: "UUID of the product request to approve.",
+                    in: "path",
+                    required: true,
+                    schema: { type: "string", format: "uuid" },
+                },
             ],
         },
         response: {
@@ -264,9 +314,9 @@ export default function register(app: ApiInstance): void {
                 approvedCount: t.Number(),
                 skippedDataTypeIdentifiers: t.Array(t.String()),
                 allApproved: t.Boolean(),
-            }),
-            400: t.Object({ error: t.String() }),
-            401: t.String(),
+            }, { description: "Approval result with the count of approved values, skipped data type identifiers, and whether the request progressed to importing." }),
+            400: t.Object({ error: t.String() }, { description: "Invalid request – malformed payload or approval failure." }),
+            401: t.String({ description: "Unauthenticated – missing or invalid session, API key, or bearer token." }),
         },
     });
 
@@ -297,14 +347,21 @@ export default function register(app: ApiInstance): void {
             description:
                 "Returns a single product request with enriched data type values, filtered by the current user's view permissions. Requires FP_VIEW_PRODUCTS.",
             parameters: [
-                { name: "X-API-Key", in: "header", description: "API key for authentication", schema: { type: "string" }, required: false },
+                { name: "X-API-Key", in: "header", description: "API key used for authentication.", schema: { type: "string", example: "your-api-key" }, required: false },
+                {
+                    name: "id",
+                    description: "UUID of the product request to retrieve.",
+                    in: "path",
+                    required: true,
+                    schema: { type: "string", format: "uuid" },
+                },
             ],
         },
         response: {
-            200: t.Any(),
-            401: t.String(),
-            403: t.String(),
-            404: t.String(),
+            200: t.Any({ description: "The product request with enriched, viewer-filtered data type values and available page sizes." }),
+            401: t.String({ description: "Unauthenticated – missing or invalid session, API key, or bearer token." }),
+            403: t.String({ description: "Permission denied – the authenticated principal lacks the required functional permission." }),
+            404: t.String({ description: "Not found – no product request with this identifier exists." }),
         },
     });
 
@@ -339,11 +396,11 @@ export default function register(app: ApiInstance): void {
             dataTypeIdentifier: t.String({ format: "uuid" }),
         }),
         response: {
-            200: t.Object({ values: t.Array(LookupsValuesSelectSchema) }),
-            400: t.Object({ error: t.String() }),
-            401: t.Object({ error: t.String() }),
-            403: t.Object({ error: t.String() }),
-            500: t.Object({ error: t.String() }),
+            200: t.Object({ values: t.Array(LookupsValuesSelectSchema) }, { description: "All lookup values backing the lookup-kind data type." }),
+            400: t.Object({ error: t.String() }, { description: "Invalid request – malformed parameters or processing failure." }),
+            401: t.Object({ error: t.String() }, { description: "Unauthenticated – missing or invalid session, API key, or bearer token." }),
+            403: t.Object({ error: t.String() }, { description: "Permission denied – the authenticated principal lacks the required functional permission or data-type role." }),
+            500: t.Object({ error: t.String() }, { description: "Internal server error." }),
         },
         detail: {
             tags: ["Product Requests"],
@@ -351,7 +408,21 @@ export default function register(app: ApiInstance): void {
             description:
                 "Returns all lookup values (including disabled ones) for the lookup backing a lookup-kind data type, scoped to the current user's data-type-level Viewer/Writer/Approver role on the product request. Requires FP_VIEW_PRODUCTS. Access to individual values is governed by the same role model as the product request detail endpoint — not by the Configuration-area FP_VIEW_LOOKUPS permission.",
             parameters: [
-                { name: "X-API-Key", in: "header", description: "API key for authentication", schema: { type: "string" }, required: false },
+                { name: "X-API-Key", in: "header", description: "API key used for authentication.", schema: { type: "string", example: "your-api-key" }, required: false },
+                {
+                    name: "id",
+                    description: "UUID of the product request.",
+                    in: "path",
+                    required: true,
+                    schema: { type: "string", format: "uuid" },
+                },
+                {
+                    name: "dataTypeIdentifier",
+                    description: "UUID of the lookup-kind data type whose values are returned.",
+                    in: "path",
+                    required: true,
+                    schema: { type: "string", format: "uuid" },
+                },
             ],
         },
     });
@@ -387,11 +458,11 @@ export default function register(app: ApiInstance): void {
             dataTypeIdentifier: t.String({ format: "uuid" }),
         }),
         response: {
-            200: t.Object({ values: t.Array(ConsumablesValuesSelectSchema) }),
-            400: t.Object({ error: t.String() }),
-            401: t.Object({ error: t.String() }),
-            403: t.Object({ error: t.String() }),
-            500: t.Object({ error: t.String() }),
+            200: t.Object({ values: t.Array(ConsumablesValuesSelectSchema) }, { description: "All consumable values backing the consumable-kind data type." }),
+            400: t.Object({ error: t.String() }, { description: "Invalid request – malformed parameters or processing failure." }),
+            401: t.Object({ error: t.String() }, { description: "Unauthenticated – missing or invalid session, API key, or bearer token." }),
+            403: t.Object({ error: t.String() }, { description: "Permission denied – the authenticated principal lacks the required functional permission or data-type role." }),
+            500: t.Object({ error: t.String() }, { description: "Internal server error." }),
         },
         detail: {
             tags: ["Product Requests"],
@@ -399,7 +470,21 @@ export default function register(app: ApiInstance): void {
             description:
                 "Returns all consumable values (including disabled and already-used ones) for the consumable backing a consumable-kind data type, scoped to the current user's data-type-level Viewer/Writer/Approver role on the product request. Requires FP_VIEW_PRODUCTS. Access to individual values is governed by the same role model as the product request detail endpoint — not by the Configuration-area FP_VIEW_CONSUMABLES permission.",
             parameters: [
-                { name: "X-API-Key", in: "header", description: "API key for authentication", schema: { type: "string" }, required: false },
+                { name: "X-API-Key", in: "header", description: "API key used for authentication.", schema: { type: "string", example: "your-api-key" }, required: false },
+                {
+                    name: "id",
+                    description: "UUID of the product request.",
+                    in: "path",
+                    required: true,
+                    schema: { type: "string", format: "uuid" },
+                },
+                {
+                    name: "dataTypeIdentifier",
+                    description: "UUID of the consumable-kind data type whose values are returned.",
+                    in: "path",
+                    required: true,
+                    schema: { type: "string", format: "uuid" },
+                },
             ],
         },
     });
@@ -441,11 +526,11 @@ export default function register(app: ApiInstance): void {
                     productTypeName: t.Union([t.String(), t.Null()]),
                     disabled: t.Boolean(),
                 })),
-            }),
-            400: t.Object({ error: t.String() }),
-            401: t.Object({ error: t.String() }),
-            403: t.Object({ error: t.String() }),
-            500: t.Object({ error: t.String() }),
+            }, { description: "Candidate products for the product-kind data type with the data type's filter script applied." }),
+            400: t.Object({ error: t.String() }, { description: "Invalid request – malformed parameters or processing failure." }),
+            401: t.Object({ error: t.String() }, { description: "Unauthenticated – missing or invalid session, API key, or bearer token." }),
+            403: t.Object({ error: t.String() }, { description: "Permission denied – the authenticated principal lacks the required functional permission or data-type role." }),
+            500: t.Object({ error: t.String() }, { description: "Internal server error." }),
         },
         detail: {
             tags: ["Product Requests"],
@@ -453,7 +538,21 @@ export default function register(app: ApiInstance): void {
             description:
                 "Returns the candidate products for a product-kind data type, scoped to the current user's data-type-level Viewer/Writer/Approver role on the product request, with the data type's filter script applied. Mirrors the lookup/consumable dropdown endpoints. Requires FP_VIEW_PRODUCTS.",
             parameters: [
-                { name: "X-API-Key", in: "header", description: "API key for authentication", schema: { type: "string" }, required: false },
+                { name: "X-API-Key", in: "header", description: "API key used for authentication.", schema: { type: "string", example: "your-api-key" }, required: false },
+                {
+                    name: "id",
+                    description: "UUID of the product request.",
+                    in: "path",
+                    required: true,
+                    schema: { type: "string", format: "uuid" },
+                },
+                {
+                    name: "dataTypeIdentifier",
+                    description: "UUID of the product-kind data type whose candidate products are returned.",
+                    in: "path",
+                    required: true,
+                    schema: { type: "string", format: "uuid" },
+                },
             ],
         },
     });
@@ -500,7 +599,21 @@ export default function register(app: ApiInstance): void {
             description:
                 "Updates the value for a specific data type on an open product request. Authorization is role-based: requires Writer role or requestorCanEdit permission on the data type. Uses optimistic locking via knownUpdatedAt — returns 409 if the value was modified by another user.",
             parameters: [
-                { name: "X-API-Key", in: "header", description: "API key for authentication", schema: { type: "string" }, required: false },
+                { name: "X-API-Key", in: "header", description: "API key used for authentication.", schema: { type: "string", example: "your-api-key" }, required: false },
+                {
+                    name: "id",
+                    description: "UUID of the product request to update.",
+                    in: "path",
+                    required: true,
+                    schema: { type: "string", format: "uuid" },
+                },
+                {
+                    name: "dataTypeIdentifier",
+                    description: "UUID of the data type whose value is updated.",
+                    in: "path",
+                    required: true,
+                    schema: { type: "string", format: "uuid" },
+                },
             ],
         },
         response: {
@@ -509,11 +622,11 @@ export default function register(app: ApiInstance): void {
                 recalculated: t.Any(),
                 mandatory: t.Optional(t.Any()),
                 requestorCanEdit: t.Optional(t.Any()),
-            }),
-            400: t.Object({ error: t.String() }),
-            401: t.Object({ error: t.String() }),
-            403: t.Object({ error: t.String() }),
-            409: t.Object({ error: t.String() }),
+            }, { description: "The updated value with recalculated data, mandatory flag, and requestorCanEdit flag." }),
+            400: t.Object({ error: t.String() }, { description: "Invalid request – malformed payload or processing failure." }),
+            401: t.Object({ error: t.String() }, { description: "Unauthenticated – missing or invalid session, API key, or bearer token." }),
+            403: t.Object({ error: t.String() }, { description: "Permission denied – the authenticated principal lacks the required data-type role." }),
+            409: t.Object({ error: t.String() }, { description: "Conflict – optimistic locking failed; the value was modified by another user." }),
         },
     });
 
@@ -553,15 +666,29 @@ export default function register(app: ApiInstance): void {
             description:
                 "Approves a specific data type value on an open product request. Authorization is role-based: requires Approver role on the data type. Uses optimistic locking via knownUpdatedAt — returns 409 if the value was modified by another user. Returns whether the request progressed to importing.",
             parameters: [
-                { name: "X-API-Key", in: "header", description: "API key for authentication", schema: { type: "string" }, required: false },
+                { name: "X-API-Key", in: "header", description: "API key used for authentication.", schema: { type: "string", example: "your-api-key" }, required: false },
+                {
+                    name: "id",
+                    description: "UUID of the product request.",
+                    in: "path",
+                    required: true,
+                    schema: { type: "string", format: "uuid" },
+                },
+                {
+                    name: "dataTypeIdentifier",
+                    description: "UUID of the data type whose value is approved.",
+                    in: "path",
+                    required: true,
+                    schema: { type: "string", format: "uuid" },
+                },
             ],
         },
         response: {
-            200: t.Any(),
-            400: t.Object({ error: t.String() }),
-            401: t.Object({ error: t.String() }),
-            403: t.Object({ error: t.String() }),
-            409: t.Object({ error: t.String() }),
+            200: t.Any({ description: "The approved data type value including whether the request progressed to importing." }),
+            400: t.Object({ error: t.String() }, { description: "Invalid request – malformed payload or approval failure." }),
+            401: t.Object({ error: t.String() }, { description: "Unauthenticated – missing or invalid session, API key, or bearer token." }),
+            403: t.Object({ error: t.String() }, { description: "Permission denied – the authenticated principal lacks the required Approver role." }),
+            409: t.Object({ error: t.String() }, { description: "Conflict – optimistic locking failed; the value was modified by another user." }),
         },
     });
 
@@ -592,14 +719,21 @@ export default function register(app: ApiInstance): void {
             description:
                 "Cancels an open product request. Authorization is role-based: requires cancel role permission on the product type.",
             parameters: [
-                { name: "X-API-Key", in: "header", description: "API key for authentication", schema: { type: "string" }, required: false },
+                { name: "X-API-Key", in: "header", description: "API key used for authentication.", schema: { type: "string", example: "your-api-key" }, required: false },
+                {
+                    name: "id",
+                    description: "UUID of the product request to cancel.",
+                    in: "path",
+                    required: true,
+                    schema: { type: "string", format: "uuid" },
+                },
             ],
         },
         response: {
-            200: t.Any(),
-            400: t.Object({ error: t.String() }),
-            401: t.Object({ error: t.String() }),
-            403: t.Object({ error: t.String() }),
+            200: t.Any({ description: "The cancelled product request." }),
+            400: t.Object({ error: t.String() }, { description: "Invalid request – malformed payload or cancellation failure." }),
+            401: t.Object({ error: t.String() }, { description: "Unauthenticated – missing or invalid session, API key, or bearer token." }),
+            403: t.Object({ error: t.String() }, { description: "Permission denied – the authenticated principal lacks the required cancel role permission." }),
         },
     });
 }

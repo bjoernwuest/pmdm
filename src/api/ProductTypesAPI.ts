@@ -134,7 +134,35 @@ export default function register(app: ApiInstance): void {
             summary: "List assigned data types for a product type",
             description: "Returns all DataType assignments for a product type, joined with DataType name/kind/description and owner BusinessDomain name. Requires FP_DO_CONFIGURATION AND FP_VIEW_PRODUCT_TYPES.",
             parameters: [
-                { name: "X-API-Key", in: "header", description: "API key for authentication", schema: { type: "string" }, required: false },
+                { name: "X-API-Key", in: "header", description: "API key used for authentication.", schema: { type: "string", example: "your-api-key" }, required: false },
+                {
+                    name: "producttypeid",
+                    description: "UUID of the product type whose data type assignments are listed.",
+                    in: "path",
+                    required: true,
+                    schema: { type: "string", format: "uuid" },
+                },
+                {
+                    name: "page",
+                    description: "Zero-based page number for pagination. Defaults to 0.",
+                    in: "query",
+                    required: false,
+                    schema: { type: "integer", minimum: 0, default: 0 },
+                },
+                {
+                    name: "pageSize",
+                    description: "Number of data type assignments per page. Must be one of the available page sizes returned by the server. Defaults to the first available size.",
+                    in: "query",
+                    required: false,
+                    schema: { type: "integer", minimum: 1 },
+                },
+                {
+                    name: "includeDisabledDataTypes",
+                    description: "Include assignments of disabled data types in the results. Accepts 'false' or '0' to exclude them. Defaults to true.",
+                    in: "query",
+                    required: false,
+                    schema: { type: "string", enum: ["true", "1", "false", "0"], default: "true" },
+                },
             ],
         },
         response: {
@@ -144,10 +172,10 @@ export default function register(app: ApiInstance): void {
                 total: t.Number(),
                 availablePageSizes: t.Array(t.Number()),
                 dataTypeAssignments: t.Array(t.Any()),
-            }),
-            401: t.String(),
-            403: t.String(),
-            404: t.String(),
+            }, { description: "Paged data type assignments of the product type with pagination metadata." }),
+            401: t.String({ description: "Unauthenticated – missing or invalid session, API key, or bearer token." }),
+            403: t.String({ description: "Permission denied – the authenticated principal lacks the required functional permission." }),
+            404: t.String({ description: "Not found – no product type with this identifier exists." }),
         },
     });
 
@@ -183,15 +211,22 @@ export default function register(app: ApiInstance): void {
             summary: "Assign a data type to a product type",
             description: "Creates a ProductTypesDataTypes row linking a DataType to a ProductType. Requires FP_DO_CONFIGURATION AND FP_MANAGE_PRODUCT_TYPES.",
             parameters: [
-                { name: "X-API-Key", in: "header", description: "API key for authentication", schema: { type: "string" }, required: false },
+                { name: "X-API-Key", in: "header", description: "API key used for authentication.", schema: { type: "string", example: "your-api-key" }, required: false },
+                {
+                    name: "producttypeid",
+                    description: "UUID of the product type the data type is assigned to.",
+                    in: "path",
+                    required: true,
+                    schema: { type: "string", format: "uuid" },
+                },
             ],
         },
         response: {
-            200: t.Object({ assignment: t.Any() }),
-            401: t.String(),
-            403: t.String(),
-            404: t.String(),
-            409: t.String(),
+            200: t.Object({ assignment: t.Any() }, { description: "The newly created data type assignment." }),
+            401: t.String({ description: "Unauthenticated – missing or invalid session, API key, or bearer token." }),
+            403: t.String({ description: "Permission denied – the authenticated principal lacks the required functional permission." }),
+            404: t.String({ description: "Not found – no product type with this identifier exists." }),
+            409: t.String({ description: "Conflict – the data type is already assigned to this product type." }),
         },
     });
 
@@ -225,14 +260,28 @@ export default function register(app: ApiInstance): void {
             summary: "Unassign a data type from a product type",
             description: "Deletes a ProductTypesDataTypes row. Requires FP_DO_CONFIGURATION AND FP_MANAGE_PRODUCT_TYPES.",
             parameters: [
-                { name: "X-API-Key", in: "header", description: "API key for authentication", schema: { type: "string" }, required: false },
+                { name: "X-API-Key", in: "header", description: "API key used for authentication.", schema: { type: "string", example: "your-api-key" }, required: false },
+                {
+                    name: "producttypeid",
+                    description: "UUID of the product type the assignment belongs to.",
+                    in: "path",
+                    required: true,
+                    schema: { type: "string", format: "uuid" },
+                },
+                {
+                    name: "datatypeassignmentid",
+                    description: "UUID of the data type assignment to delete.",
+                    in: "path",
+                    required: true,
+                    schema: { type: "string", format: "uuid" },
+                },
             ],
         },
         response: {
-            200: t.Any(),
-            401: t.String(),
-            403: t.String(),
-            404: t.String(),
+            200: t.Any({ description: "Empty success response after removing the data type assignment." }),
+            401: t.String({ description: "Unauthenticated – missing or invalid session, API key, or bearer token." }),
+            403: t.String({ description: "Permission denied – the authenticated principal lacks the required functional permission." }),
+            404: t.String({ description: "Not found – the product type or data type assignment does not exist." }),
         },
     });
 
@@ -274,15 +323,29 @@ export default function register(app: ApiInstance): void {
             summary: "Update a data type assignment",
             description: "Updates mutable fields on a ProductTypesDataTypes row (owner, mandatory, editableOnUpdate, requestorCanEdit, config). Requires FP_DO_CONFIGURATION AND FP_MANAGE_PRODUCT_TYPES.",
             parameters: [
-                { name: "X-API-Key", in: "header", description: "API key for authentication", schema: { type: "string" }, required: false },
+                { name: "X-API-Key", in: "header", description: "API key used for authentication.", schema: { type: "string", example: "your-api-key" }, required: false },
+                {
+                    name: "producttypeid",
+                    description: "UUID of the product type the assignment belongs to.",
+                    in: "path",
+                    required: true,
+                    schema: { type: "string", format: "uuid" },
+                },
+                {
+                    name: "datatypeassignmentid",
+                    description: "UUID of the data type assignment to update.",
+                    in: "path",
+                    required: true,
+                    schema: { type: "string", format: "uuid" },
+                },
             ],
         },
         response: {
-            200: t.Object({ assignment: t.Any() }),
-            401: t.String(),
-            403: t.String(),
-            404: t.String(),
-            500: t.String(),
+            200: t.Object({ assignment: t.Any() }, { description: "The updated data type assignment." }),
+            401: t.String({ description: "Unauthenticated – missing or invalid session, API key, or bearer token." }),
+            403: t.String({ description: "Permission denied – the authenticated principal lacks the required functional permission." }),
+            404: t.String({ description: "Not found – the product type or data type assignment does not exist." }),
+            500: t.String({ description: "Internal server error." }),
         },
     });
 
@@ -338,7 +401,35 @@ export default function register(app: ApiInstance): void {
             summary: "List assigned target systems for a product type data type assignment",
             description: "Returns all TargetSystem assignments for a ProductType+DataType pair, joined with TargetSystem name. Requires FP_DO_CONFIGURATION AND FP_VIEW_PRODUCT_TYPES.",
             parameters: [
-                { name: "X-API-Key", in: "header", description: "API key for authentication", schema: { type: "string" }, required: false },
+                { name: "X-API-Key", in: "header", description: "API key used for authentication.", schema: { type: "string", example: "your-api-key" }, required: false },
+                {
+                    name: "producttypeid",
+                    description: "UUID of the product type.",
+                    in: "path",
+                    required: true,
+                    schema: { type: "string", format: "uuid" },
+                },
+                {
+                    name: "datatypeassignmentid",
+                    description: "UUID of the data type assignment whose target systems are listed.",
+                    in: "path",
+                    required: true,
+                    schema: { type: "string", format: "uuid" },
+                },
+                {
+                    name: "page",
+                    description: "Zero-based page number for pagination. Defaults to 0.",
+                    in: "query",
+                    required: false,
+                    schema: { type: "integer", minimum: 0, default: 0 },
+                },
+                {
+                    name: "pageSize",
+                    description: "Number of target systems per page. Must be one of the available page sizes returned by the server. Defaults to the first available size.",
+                    in: "query",
+                    required: false,
+                    schema: { type: "integer", minimum: 1 },
+                },
             ],
         },
         response: {
@@ -348,10 +439,10 @@ export default function register(app: ApiInstance): void {
                 total: t.Number(),
                 availablePageSizes: t.Array(t.Number()),
                 targetSystems: t.Array(t.Any()),
-            }),
-            401: t.String(),
-            403: t.String(),
-            404: t.String(),
+            }, { description: "Paged target system assignments of the product type data type with pagination metadata." }),
+            401: t.String({ description: "Unauthenticated – missing or invalid session, API key, or bearer token." }),
+            403: t.String({ description: "Permission denied – the authenticated principal lacks the required functional permission." }),
+            404: t.String({ description: "Not found – the product type or data type assignment does not exist." }),
         },
     });
 
@@ -396,15 +487,29 @@ export default function register(app: ApiInstance): void {
             summary: "Assign a target system to a product type data type",
             description: "Creates a ProductTypesDataTypesTargetSystems row linking a TargetSystem. Requires FP_DO_CONFIGURATION AND FP_MANAGE_PRODUCT_TYPES.",
             parameters: [
-                { name: "X-API-Key", in: "header", description: "API key for authentication", schema: { type: "string" }, required: false },
+                { name: "X-API-Key", in: "header", description: "API key used for authentication.", schema: { type: "string", example: "your-api-key" }, required: false },
+                {
+                    name: "producttypeid",
+                    description: "UUID of the product type.",
+                    in: "path",
+                    required: true,
+                    schema: { type: "string", format: "uuid" },
+                },
+                {
+                    name: "datatypeassignmentid",
+                    description: "UUID of the data type assignment the target system is linked to.",
+                    in: "path",
+                    required: true,
+                    schema: { type: "string", format: "uuid" },
+                },
             ],
         },
         response: {
-            200: t.Object({ targetSystem: t.Any() }),
-            401: t.String(),
-            403: t.String(),
-            404: t.String(),
-            409: t.String(),
+            200: t.Object({ targetSystem: t.Any() }, { description: "The newly created target system assignment." }),
+            401: t.String({ description: "Unauthenticated – missing or invalid session, API key, or bearer token." }),
+            403: t.String({ description: "Permission denied – the authenticated principal lacks the required functional permission." }),
+            404: t.String({ description: "Not found – the product type or data type assignment does not exist." }),
+            409: t.String({ description: "Conflict – the target system is already assigned." }),
         },
     });
 
@@ -447,14 +552,35 @@ export default function register(app: ApiInstance): void {
             summary: "Unassign a target system from a product type data type",
             description: "Deletes a ProductTypesDataTypesTargetSystems row. Requires FP_DO_CONFIGURATION AND FP_MANAGE_PRODUCT_TYPES.",
             parameters: [
-                { name: "X-API-Key", in: "header", description: "API key for authentication", schema: { type: "string" }, required: false },
+                { name: "X-API-Key", in: "header", description: "API key used for authentication.", schema: { type: "string", example: "your-api-key" }, required: false },
+                {
+                    name: "producttypeid",
+                    description: "UUID of the product type.",
+                    in: "path",
+                    required: true,
+                    schema: { type: "string", format: "uuid" },
+                },
+                {
+                    name: "datatypeassignmentid",
+                    description: "UUID of the data type assignment.",
+                    in: "path",
+                    required: true,
+                    schema: { type: "string", format: "uuid" },
+                },
+                {
+                    name: "targetsystemid",
+                    description: "UUID of the target system assignment to delete.",
+                    in: "path",
+                    required: true,
+                    schema: { type: "string", format: "uuid" },
+                },
             ],
         },
         response: {
-            200: t.Any(),
-            401: t.String(),
-            403: t.String(),
-            404: t.String(),
+            200: t.Any({ description: "Empty success response after removing the target system assignment." }),
+            401: t.String({ description: "Unauthenticated – missing or invalid session, API key, or bearer token." }),
+            403: t.String({ description: "Permission denied – the authenticated principal lacks the required functional permission." }),
+            404: t.String({ description: "Not found – the product type, data type assignment, or target system assignment does not exist." }),
         },
     });
 
@@ -499,14 +625,35 @@ export default function register(app: ApiInstance): void {
             summary: "Update a target system assignment name",
             description: "Updates the name override on a ProductTypesDataTypesTargetSystems row. Requires FP_DO_CONFIGURATION AND FP_MANAGE_PRODUCT_TYPES.",
             parameters: [
-                { name: "X-API-Key", in: "header", description: "API key for authentication", schema: { type: "string" }, required: false },
+                { name: "X-API-Key", in: "header", description: "API key used for authentication.", schema: { type: "string", example: "your-api-key" }, required: false },
+                {
+                    name: "producttypeid",
+                    description: "UUID of the product type.",
+                    in: "path",
+                    required: true,
+                    schema: { type: "string", format: "uuid" },
+                },
+                {
+                    name: "datatypeassignmentid",
+                    description: "UUID of the data type assignment.",
+                    in: "path",
+                    required: true,
+                    schema: { type: "string", format: "uuid" },
+                },
+                {
+                    name: "targetsystemid",
+                    description: "UUID of the target system assignment to update.",
+                    in: "path",
+                    required: true,
+                    schema: { type: "string", format: "uuid" },
+                },
             ],
         },
         response: {
-            200: t.Object({ targetSystem: t.Any() }),
-            401: t.String(),
-            403: t.String(),
-            404: t.String(),
+            200: t.Object({ targetSystem: t.Any() }, { description: "The updated target system assignment." }),
+            401: t.String({ description: "Unauthenticated – missing or invalid session, API key, or bearer token." }),
+            403: t.String({ description: "Permission denied – the authenticated principal lacks the required functional permission." }),
+            404: t.String({ description: "Not found – the product type, data type assignment, or target system assignment does not exist." }),
         },
     });
 
@@ -545,14 +692,28 @@ export default function register(app: ApiInstance): void {
             summary: "Get product type data type permissions",
             description: "Returns all group-role assignments for a ProductType+DataType assignment, including group names. Requires FP_DO_CONFIGURATION AND FP_VIEW_PRODUCT_TYPES.",
             parameters: [
-                { name: "X-API-Key", in: "header", description: "API key for authentication", schema: { type: "string" }, required: false },
+                { name: "X-API-Key", in: "header", description: "API key used for authentication.", schema: { type: "string", example: "your-api-key" }, required: false },
+                {
+                    name: "producttypeid",
+                    description: "UUID of the product type.",
+                    in: "path",
+                    required: true,
+                    schema: { type: "string", format: "uuid" },
+                },
+                {
+                    name: "datatypeassignmentid",
+                    description: "UUID of the data type assignment whose permissions are listed.",
+                    in: "path",
+                    required: true,
+                    schema: { type: "string", format: "uuid" },
+                },
             ],
         },
         response: {
-            200: t.Object({ permissions: t.Array(t.Any()) }),
-            401: t.String(),
-            403: t.String(),
-            404: t.String(),
+            200: t.Object({ permissions: t.Array(t.Any()) }, { description: "All group-role assignments for the product type data type assignment." }),
+            401: t.String({ description: "Unauthenticated – missing or invalid session, API key, or bearer token." }),
+            403: t.String({ description: "Permission denied – the authenticated principal lacks the required functional permission." }),
+            404: t.String({ description: "Not found – the product type or data type assignment does not exist." }),
         },
     });
 
@@ -614,15 +775,29 @@ export default function register(app: ApiInstance): void {
             summary: "Grant product type data type permission",
             description: "Grants a role (viewer/writer/approver) to a group for a ProductType+DataType assignment. Requires FP_DO_CONFIGURATION AND FP_MANAGE_PRODUCT_TYPES.",
             parameters: [
-                { name: "X-API-Key", in: "header", description: "API key for authentication", schema: { type: "string" }, required: false },
+                { name: "X-API-Key", in: "header", description: "API key used for authentication.", schema: { type: "string", example: "your-api-key" }, required: false },
+                {
+                    name: "producttypeid",
+                    description: "UUID of the product type.",
+                    in: "path",
+                    required: true,
+                    schema: { type: "string", format: "uuid" },
+                },
+                {
+                    name: "datatypeassignmentid",
+                    description: "UUID of the data type assignment the permission is granted for.",
+                    in: "path",
+                    required: true,
+                    schema: { type: "string", format: "uuid" },
+                },
             ],
         },
         response: {
-            200: t.Object({ permission: t.Any() }),
-            401: t.String(),
-            403: t.String(),
-            404: t.String(),
-            500: t.String(),
+            200: t.Object({ permission: t.Any() }, { description: "The newly created permission assignment including the group name." }),
+            401: t.String({ description: "Unauthenticated – missing or invalid session, API key, or bearer token." }),
+            403: t.String({ description: "Permission denied – the authenticated principal lacks the required functional permission." }),
+            404: t.String({ description: "Not found – the product type or data type assignment does not exist." }),
+            500: t.String({ description: "Internal server error." }),
         },
     });
 
@@ -666,14 +841,28 @@ export default function register(app: ApiInstance): void {
             summary: "Revoke product type data type permission",
             description: "Revokes a role assignment from a group for a ProductType+DataType assignment. Requires FP_DO_CONFIGURATION AND FP_MANAGE_PRODUCT_TYPES.",
             parameters: [
-                { name: "X-API-Key", in: "header", description: "API key for authentication", schema: { type: "string" }, required: false },
+                { name: "X-API-Key", in: "header", description: "API key used for authentication.", schema: { type: "string", example: "your-api-key" }, required: false },
+                {
+                    name: "producttypeid",
+                    description: "UUID of the product type.",
+                    in: "path",
+                    required: true,
+                    schema: { type: "string", format: "uuid" },
+                },
+                {
+                    name: "datatypeassignmentid",
+                    description: "UUID of the data type assignment the permission is revoked from.",
+                    in: "path",
+                    required: true,
+                    schema: { type: "string", format: "uuid" },
+                },
             ],
         },
         response: {
-            200: t.Any(),
-            401: t.String(),
-            403: t.String(),
-            404: t.String(),
+            200: t.Any({ description: "Empty success response after revoking the permission assignment." }),
+            401: t.String({ description: "Unauthenticated – missing or invalid session, API key, or bearer token." }),
+            403: t.String({ description: "Permission denied – the authenticated principal lacks the required functional permission." }),
+            404: t.String({ description: "Not found – the product type, data type assignment, or permission assignment does not exist." }),
         },
     });
 
@@ -725,16 +914,37 @@ export default function register(app: ApiInstance): void {
             summary: "Update product type data type permission",
             description: "Updates the showByDefault flag on a ProductType+DataType permission. Requires FP_DO_CONFIGURATION AND FP_MANAGE_PRODUCT_TYPES.",
             parameters: [
-                { name: "X-API-Key", in: "header", description: "API key for authentication", schema: { type: "string" }, required: false },
+                { name: "X-API-Key", in: "header", description: "API key used for authentication.", schema: { type: "string", example: "your-api-key" }, required: false },
+                {
+                    name: "producttypeid",
+                    description: "UUID of the product type.",
+                    in: "path",
+                    required: true,
+                    schema: { type: "string", format: "uuid" },
+                },
+                {
+                    name: "datatypeassignmentid",
+                    description: "UUID of the data type assignment the permission belongs to.",
+                    in: "path",
+                    required: true,
+                    schema: { type: "string", format: "uuid" },
+                },
+                {
+                    name: "permid",
+                    description: "Permission identifier encoding the group UUID and role, separated by '__'.",
+                    in: "path",
+                    required: true,
+                    schema: { type: "string" },
+                },
             ],
         },
         response: {
-            200: t.Object({ permission: t.Any() }),
-            400: t.String(),
-            401: t.String(),
-            403: t.String(),
-            404: t.String(),
-            409: t.String(),
+            200: t.Object({ permission: t.Any() }, { description: "The updated permission assignment." }),
+            400: t.String({ description: "Invalid request – the permission identifier format is invalid." }),
+            401: t.String({ description: "Unauthenticated – missing or invalid session, API key, or bearer token." }),
+            403: t.String({ description: "Permission denied – the authenticated principal lacks the required functional permission." }),
+            404: t.String({ description: "Not found – the product type or data type assignment does not exist." }),
+            409: t.String({ description: "Conflict – optimistic locking failed; the permission assignment was modified by another user." }),
         },
     });
 
@@ -773,14 +983,28 @@ export default function register(app: ApiInstance): void {
             summary: "Get previous approval dependencies",
             description: "Returns all previous-approval dependencies for a ProductType+DataType assignment, including depends-on data type names. Requires FP_DO_CONFIGURATION AND FP_VIEW_PRODUCT_TYPES.",
             parameters: [
-                { name: "X-API-Key", in: "header", description: "API key for authentication", schema: { type: "string" }, required: false },
+                { name: "X-API-Key", in: "header", description: "API key used for authentication.", schema: { type: "string", example: "your-api-key" }, required: false },
+                {
+                    name: "producttypeid",
+                    description: "UUID of the product type.",
+                    in: "path",
+                    required: true,
+                    schema: { type: "string", format: "uuid" },
+                },
+                {
+                    name: "datatypeassignmentid",
+                    description: "UUID of the data type assignment whose previous approvals are listed.",
+                    in: "path",
+                    required: true,
+                    schema: { type: "string", format: "uuid" },
+                },
             ],
         },
         response: {
-            200: t.Object({ previousApprovals: t.Array(t.Any()) }),
-            401: t.String(),
-            403: t.String(),
-            404: t.String(),
+            200: t.Object({ previousApprovals: t.Array(t.Any()) }, { description: "All previous-approval dependencies of the product type data type assignment." }),
+            401: t.String({ description: "Unauthenticated – missing or invalid session, API key, or bearer token." }),
+            403: t.String({ description: "Permission denied – the authenticated principal lacks the required functional permission." }),
+            404: t.String({ description: "Not found – the product type or data type assignment does not exist." }),
         },
     });
 
@@ -823,15 +1047,29 @@ export default function register(app: ApiInstance): void {
             summary: "Add previous approval dependency",
             description: "Adds a previous-approval dependency: the assigned data type requires the given depends-on data type to be approved first. Rejects self-dependencies and cycles. Requires FP_DO_CONFIGURATION AND FP_MANAGE_PRODUCT_TYPES.",
             parameters: [
-                { name: "X-API-Key", in: "header", description: "API key for authentication", schema: { type: "string" }, required: false },
+                { name: "X-API-Key", in: "header", description: "API key used for authentication.", schema: { type: "string", example: "your-api-key" }, required: false },
+                {
+                    name: "producttypeid",
+                    description: "UUID of the product type.",
+                    in: "path",
+                    required: true,
+                    schema: { type: "string", format: "uuid" },
+                },
+                {
+                    name: "datatypeassignmentid",
+                    description: "UUID of the data type assignment the dependency is added to.",
+                    in: "path",
+                    required: true,
+                    schema: { type: "string", format: "uuid" },
+                },
             ],
         },
         response: {
-            200: t.Object({ previousApproval: t.Any() }),
-            401: t.String(),
-            403: t.String(),
-            404: t.String(),
-            409: t.String(),
+            200: t.Object({ previousApproval: t.Any() }, { description: "The newly created previous-approval dependency." }),
+            401: t.String({ description: "Unauthenticated – missing or invalid session, API key, or bearer token." }),
+            403: t.String({ description: "Permission denied – the authenticated principal lacks the required functional permission." }),
+            404: t.String({ description: "Not found – the product type or data type assignment does not exist." }),
+            409: t.String({ description: "Conflict – the previous approval dependency already exists or would create a cycle." }),
         },
     });
 
@@ -867,14 +1105,35 @@ export default function register(app: ApiInstance): void {
             summary: "Remove previous approval dependency",
             description: "Removes a previous-approval dependency for a ProductType+DataType assignment. Requires FP_DO_CONFIGURATION AND FP_MANAGE_PRODUCT_TYPES.",
             parameters: [
-                { name: "X-API-Key", in: "header", description: "API key for authentication", schema: { type: "string" }, required: false },
+                { name: "X-API-Key", in: "header", description: "API key used for authentication.", schema: { type: "string", example: "your-api-key" }, required: false },
+                {
+                    name: "producttypeid",
+                    description: "UUID of the product type.",
+                    in: "path",
+                    required: true,
+                    schema: { type: "string", format: "uuid" },
+                },
+                {
+                    name: "datatypeassignmentid",
+                    description: "UUID of the data type assignment.",
+                    in: "path",
+                    required: true,
+                    schema: { type: "string", format: "uuid" },
+                },
+                {
+                    name: "dependsonid",
+                    description: "UUID of the previous-approval dependency to remove.",
+                    in: "path",
+                    required: true,
+                    schema: { type: "string", format: "uuid" },
+                },
             ],
         },
         response: {
-            200: t.Any(),
-            401: t.String(),
-            403: t.String(),
-            404: t.String(),
+            200: t.Any({ description: "Empty success response after removing the previous-approval dependency." }),
+            401: t.String({ description: "Unauthenticated – missing or invalid session, API key, or bearer token." }),
+            403: t.String({ description: "Permission denied – the authenticated principal lacks the required functional permission." }),
+            404: t.String({ description: "Not found – the product type or data type assignment does not exist." }),
         },
     });
 
@@ -909,14 +1168,21 @@ export default function register(app: ApiInstance): void {
             summary: "Get product type permissions",
             description: "Returns all group-role assignments for a product type, including group names. Requires FP_DO_CONFIGURATION AND FP_VIEW_PRODUCT_TYPES.",
             parameters: [
-                { name: "X-API-Key", in: "header", description: "API key for authentication", schema: { type: "string" }, required: false },
+                { name: "X-API-Key", in: "header", description: "API key used for authentication.", schema: { type: "string", example: "your-api-key" }, required: false },
+                {
+                    name: "producttypeid",
+                    description: "UUID of the product type whose permissions are listed.",
+                    in: "path",
+                    required: true,
+                    schema: { type: "string", format: "uuid" },
+                },
             ],
         },
         response: {
-            200: t.Object({ permissions: t.Array(t.Any()) }),
-            401: t.String(),
-            403: t.String(),
-            404: t.String(),
+            200: t.Object({ permissions: t.Array(t.Any()) }, { description: "All group-role assignments for the product type." }),
+            401: t.String({ description: "Unauthenticated – missing or invalid session, API key, or bearer token." }),
+            403: t.String({ description: "Permission denied – the authenticated principal lacks the required functional permission." }),
+            404: t.String({ description: "Not found – no product type with this identifier exists." }),
         },
     });
 
@@ -969,14 +1235,21 @@ export default function register(app: ApiInstance): void {
             summary: "Grant product type permission",
             description: "Grants the cancel role to a group for a product type. Requires FP_DO_CONFIGURATION AND FP_MANAGE_PRODUCT_TYPES.",
             parameters: [
-                { name: "X-API-Key", in: "header", description: "API key for authentication", schema: { type: "string" }, required: false },
+                { name: "X-API-Key", in: "header", description: "API key used for authentication.", schema: { type: "string", example: "your-api-key" }, required: false },
+                {
+                    name: "producttypeid",
+                    description: "UUID of the product type the permission is granted for.",
+                    in: "path",
+                    required: true,
+                    schema: { type: "string", format: "uuid" },
+                },
             ],
         },
         response: {
-            200: t.Object({ permission: t.Any() }),
-            401: t.String(),
-            403: t.String(),
-            404: t.String(),
+            200: t.Object({ permission: t.Any() }, { description: "The newly created product-type permission assignment including the group name." }),
+            401: t.String({ description: "Unauthenticated – missing or invalid session, API key, or bearer token." }),
+            403: t.String({ description: "Permission denied – the authenticated principal lacks the required functional permission." }),
+            404: t.String({ description: "Not found – no product type with this identifier exists." }),
         },
     });
 
@@ -1017,14 +1290,21 @@ export default function register(app: ApiInstance): void {
             summary: "Revoke product type permission",
             description: "Revokes the cancel role from a group for a product type. Requires FP_DO_CONFIGURATION AND FP_MANAGE_PRODUCT_TYPES.",
             parameters: [
-                { name: "X-API-Key", in: "header", description: "API key for authentication", schema: { type: "string" }, required: false },
+                { name: "X-API-Key", in: "header", description: "API key used for authentication.", schema: { type: "string", example: "your-api-key" }, required: false },
+                {
+                    name: "producttypeid",
+                    description: "UUID of the product type the permission is revoked from.",
+                    in: "path",
+                    required: true,
+                    schema: { type: "string", format: "uuid" },
+                },
             ],
         },
         response: {
-            200: t.Any(),
-            401: t.String(),
-            403: t.String(),
-            404: t.String(),
+            200: t.Any({ description: "Empty success response after revoking the product-type permission assignment." }),
+            401: t.String({ description: "Unauthenticated – missing or invalid session, API key, or bearer token." }),
+            403: t.String({ description: "Permission denied – the authenticated principal lacks the required functional permission." }),
+            404: t.String({ description: "Not found – the product type or permission assignment does not exist." }),
         },
     });
 }

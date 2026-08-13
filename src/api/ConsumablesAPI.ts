@@ -263,14 +263,21 @@ export default function register(app: ApiInstance) {
             summary: "Export consumable values to XLSX",
             description: "Downloads all values of a consumable as an XLSX spreadsheet. Requires FP_DO_CONFIGURATION AND FP_VIEW_CONSUMABLES.",
             parameters: [
-                { name: "X-API-Key", in: "header", description: "API key for authentication", schema: { type: "string" }, required: false },
+                { name: "X-API-Key", in: "header", description: "API key used for authentication.", schema: { type: "string", example: "your-api-key" }, required: false },
+                {
+                    name: "consumableid",
+                    description: "UUID of the consumable whose values are exported.",
+                    in: "path",
+                    required: true,
+                    schema: { type: "string", format: "uuid" },
+                },
             ],
         },
         response: {
-            200: t.Any(),
-            401: t.String(),
-            403: t.String(),
-            404: t.String(),
+            200: t.Any({ description: "XLSX spreadsheet with all consumable values (application/vnd.openxmlformats-officedocument.spreadsheetml.sheet)." }),
+            401: t.String({ description: "Unauthenticated – missing or invalid session, API key, or bearer token." }),
+            403: t.String({ description: "Permission denied – the authenticated principal lacks the required functional permission." }),
+            404: t.String({ description: "Not found – no consumable with this identifier exists." }),
         },
     });
 
@@ -291,14 +298,21 @@ export default function register(app: ApiInstance) {
             summary: "Download consumable import template",
             description: "Downloads an XLSX template for importing consumable values. Requires FP_VIEW_CONSUMABLES.",
             parameters: [
-                { name: "X-API-Key", in: "header", description: "API key for authentication", schema: { type: "string" }, required: false },
+                { name: "X-API-Key", in: "header", description: "API key used for authentication.", schema: { type: "string", example: "your-api-key" }, required: false },
+                {
+                    name: "consumableid",
+                    description: "UUID of the consumable for which the XLSX import template is generated.",
+                    in: "path",
+                    required: true,
+                    schema: { type: "string", format: "uuid" },
+                },
             ],
         },
         response: {
-            200: t.Any(),
-            401: t.String(),
-            403: t.String(),
-            404: t.String(),
+            200: t.Any({ description: "XLSX import template file (application/vnd.openxmlformats-officedocument.spreadsheetml.sheet)." }),
+            401: t.String({ description: "Unauthenticated – missing or invalid session, API key, or bearer token." }),
+            403: t.String({ description: "Permission denied – the authenticated principal lacks the required functional permission." }),
+            404: t.String({ description: "Not found – no consumable with this identifier exists." }),
         },
     });
 
@@ -420,15 +434,22 @@ export default function register(app: ApiInstance) {
             summary: "Import consumable values from XLSX",
             description: "Imports consumable values from an XLSX spreadsheet and returns a downloadable error report when validation fails. Requires FP_DO_CONFIGURATION AND FP_MANAGE_CONSUMABLES.",
             parameters: [
-                { name: "X-API-Key", in: "header", description: "API key for authentication", schema: { type: "string" }, required: false },
+                { name: "X-API-Key", in: "header", description: "API key used for authentication.", schema: { type: "string", example: "your-api-key" }, required: false },
+                {
+                    name: "consumableid",
+                    description: "UUID of the consumable whose values are imported.",
+                    in: "path",
+                    required: true,
+                    schema: { type: "string", format: "uuid" },
+                },
             ],
         },
         response: {
-            200: t.Object({ created: t.Number(), updated: t.Number() }),
-            400: t.Any(),
-            401: t.String(),
-            403: t.String(),
-            404: t.String(),
+            200: t.Object({ created: t.Number(), updated: t.Number() }, { description: "Import result with the number of created and updated consumable values." }),
+            400: t.Any({ description: "Invalid request – missing file, malformed XLSX, or a validation error report workbook (XLSX) describing per-row errors." }),
+            401: t.String({ description: "Unauthenticated – missing or invalid session, API key, or bearer token." }),
+            403: t.String({ description: "Permission denied – the authenticated principal lacks the required functional permission." }),
+            404: t.String({ description: "Not found – no consumable with this identifier exists." }),
         },
     });
 
@@ -475,15 +496,53 @@ export default function register(app: ApiInstance) {
                 availablePageSizes: t.Array(t.Number({ minimum: 1 })),
                 includeDisabled: t.Boolean(),
                 showUsed: t.Boolean(),
-            }),
-            401: t.String(),
-            403: t.String(),
-            404: t.String(),
+            }, { description: "Paged consumable values with pagination metadata, disabled-inclusion flag, and used-inclusion flag." }),
+            401: t.String({ description: "Unauthenticated – missing or invalid session, API key, or bearer token." }),
+            403: t.String({ description: "Permission denied – the authenticated principal lacks the required functional permission." }),
+            404: t.String({ description: "Not found – no consumable with this identifier exists." }),
         },
         detail: {
             tags: ["Consumable"],
             summary: "Get paged consumable values",
             description: "Returns consumable values with pagination metadata and optional inclusion of disabled and used entries. Requires FP_VIEW_CONSUMABLES or FP_READ_PRODUCT_FILTER.",
+            parameters: [
+                { name: "X-API-Key", in: "header", description: "API key used for authentication.", schema: { type: "string", example: "your-api-key" }, required: false },
+                {
+                    name: "consumableid",
+                    description: "UUID of the consumable whose values are listed.",
+                    in: "path",
+                    required: true,
+                    schema: { type: "string", format: "uuid" },
+                },
+                {
+                    name: "page",
+                    description: "Zero-based page number for pagination. Defaults to 0.",
+                    in: "query",
+                    required: false,
+                    schema: { type: "integer", minimum: 0, default: 0 },
+                },
+                {
+                    name: "pageSize",
+                    description: "Number of values per page. Must be one of the available page sizes returned by the server. Defaults to the first available size.",
+                    in: "query",
+                    required: false,
+                    schema: { type: "integer", minimum: 1 },
+                },
+                {
+                    name: "includeDisabled",
+                    description: "Include disabled values in the results. Accepts 'true', '1', true (boolean). Defaults to false.",
+                    in: "query",
+                    required: false,
+                    schema: { type: "string", enum: ["true", "1", "false", "0"], default: "false" },
+                },
+                {
+                    name: "showUsed",
+                    description: "Include values that are marked as used in the results. Accepts 'true', '1', true (boolean). Defaults to false.",
+                    in: "query",
+                    required: false,
+                    schema: { type: "string", enum: ["true", "1", "false", "0"], default: "false" },
+                },
+            ],
         },
     });
 
@@ -512,17 +571,27 @@ export default function register(app: ApiInstance) {
         params: t.Object({ consumableid: t.String({ format: "uuid" }) }),
         body: t.Object({ name: t.String({ minLength: 1, maxLength: 255 }) }),
         response: {
-            200: ConsumablesValuesSelectSchema,
-            400: t.String(),
-            401: t.String(),
-            403: t.String(),
-            404: t.String(),
-            409: t.String(),
+            200: {...ConsumablesValuesSelectSchema, description: "The newly created consumable value."},
+            400: t.String({ description: "Invalid request – the name must not be empty." }),
+            401: t.String({ description: "Unauthenticated – missing or invalid session, API key, or bearer token." }),
+            403: t.String({ description: "Permission denied – the authenticated principal lacks the required functional permission." }),
+            404: t.String({ description: "Not found – no consumable with this identifier exists." }),
+            409: t.String({ description: "Conflict – a consumable value with this name already exists." }),
         },
         detail: {
             tags: ["Consumable"],
             summary: "Create consumable value",
             description: "Creates a new consumable value for the selected consumable. Requires FP_DO_CONFIGURATION AND FP_MANAGE_CONSUMABLES.",
+            parameters: [
+                { name: "X-API-Key", in: "header", description: "API key used for authentication.", schema: { type: "string", example: "your-api-key" }, required: false },
+                {
+                    name: "consumableid",
+                    description: "UUID of the consumable the new value belongs to.",
+                    in: "path",
+                    required: true,
+                    schema: { type: "string", format: "uuid" },
+                },
+            ],
         },
     });
 
@@ -554,17 +623,34 @@ export default function register(app: ApiInstance) {
         params: t.Object({ consumableid: t.String({ format: "uuid" }), valueid: t.String({ format: "uuid" }) }),
         body: t.Object({ name: t.String({ minLength: 1, maxLength: 255 }), knownUpdatedAt: t.String() }),
         response: {
-            200: ConsumablesValuesSelectSchema,
-            400: t.String(),
-            401: t.String(),
-            403: t.String(),
-            404: t.String(),
-            409: t.String(),
+            200: {...ConsumablesValuesSelectSchema, description: "The renamed consumable value."},
+            400: t.String({ description: "Invalid request – the name must not be empty." }),
+            401: t.String({ description: "Unauthenticated – missing or invalid session, API key, or bearer token." }),
+            403: t.String({ description: "Permission denied – the authenticated principal lacks the required functional permission." }),
+            404: t.String({ description: "Not found – the consumable value does not exist." }),
+            409: t.String({ description: "Conflict – optimistic locking failed; the consumable value was modified by another user." }),
         },
         detail: {
             tags: ["Consumable"],
             summary: "Rename consumable value",
             description: "Updates the consumable value name using optimistic locking via knownUpdatedAt. Requires FP_DO_CONFIGURATION AND FP_MANAGE_CONSUMABLES.",
+            parameters: [
+                { name: "X-API-Key", in: "header", description: "API key used for authentication.", schema: { type: "string", example: "your-api-key" }, required: false },
+                {
+                    name: "consumableid",
+                    description: "UUID of the consumable the value belongs to.",
+                    in: "path",
+                    required: true,
+                    schema: { type: "string", format: "uuid" },
+                },
+                {
+                    name: "valueid",
+                    description: "UUID of the consumable value to rename.",
+                    in: "path",
+                    required: true,
+                    schema: { type: "string", format: "uuid" },
+                },
+            ],
         },
     });
 
@@ -604,17 +690,34 @@ export default function register(app: ApiInstance) {
         params: t.Object({ consumableid: t.String({ format: "uuid" }), valueid: t.String({ format: "uuid" }) }),
         body: t.Object({ disabled: t.Optional(t.Boolean()), isUsed: t.Optional(t.Boolean()), knownUpdatedAt: t.String() }),
         response: {
-            200: ConsumablesValuesSelectSchema,
-            400: t.String(),
-            401: t.String(),
-            403: t.String(),
-            404: t.String(),
-            409: t.String(),
+            200: {...ConsumablesValuesSelectSchema, description: "The consumable value with updated disabled/isUsed flags."},
+            400: t.String({ description: "Invalid request – at least one of 'disabled' or 'isUsed' must be provided." }),
+            401: t.String({ description: "Unauthenticated – missing or invalid session, API key, or bearer token." }),
+            403: t.String({ description: "Permission denied – the authenticated principal lacks the required functional permission." }),
+            404: t.String({ description: "Not found – the consumable value does not exist." }),
+            409: t.String({ description: "Conflict – optimistic locking failed; the consumable value was modified by another user." }),
         },
         detail: {
             tags: ["Consumable"],
             summary: "Update consumable value flags",
             description: "Updates disabled or isUsed flags for a consumable value using optimistic locking via knownUpdatedAt. Requires FP_DO_CONFIGURATION AND FP_MANAGE_CONSUMABLES.",
+            parameters: [
+                { name: "X-API-Key", in: "header", description: "API key used for authentication.", schema: { type: "string", example: "your-api-key" }, required: false },
+                {
+                    name: "consumableid",
+                    description: "UUID of the consumable the value belongs to.",
+                    in: "path",
+                    required: true,
+                    schema: { type: "string", format: "uuid" },
+                },
+                {
+                    name: "valueid",
+                    description: "UUID of the consumable value to update.",
+                    in: "path",
+                    required: true,
+                    schema: { type: "string", format: "uuid" },
+                },
+            ],
         },
     });
 }

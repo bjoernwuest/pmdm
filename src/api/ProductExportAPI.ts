@@ -78,7 +78,28 @@ export default function register(app: ApiInstance): void {
             summary: "List product exports",
             description: "Returns a paginated list of product requests in importing status with their export status per target system. Requires FP_VIEW_PRODUCT_EXPORTS.",
             parameters: [
-                { name: "X-API-Key", in: "header", description: "API key for authentication", schema: { type: "string" }, required: false },
+                { name: "X-API-Key", in: "header", description: "API key used for authentication.", schema: { type: "string", example: "your-api-key" }, required: false },
+                {
+                    name: "page",
+                    description: "Zero-based page number for pagination. Defaults to 0.",
+                    in: "query",
+                    required: false,
+                    schema: { type: "integer", minimum: 0, default: 0 },
+                },
+                {
+                    name: "pageSize",
+                    description: "Number of product exports per page. Must be one of the available page sizes returned by the server. Defaults to the first available size.",
+                    in: "query",
+                    required: false,
+                    schema: { type: "integer", minimum: 1 },
+                },
+                {
+                    name: "filter",
+                    description: "JSON string with criteria and a boolean expression for advanced filtering (e.g. {'criteria':[...],'expression':'1 AND 2'}).",
+                    in: "query",
+                    required: false,
+                    schema: { type: "string" },
+                },
             ],
         },
         response: {
@@ -89,9 +110,9 @@ export default function register(app: ApiInstance): void {
                 pageSize: t.Number(),
                 total: t.Number(),
                 availablePageSizes: t.Array(t.Number()),
-            }),
-            401: t.String(),
-            403: t.String(),
+            }, { description: "Paginated list of product requests in importing status, the involved target systems, and pagination metadata." }),
+            401: t.String({ description: "Unauthenticated – missing or invalid session, API key, or bearer token." }),
+            403: t.String({ description: "Permission denied – the authenticated principal lacks the required functional permission." }),
         },
     });
 
@@ -192,15 +213,36 @@ export default function register(app: ApiInstance): void {
             summary: "Export product requests for a target system",
             description: "Exports selected product requests as XLSX, CSV, or JSON file for a target system. Marks the product requests as exported. Requires FP_EXPORT_PRODUCT_REQUESTS.",
             parameters: [
-                { name: "X-API-Key", in: "header", description: "API key for authentication", schema: { type: "string" }, required: false },
+                { name: "X-API-Key", in: "header", description: "API key used for authentication.", schema: { type: "string", example: "your-api-key" }, required: false },
+                {
+                    name: "targetSystem",
+                    description: "UUID of the target system the product requests are exported for.",
+                    in: "query",
+                    required: true,
+                    schema: { type: "string", format: "uuid" },
+                },
+                {
+                    name: "format",
+                    description: "Export file format. Must be one of 'xlsx', 'csv', or 'json'.",
+                    in: "query",
+                    required: true,
+                    schema: { type: "string", enum: ["xlsx", "csv", "json"] },
+                },
+                {
+                    name: "productRequests",
+                    description: "Comma-separated list of product request identifiers to export.",
+                    in: "query",
+                    required: true,
+                    schema: { type: "string" },
+                },
             ],
         },
         response: {
-            200: t.Any(),
-            400: t.String(),
-            401: t.String(),
-            403: t.String(),
-            404: t.String(),
+            200: t.Any({ description: "The exported file: JSON rows for format=json, text/csv for format=csv, or an XLSX spreadsheet (application/vnd.openxmlformats-officedocument.spreadsheetml.sheet) for format=xlsx." }),
+            400: t.String({ description: "Invalid request – missing or invalid targetSystem, format, or productRequests parameters." }),
+            401: t.String({ description: "Unauthenticated – missing or invalid session, API key, or bearer token." }),
+            403: t.String({ description: "Permission denied – the authenticated principal lacks the required functional permission." }),
+            404: t.String({ description: "Not found – no product requests or target system found." }),
         },
     });
 
@@ -352,7 +394,14 @@ export default function register(app: ApiInstance): void {
             summary: "Import export/import status from Excel",
             description: "Imports export and import status from an uploaded XLSX file. Returns summary with counts and errors. Requires FP_EXPORT_PRODUCT_REQUESTS or FP_CONFIRM_IMPORT per row.",
             parameters: [
-                { name: "X-API-Key", in: "header", description: "API key for authentication", schema: { type: "string" }, required: false },
+                { name: "X-API-Key", in: "header", description: "API key used for authentication.", schema: { type: "string", example: "your-api-key" }, required: false },
+                {
+                    name: "targetSystem",
+                    description: "UUID of the target system the status changes apply to.",
+                    in: "query",
+                    required: true,
+                    schema: { type: "string", format: "uuid" },
+                },
             ],
         },
         response: {
@@ -365,10 +414,10 @@ export default function register(app: ApiInstance): void {
                     productNumber: t.String(),
                     message: t.String(),
                 })),
-            }),
-            400: t.String(),
-            401: t.String(),
-            403: t.String(),
+            }, { description: "Import summary with total rows, counts of marked exported/imported entries, and per-row errors." }),
+            400: t.String({ description: "Invalid request – missing targetSystem, missing file, malformed XLSX, or invalid template structure." }),
+            401: t.String({ description: "Unauthenticated – missing or invalid session, API key, or bearer token." }),
+            403: t.String({ description: "Permission denied – the authenticated principal lacks the required functional permission." }),
         },
     });
 
@@ -442,16 +491,30 @@ export default function register(app: ApiInstance): void {
             summary: "Mark export as exported",
             description: "Marks a single product export as exported. Requires FP_EXPORT_PRODUCT_REQUESTS and FP_EDIT_EXPORT_STATUS.",
             parameters: [
-                { name: "X-API-Key", in: "header", description: "API key for authentication", schema: { type: "string" }, required: false },
+                { name: "X-API-Key", in: "header", description: "API key used for authentication.", schema: { type: "string", example: "your-api-key" }, required: false },
+                {
+                    name: "productRequestId",
+                    description: "UUID of the product request whose export status is updated.",
+                    in: "path",
+                    required: true,
+                    schema: { type: "string", format: "uuid" },
+                },
+                {
+                    name: "targetSystemId",
+                    description: "UUID of the target system the export status applies to.",
+                    in: "path",
+                    required: true,
+                    schema: { type: "string", format: "uuid" },
+                },
             ],
         },
         response: {
-            200: t.Any(),
-            400: t.String(),
-            401: t.String(),
-            403: t.String(),
-            404: t.String(),
-            409: t.String(),
+            200: t.Any({ description: "The updated product export row for the product request and target system." }),
+            400: t.String({ description: "Invalid request – malformed parameters or unexpected processing error." }),
+            401: t.String({ description: "Unauthenticated – missing or invalid session, API key, or bearer token." }),
+            403: t.String({ description: "Permission denied – the authenticated principal lacks the required functional permission." }),
+            404: t.String({ description: "Not found – the product request or product export row does not exist." }),
+            409: t.String({ description: "Conflict – the export was already marked as exported or the request is not in importing status." }),
         },
     });
 
@@ -525,16 +588,30 @@ export default function register(app: ApiInstance): void {
             summary: "Mark export as imported",
             description: "Marks a single product export as imported. Requires FP_CONFIRM_IMPORT and FP_EDIT_EXPORT_STATUS.",
             parameters: [
-                { name: "X-API-Key", in: "header", description: "API key for authentication", schema: { type: "string" }, required: false },
+                { name: "X-API-Key", in: "header", description: "API key used for authentication.", schema: { type: "string", example: "your-api-key" }, required: false },
+                {
+                    name: "productRequestId",
+                    description: "UUID of the product request whose import status is updated.",
+                    in: "path",
+                    required: true,
+                    schema: { type: "string", format: "uuid" },
+                },
+                {
+                    name: "targetSystemId",
+                    description: "UUID of the target system the import status applies to.",
+                    in: "path",
+                    required: true,
+                    schema: { type: "string", format: "uuid" },
+                },
             ],
         },
         response: {
-            200: t.Any(),
-            400: t.String(),
-            401: t.String(),
-            403: t.String(),
-            404: t.String(),
-            409: t.String(),
+            200: t.Any({ description: "The updated product export row for the product request and target system." }),
+            400: t.String({ description: "Invalid request – malformed parameters or unexpected processing error." }),
+            401: t.String({ description: "Unauthenticated – missing or invalid session, API key, or bearer token." }),
+            403: t.String({ description: "Permission denied – the authenticated principal lacks the required functional permission." }),
+            404: t.String({ description: "Not found – the product request or product export row does not exist." }),
+            409: t.String({ description: "Conflict – the export was already marked as imported or the request is not in importing status." }),
         },
     });
 }

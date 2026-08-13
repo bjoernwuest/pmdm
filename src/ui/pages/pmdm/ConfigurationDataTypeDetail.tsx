@@ -374,7 +374,7 @@ export function Component() {
                 ]);
                 if (!cancelled) {
                     setOwnerOptions(bdPayload.businessDomains.map((d) => ({ identifier: d.identifier, name: d.name })));
-                    setAllGroups(groupsPayload.groups.map((g: { identifier: string; groupName: string }) => ({ identifier: g.identifier, name: g.groupName })));
+                    setAllGroups(groupsPayload.groups.map((g: { identifier: string; groupName: string }) => ({ identifier: g.identifier, name: g.groupName })).sort((a, b) => a.name.localeCompare(b.name)));
                     setLookupOptions(lookupsPayload.lookups.map((l) => ({ identifier: l.lookup.identifier, name: l.lookup.name })));
                     setConsumableOptions(consumablesPayload.consumables.map((c) => ({ identifier: c.consumable.identifier, name: c.consumable.name })));
                 }

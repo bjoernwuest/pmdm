@@ -73,9 +73,9 @@ export default function register(app: ApiInstance): void {
     }, {
         body: ScriptPreviewRequestSchema,
         response: {
-            200: ScriptPreviewResponseSchema,
-            401: t.Object({ error: t.String() }),
-            403: t.Object({ error: t.String() }),
+            200: {...ScriptPreviewResponseSchema, description: "The script execution result, or null with an error message when execution failed."},
+            401: t.Object({ error: t.String() }, { description: "Unauthenticated – missing or invalid session, API key, or bearer token." }),
+            403: t.Object({ error: t.String() }, { description: "Permission denied – the authenticated principal lacks the required functional permission." }),
         },
         detail: {
             tags: ["Scripts"],
@@ -85,7 +85,7 @@ export default function register(app: ApiInstance): void {
                 "The trigger cause is supplied by the caller so any scenario can be simulated. " +
                 `Requires the ${FP_MANAGE_DATA_TYPES.functionalPermissionName} permission.`,
             parameters: [
-                { name: "X-API-Key", in: "header", description: "API key for authentication", schema: { type: "string" }, required: false },
+                { name: "X-API-Key", in: "header", description: "API key used for authentication.", schema: { type: "string", example: "your-api-key" }, required: false },
             ],
         },
     });
@@ -114,9 +114,9 @@ export default function register(app: ApiInstance): void {
     }, {
         body: ScriptValidateRequestSchema,
         response: {
-            200: ScriptValidateResponseSchema,
-            401: t.Object({ error: t.String() }),
-            403: t.Object({ error: t.String() }),
+            200: {...ScriptValidateResponseSchema, description: "Syntax validation result with a validity flag and an optional error message."},
+            401: t.Object({ error: t.String() }, { description: "Unauthenticated – missing or invalid session, API key, or bearer token." }),
+            403: t.Object({ error: t.String() }, { description: "Permission denied – the authenticated principal lacks the required functional permission." }),
         },
         detail: {
             tags: ["Scripts"],
@@ -125,7 +125,7 @@ export default function register(app: ApiInstance): void {
                 "Parses a script body without executing it and reports whether it is syntactically valid. " +
                 `Requires the ${FP_MANAGE_DATA_TYPES.functionalPermissionName} permission.`,
             parameters: [
-                { name: "X-API-Key", in: "header", description: "API key for authentication", schema: { type: "string" }, required: false },
+                { name: "X-API-Key", in: "header", description: "API key used for authentication.", schema: { type: "string", example: "your-api-key" }, required: false },
             ],
         },
     });
