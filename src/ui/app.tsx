@@ -287,10 +287,6 @@ function AppShell({
                         </div>
                         <h1 className="app-topbar-title">{currentPage?.meta.title ?? "Page"}</h1>
                     </div>
-                    <label className="app-topbar-search" aria-label="Search">
-                        <span className="app-topbar-search-icon">⌕</span>
-                        <input type="search" placeholder="Search" />
-                    </label>
                     <div className="app-topbar-actions">
                         <button type="button" className="app-topbar-icon-btn" aria-label="Notifications">
                             🔔
