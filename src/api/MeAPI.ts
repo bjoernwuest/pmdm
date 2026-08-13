@@ -22,7 +22,7 @@ export default function register(app: ApiInstance) {
     }, {
         response: {
             200: MeContextResponseSchema,
-            401: Type.String(),
+            401: Type.String({ description: "Unauthenticated. No valid session, API key, or bearer token was provided." }),
         },
         detail: {
             tags: ["Auth"],

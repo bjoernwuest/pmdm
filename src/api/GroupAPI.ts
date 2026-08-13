@@ -51,7 +51,11 @@ export default function register(app: ApiInstance) {
             includeInactive,
         } satisfies GroupsResponse;
     }, {
-        response: {200: GroupsResponseSchema, 401: Type.String(), 403: Type.String()},
+        response: {
+            200: GroupsResponseSchema,
+            401: Type.String({ description: "Unauthenticated. No valid session, API key, or bearer token was provided." }),
+            403: Type.String({ description: "Forbidden. The authenticated principal lacks the required functional permission." }),
+        },
         detail: {
             tags: ["Users & Groups"],
             summary: "Get paged group list",
@@ -108,7 +112,12 @@ export default function register(app: ApiInstance) {
             } else return status(404, "Group does not exists");
         });
     }, {
-        response: {200: GroupFunctionalPermissionResponseSchema, 401: Type.String(), 403: Type.String(), 404: Type.String()},
+        response: {
+            200: GroupFunctionalPermissionResponseSchema,
+            401: Type.String({ description: "Unauthenticated. No valid session, API key, or bearer token was provided." }),
+            403: Type.String({ description: "Forbidden. The authenticated principal lacks the required functional permission." }),
+            404: Type.String({ description: "Not found. The requested resource does not exist." }),
+        },
         detail: {
             tags: ["Users & Groups"],
             summary: "Get group details",
@@ -140,7 +149,11 @@ export default function register(app: ApiInstance) {
 
         return await getFunctionalPermissionsOfGroup(context.dbClient, {identifier: context.params.groupid});
     }, {
-        response: {200: FunctionalPermissionsListSchema, 401: Type.String(), 403: Type.String()},
+        response: {
+            200: FunctionalPermissionsListSchema,
+            401: Type.String({ description: "Unauthenticated. No valid session, API key, or bearer token was provided." }),
+            403: Type.String({ description: "Forbidden. The authenticated principal lacks the required functional permission." }),
+        },
         detail: {
             tags: ["Users & Groups"],
             summary: "Get functional permissions assigned to a group",
@@ -179,7 +192,13 @@ export default function register(app: ApiInstance) {
         catch (_err) { return status(404, {error: "Could not grant", message: _err}); }
         return { success: true };
     }, {
-        response: {200: SuccessResponseSchema, 401: Type.String(), 403: Type.String(), 404: ErrorSchema, 500: ErrorSchema},
+        response: {
+            200: SuccessResponseSchema,
+            401: Type.String({ description: "Unauthenticated. No valid session, API key, or bearer token was provided." }),
+            403: Type.String({ description: "Forbidden. The authenticated principal lacks the required functional permission." }),
+            404: ErrorSchema,
+            500: ErrorSchema,
+        },
         body: PermissionIdentifiersBodySchema,
         detail: {
             tags: ["Users & Groups"],
@@ -214,7 +233,13 @@ export default function register(app: ApiInstance) {
         catch (_err) { return status(404, {error: "Could not revoke", message: _err}); }
         return { success: true };
     }, {
-        response: {200: SuccessResponseSchema, 401: Type.String(), 403: Type.String(), 404: ErrorSchema},
+        response: {
+            200: SuccessResponseSchema,
+            401: Type.String({ description: "Unauthenticated. No valid session, API key, or bearer token was provided." }),
+            403: Type.String({ description: "Forbidden. The authenticated principal lacks the required functional permission." }),
+            404: ErrorSchema,
+            500: Type.String({ description: "Internal server error." }),
+        },
         body: PermissionIdentifiersBodySchema,
         detail: {
             tags: ["Users & Groups"],

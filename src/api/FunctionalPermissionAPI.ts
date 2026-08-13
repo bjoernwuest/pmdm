@@ -42,7 +42,11 @@ export default function register(app: ApiInstance) {
             availablePageSizes,
         } satisfies FunctionalPermissionsResponse;
     }, {
-        response: {200: Type.Union([FunctionalPermissionsListSchema, FunctionalPermissionsResponseSchema]), 401: Type.String(), 403: Type.String()},
+        response: {
+            200: Type.Union([FunctionalPermissionsListSchema, FunctionalPermissionsResponseSchema], { description: "All functional permissions as a plain array, or a paginated result with metadata when page/pageSize are provided." }),
+            401: Type.String({ description: "Unauthenticated. No valid session, API key, or bearer token was provided." }),
+            403: Type.String({ description: "Forbidden. The authenticated principal lacks the required functional permission." }),
+        },
         detail: {
             tags: ["Auth"],
             summary: "Get functional permissions",
@@ -89,7 +93,12 @@ export default function register(app: ApiInstance) {
             grantedToGroups: groups
         } satisfies FunctionalPermissionDetailResponseType;
     }, {
-        response: {200: FunctionalPermissionDetailResponseSchema, 401: Type.String(), 403: Type.String(), 404: Type.String()},
+        response: {
+            200: FunctionalPermissionDetailResponseSchema,
+            401: Type.String({ description: "Unauthenticated. No valid session, API key, or bearer token was provided." }),
+            403: Type.String({ description: "Forbidden. The authenticated principal lacks the required functional permission." }),
+            404: Type.String({ description: "Not found. The requested resource does not exist." }),
+        },
         detail: {
             tags: ["Auth"],
             summary: "Get functional permission details including groups assigned",
@@ -134,7 +143,13 @@ export default function register(app: ApiInstance) {
         if (result && typeof result === "object" && "status" in result) return result;
         return { success: true };
     }, {
-        response: {200: SuccessResponseSchema, 401: Type.String(), 403: Type.String(), 404: ErrorSchema, 500: ErrorSchema},
+        response: {
+            200: SuccessResponseSchema,
+            401: Type.String({ description: "Unauthenticated. No valid session, API key, or bearer token was provided." }),
+            403: Type.String({ description: "Forbidden. The authenticated principal lacks the required functional permission." }),
+            404: ErrorSchema,
+            500: ErrorSchema,
+        },
         body: GroupIdentifiersBodySchema,
         detail: {
             tags: ["Auth"],
@@ -180,7 +195,13 @@ export default function register(app: ApiInstance) {
         if (result && typeof result === "object" && "status" in result) return result;
         return { success: true };
     }, {
-        response: {200: SuccessResponseSchema, 401: Type.String(), 403: Type.String(), 404: ErrorSchema, 500: ErrorSchema},
+        response: {
+            200: SuccessResponseSchema,
+            401: Type.String({ description: "Unauthenticated. No valid session, API key, or bearer token was provided." }),
+            403: Type.String({ description: "Forbidden. The authenticated principal lacks the required functional permission." }),
+            404: ErrorSchema,
+            500: ErrorSchema,
+        },
         body: GroupIdentifiersBodySchema,
         detail: {
             tags: ["Auth"],

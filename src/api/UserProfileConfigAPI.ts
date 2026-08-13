@@ -6,32 +6,13 @@ import { getConfigEntriesByKey, getAllConfigEntries } from "@/repo/ConfigRepo.ts
 import { getUserProfileConfigEntry, getUserProfileConfigEntries, upsertUserProfileConfigEntry, deleteUserProfileConfigEntry } from "@/repo/UserProfileConfigRepo.ts";
 import { parseConfigValue, validateConfigInputFormat } from "@/services/Config.ts";
 import { type ConfigEntrySelectType, schemaForConfigType } from "@/types/ConfigType.ts";
+import {
+    UserProfileConfigEntrySchema,
+    UserProfileConfigParamsSchema,
+    UserProfileConfigResponseSchema,
+    UserProfileConfigUpdateSchema,
+} from "@/types/UserProfileConfigType.ts";
 import { ErrorResponseSchema } from "@/types/ApiType.ts";
-
-const UserProfileConfigEntrySchema = Type.Object({
-    domain: Type.String(),
-    key: Type.String(),
-    description: Type.Optional(Type.Union([Type.String(), Type.Null()])),
-    type: Type.String(),
-    value: Type.Any(),
-    userValue: Type.Any(),
-    inputFormat: Type.String(),
-    outputFormat: Type.String(),
-});
-
-const UserProfileConfigResponseSchema = Type.Object({
-    entries: Type.Array(UserProfileConfigEntrySchema),
-});
-
-const UserProfileConfigUpdateSchema = Type.Object({
-    value: Type.Any(),
-    knownValue: Type.Optional(Type.Any()),
-});
-
-const UserProfileConfigParamsSchema = Type.Object({
-    domain: Type.String(),
-    key: Type.String(),
-});
 
 function canonicalizeJson(value: unknown): unknown {
     if (Array.isArray(value)) return value.map((item) => canonicalizeJson(item));
@@ -94,7 +75,7 @@ export default function register(app: ApiInstance) {
         },
         response: {
             200: UserProfileConfigResponseSchema,
-            401: Type.String(),
+            401: Type.String({ description: "Unauthenticated. No valid session, API key, or bearer token was provided." }),
         },
     });
 
@@ -185,14 +166,14 @@ export default function register(app: ApiInstance) {
         },
         response: {
             200: UserProfileConfigEntrySchema,
-            400: Type.Union([Type.String(), ErrorResponseSchema]),
-            401: Type.String(),
-            403: Type.String(),
-            404: Type.String(),
+            400: Type.Union([Type.String(), ErrorResponseSchema], { description: "Bad request. The request body or parameters failed validation." }),
+            401: Type.String({ description: "Unauthenticated. No valid session, API key, or bearer token was provided." }),
+            403: Type.String({ description: "Forbidden. Profile configuration can only be modified via browser session." }),
+            404: Type.String({ description: "Not found. The requested resource does not exist." }),
             409: Type.Object({
                 error: Type.String(),
                 currentValue: Type.Any(),
-            }),
+            }, { description: "Conflict. The profile entry was modified concurrently; currentValue contains the latest stored override value." }),
         },
     });
 }

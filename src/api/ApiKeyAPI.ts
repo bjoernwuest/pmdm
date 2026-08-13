@@ -83,7 +83,11 @@ export default function register(app: ApiInstance) {
             includeDisabled,
         };
     }, {
-        response: { 200: ApiKeysResponseSchema, 403: Type.String() },
+        response: {
+            200: ApiKeysResponseSchema,
+            401: Type.String({ description: "Unauthenticated. No valid session, API key, or bearer token was provided." }),
+            403: Type.String({ description: "Forbidden. The authenticated principal lacks the required functional permission." }),
+        },
         detail: {
             tags: ["API Key"],
             summary: "Get paged API key list",
@@ -175,7 +179,12 @@ export default function register(app: ApiInstance) {
             relatedUsers,
         };
     }, {
-        response: { 200: ApiKeyDetailSchema, 403: Type.String(), 404: Type.String() },
+        response: {
+            200: ApiKeyDetailSchema,
+            401: Type.String({ description: "Unauthenticated. No valid session, API key, or bearer token was provided." }),
+            403: Type.String({ description: "Forbidden. The authenticated principal lacks the required functional permission." }),
+            404: Type.String({ description: "Not found. The requested resource does not exist." }),
+        },
         detail: {
             tags: ["API Key"],
             summary: "Get API key details",
@@ -242,8 +251,9 @@ export default function register(app: ApiInstance) {
         body: ApiKeyCreateBodySchema,
         response: {
             200: ApiKeyCreatedResponseSchema,
-            403: Type.String(),
-            500: Type.String(),
+            401: Type.String({ description: "Unauthenticated. No valid session, API key, or bearer token was provided." }),
+            403: Type.String({ description: "Forbidden. The authenticated principal lacks the required functional permission. Must be executed by a human user via browser session." }),
+            500: Type.String({ description: "Internal server error." }),
         },
         detail: {
             tags: ["API Key"],
@@ -279,7 +289,12 @@ export default function register(app: ApiInstance) {
         return { updatedAt: updated.updatedAt };
     }, {
         body: ApiKeyUpdateMetadataBodySchema,
-        response: { 200: ApiKeyUpdatedAtResponseSchema, 403: Type.String(), 409: Type.String() },
+        response: {
+            200: ApiKeyUpdatedAtResponseSchema,
+            401: Type.String({ description: "Unauthenticated. No valid session, API key, or bearer token was provided." }),
+            403: Type.String({ description: "Forbidden. The authenticated principal lacks the required functional permission." }),
+            409: Type.String({ description: "Conflict. The resource was modified concurrently; retry with the current value (optimistic locking)." }),
+        },
         detail: {
             tags: ["API Key"],
             summary: "Update API key metadata",
@@ -332,8 +347,9 @@ export default function register(app: ApiInstance) {
         body: ApiKeyProlongBodySchema,
         response: {
             200: ApiKeyProlongResponseSchema,
-            403: Type.String(),
-            409: Type.String(),
+            401: Type.String({ description: "Unauthenticated. No valid session, API key, or bearer token was provided." }),
+            403: Type.String({ description: "Forbidden. The authenticated principal lacks the required functional permission. Must be executed by a human user via browser session." }),
+            409: Type.String({ description: "Conflict. The resource was modified concurrently; retry with the current value (optimistic locking)." }),
         },
         detail: {
             tags: ["API Key"],
@@ -383,8 +399,9 @@ export default function register(app: ApiInstance) {
         body: OptimisticLockBodySchema,
         response: {
             200: ApiKeyDisableResponseSchema,
-            403: Type.String(),
-            409: Type.String(),
+            401: Type.String({ description: "Unauthenticated. No valid session, API key, or bearer token was provided." }),
+            403: Type.String({ description: "Forbidden. The authenticated principal lacks the required functional permission. Must be executed by a human user via browser session." }),
+            409: Type.String({ description: "Conflict. The resource was modified concurrently; retry with the current value (optimistic locking)." }),
         },
         detail: {
             tags: ["API Key"],
@@ -431,7 +448,12 @@ export default function register(app: ApiInstance) {
         return { success: true };
     }, {
         body: ApiKeyPermissionsBodySchema,
-        response: { 200: SuccessResponseSchema, 403: Type.String(), 409: Type.String() },
+        response: {
+            200: SuccessResponseSchema,
+            401: Type.String({ description: "Unauthenticated. No valid session, API key, or bearer token was provided." }),
+            403: Type.String({ description: "Forbidden. The authenticated principal lacks the required functional permission. Must be executed by a human user via browser session." }),
+            409: Type.String({ description: "Conflict. The resource was modified concurrently; retry with the current value (optimistic locking)." }),
+        },
         detail: {
             tags: ["API Key"],
             summary: "Replace API key functional permissions",
@@ -470,7 +492,12 @@ export default function register(app: ApiInstance) {
         return { success: true };
     }, {
         body: OptimisticLockBodySchema,
-        response: { 200: SuccessResponseSchema, 403: Type.String(), 409: Type.String() },
+        response: {
+            200: SuccessResponseSchema,
+            401: Type.String({ description: "Unauthenticated. No valid session, API key, or bearer token was provided." }),
+            403: Type.String({ description: "Forbidden. The authenticated principal lacks the required functional permission." }),
+            409: Type.String({ description: "Conflict. The resource was modified concurrently; retry with the current value (optimistic locking)." }),
+        },
         detail: {
             tags: ["API Key"],
             summary: "Delete an API key",

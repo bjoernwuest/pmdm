@@ -37,8 +37,8 @@ export default function register(app: ApiInstance) {
     }, {
         response: {
             200: AuditLogResponseSchema,
-            401: Type.String(),
-            403: Type.String(),
+            401: Type.String({ description: "Unauthenticated. No valid session, API key, or bearer token was provided." }),
+            403: Type.String({ description: "Forbidden. The authenticated principal lacks the required functional permission." }),
         },
         detail: {
             tags: ["Audit"],
@@ -128,8 +128,9 @@ export default function register(app: ApiInstance) {
         },
         response: {
             200: AuditLogClearResponseSchema,
-            401: Type.String(),
-            403: Type.String(),
+            401: Type.String({ description: "Unauthenticated. No valid session, API key, or bearer token was provided." }),
+            403: Type.String({ description: "Forbidden. The authenticated principal lacks the required functional permission." }),
+            500: Type.String({ description: "Internal server error." }),
         },
     });
 }

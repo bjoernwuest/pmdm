@@ -95,7 +95,8 @@ export default function register(app: ApiInstance) {
         },
         response: {
             200: ConfigDomainsResponseSchema,
-            403: Type.String(),
+            401: Type.String({ description: "Unauthenticated. No valid session, API key, or bearer token was provided." }),
+            403: Type.String({ description: "Forbidden. The authenticated principal lacks the required functional permission." }),
         },
     });
 
@@ -163,9 +164,10 @@ export default function register(app: ApiInstance) {
         },
         response: {
             200: ConfigEntryUiSchema,
-            400: Type.Union([Type.String(), ErrorResponseSchema]),
-            403: Type.String(),
-            404: Type.String(),
+            400: Type.Union([Type.String(), ErrorResponseSchema], { description: "Bad request. The request body or parameters failed validation." }),
+            401: Type.String({ description: "Unauthenticated. No valid session, API key, or bearer token was provided." }),
+            403: Type.String({ description: "Forbidden. The authenticated principal lacks the required functional permission." }),
+            404: Type.String({ description: "Not found. The requested resource does not exist." }),
             409: ConfigUpdateConflictSchema,
         },
     });

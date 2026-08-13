@@ -39,5 +39,5 @@ export const MeContextResponseSchema = Type.Object({
     user: MeUserSchema,
     permissionNames: Type.Array(Type.String()),
     functionalPermissions: Type.Array(FunctionalPermissionSelectSchema),
-});
+}, { description: "Current user identity (oid, displayName, preferredUsername) with functional permissions and permission names." });
 export type MeContextResponse = Static<typeof MeContextResponseSchema>;

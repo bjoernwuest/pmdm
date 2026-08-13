@@ -86,7 +86,10 @@ export default function register(app: ApiInstance) {
                 },
             ],
         },
-        response: { 200: Type.Any() },
+        response: {
+            200: Type.Any({ description: "SSE stream emitting 'connected', 'keepalive', and 'pubsub' events for the authenticated session." }),
+            401: Type.String({ description: "Unauthenticated. No valid session, API key, or bearer token was provided." }),
+        },
     });
 
     /**
@@ -104,7 +107,8 @@ export default function register(app: ApiInstance) {
         body: SseExpressionsUpdateBodySchema,
         response: {
             200: SseExpressionFilterStateSchema,
-            400: Type.String(), 401: Type.String(),
+            400: Type.String({ description: "Bad request. The request body or parameters failed validation." }),
+            401: Type.String({ description: "Unauthenticated. No valid session, API key, or bearer token was provided." }),
         },
         detail: {
             tags: ["Realtime"],
@@ -134,6 +138,7 @@ export default function register(app: ApiInstance) {
     }, {
         response: {
             200: SseKnownTagsResponseSchema,
+            401: Type.String({ description: "Unauthenticated. No valid session, API key, or bearer token was provided." }),
         },
         detail: {
             tags: ["Realtime"],

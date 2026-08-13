@@ -160,6 +160,29 @@ response: {
 }
 ```
 
+Every response schema entry **must** set a TypeBox `description` option — it becomes the OpenAPI response description (payload-specific for `200`, canonical text for error codes). Authenticated endpoints **must** document `401` (the global `onBeforeHandle` hook can reject before the handler runs):
+
+```typescript
+response: {
+    200: UsersResponseSchema,  // schema itself carries the description option
+    401: Type.String({ description: "Unauthenticated. No valid session, API key, or bearer token was provided." }),
+    403: Type.String({ description: "Forbidden. The authenticated principal lacks the required functional permission." }),
+}
+```
+
+Canonical error descriptions:
+
+| Code | Description |
+|---|---|
+| `400` | `Bad request. The request body or parameters failed validation.` |
+| `401` | `Unauthenticated. No valid session, API key, or bearer token was provided.` |
+| `403` | `Forbidden. The authenticated principal lacks the required functional permission.` (append ` Must be executed by a human user via browser session.` when the endpoint also enforces human-user) |
+| `404` | `Not found. The requested resource does not exist.` |
+| `409` | `Conflict. The resource was modified concurrently; retry with the current value (optimistic locking).` |
+| `500` | `Internal server error.` |
+
+Every property of `body`/`params`/`query` TypeBox schemas **must** also carry a per-property `description` (e.g. `Type.String({ description: "…" })`).
+
 ### Trivial types versus complex types
 
 Directly use trivial types (i.e. scalar types like `t.String()`, `t.Number()`, `t.Boolean()`) inline. Wherever a complex type (e.g. `t.Object(...)`, `t.Array(...)`) is used, define it in the corresponding `/src/types` file and import it into the route file.
