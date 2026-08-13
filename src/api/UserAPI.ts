@@ -46,15 +46,10 @@ export default function register(app: ApiInstance) {
             includeInactive,
         } satisfies UsersResponse;
     }, {
-        query: Type.Object({
-            page: Type.Optional(Type.Union([Type.Number({ minimum: 0 }), Type.String()])),
-            pageSize: Type.Optional(Type.Union([Type.Number({ minimum: 1 }), Type.String()])),
-            includeInactive: Type.Optional(Type.Union([Type.Boolean(), Type.String()])),
-        }),
         response: {
-            200: {...UsersResponseSchema, description: "Paginated list of users with pagination metadata and inactive-inclusion flag."},
-            401: Type.String({ description: "Unauthenticated – missing or invalid session, API key, or bearer token." }),
-            403: Type.String({ description: "Permission denied – the authenticated principal lacks the required functional permission." }),
+            200: UsersResponseSchema,
+            401: Type.String({ description: "Unauthenticated. No valid session, API key, or bearer token was provided." }),
+            403: Type.String({ description: "Forbidden. The authenticated principal lacks the required functional permission." }),
         },
         detail: {
             tags: ["Users & Groups"],
@@ -126,15 +121,11 @@ export default function register(app: ApiInstance) {
             } satisfies UserDetailsResponse;
         });
     }, {
-        params: Type.Object({ userid: Type.String({ format: "uuid" }) }),
-        query: Type.Object({
-            includeInactive: Type.Optional(Type.Union([Type.Boolean(), Type.String()])),
-        }),
         response: {
-            200: {...UserDetailsResponseSchema, description: "A single user with assigned groups, functional permissions, and the inactive-inclusion flag."},
-            401: Type.String({ description: "Unauthenticated – missing or invalid session, API key, or bearer token." }),
-            403: Type.String({ description: "Permission denied – the authenticated principal lacks the required functional permission." }),
-            404: Type.String({ description: "Not found – no user with this identifier exists." }),
+            200: UserDetailsResponseSchema,
+            401: Type.String({ description: "Unauthenticated. No valid session, API key, or bearer token was provided." }),
+            403: Type.String({ description: "Forbidden. The authenticated principal lacks the required functional permission." }),
+            404: Type.String({ description: "Not found. The requested resource does not exist." }),
         },
         detail: {
             tags: ["Users & Groups"],

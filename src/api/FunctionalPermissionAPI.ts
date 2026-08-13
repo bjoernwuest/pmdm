@@ -42,14 +42,10 @@ export default function register(app: ApiInstance) {
             availablePageSizes,
         } satisfies FunctionalPermissionsResponse;
     }, {
-        query: Type.Object({
-            page: Type.Optional(Type.Union([Type.Number({ minimum: 0 }), Type.String()])),
-            pageSize: Type.Optional(Type.Union([Type.Number({ minimum: 1 }), Type.String()])),
-        }),
         response: {
-            200: Type.Union([FunctionalPermissionsListSchema, FunctionalPermissionsResponseSchema], { description: "All functional permissions either as a plain array (no pagination parameters) or as a paginated response with metadata." }),
-            401: Type.String({ description: "Unauthenticated – missing or invalid session, API key, or bearer token." }),
-            403: Type.String({ description: "Permission denied – the authenticated principal lacks the required functional permission." }),
+            200: Type.Union([FunctionalPermissionsListSchema, FunctionalPermissionsResponseSchema], { description: "All functional permissions as a plain array, or a paginated result with metadata when page/pageSize are provided." }),
+            401: Type.String({ description: "Unauthenticated. No valid session, API key, or bearer token was provided." }),
+            403: Type.String({ description: "Forbidden. The authenticated principal lacks the required functional permission." }),
         },
         detail: {
             tags: ["Auth"],
@@ -97,12 +93,11 @@ export default function register(app: ApiInstance) {
             grantedToGroups: groups
         } satisfies FunctionalPermissionDetailResponseType;
     }, {
-        params: Type.Object({ functionalpermissionid: Type.String({ format: "uuid" }) }),
         response: {
-            200: {...FunctionalPermissionDetailResponseSchema, description: "A single functional permission with all groups it is granted to."},
-            401: Type.String({ description: "Unauthenticated – missing or invalid session, API key, or bearer token." }),
-            403: Type.String({ description: "Permission denied – the authenticated principal lacks the required functional permission." }),
-            404: Type.String({ description: "Not found – no functional permission with this identifier exists." }),
+            200: FunctionalPermissionDetailResponseSchema,
+            401: Type.String({ description: "Unauthenticated. No valid session, API key, or bearer token was provided." }),
+            403: Type.String({ description: "Forbidden. The authenticated principal lacks the required functional permission." }),
+            404: Type.String({ description: "Not found. The requested resource does not exist." }),
         },
         detail: {
             tags: ["Auth"],
@@ -149,11 +144,11 @@ export default function register(app: ApiInstance) {
         return { success: true };
     }, {
         response: {
-            200: {...SuccessResponseSchema, description: "Generic success confirmation for the group assignment."},
-            401: Type.String({ description: "Unauthenticated – missing or invalid session, API key, or bearer token." }),
-            403: Type.String({ description: "Permission denied – the authenticated principal lacks the required functional permission." }),
-            404: {...ErrorSchema, description: "Not found – the grant failed for at least one group."},
-            500: {...ErrorSchema, description: "Internal server error."},
+            200: SuccessResponseSchema,
+            401: Type.String({ description: "Unauthenticated. No valid session, API key, or bearer token was provided." }),
+            403: Type.String({ description: "Forbidden. The authenticated principal lacks the required functional permission." }),
+            404: ErrorSchema,
+            500: ErrorSchema,
         },
         body: GroupIdentifiersBodySchema,
         detail: {
@@ -201,13 +196,12 @@ export default function register(app: ApiInstance) {
         return { success: true };
     }, {
         response: {
-            200: {...SuccessResponseSchema, description: "Generic success confirmation for the group removal."},
-            401: Type.String({ description: "Unauthenticated – missing or invalid session, API key, or bearer token." }),
-            403: Type.String({ description: "Permission denied – the authenticated principal lacks the required functional permission." }),
-            404: {...ErrorSchema, description: "Not found – the revoke failed for at least one group."},
-            500: {...ErrorSchema, description: "Internal server error."},
+            200: SuccessResponseSchema,
+            401: Type.String({ description: "Unauthenticated. No valid session, API key, or bearer token was provided." }),
+            403: Type.String({ description: "Forbidden. The authenticated principal lacks the required functional permission." }),
+            404: ErrorSchema,
+            500: ErrorSchema,
         },
-        params: Type.Object({ functionalpermissionid: Type.String({ format: "uuid" }) }),
         body: GroupIdentifiersBodySchema,
         detail: {
             tags: ["Auth"],

@@ -35,16 +35,10 @@ export default function register(app: ApiInstance) {
             total: result.total,
         };
     }, {
-        query: Type.Object({
-            page: Type.Optional(Type.Union([Type.Number({ minimum: 0 }), Type.String()])),
-            pageSize: Type.Optional(Type.Union([Type.Number({ minimum: 1 }), Type.String()])),
-            jsonPathFilter: Type.Optional(Type.String()),
-            search: Type.Optional(Type.String()),
-        }),
         response: {
-            200: {...AuditLogResponseSchema, description: "Paginated audit log entries with pagination metadata."},
-            401: Type.String({ description: "Unauthenticated – missing or invalid session, API key, or bearer token." }),
-            403: Type.String({ description: "Permission denied – the authenticated principal lacks the required functional permission." }),
+            200: AuditLogResponseSchema,
+            401: Type.String({ description: "Unauthenticated. No valid session, API key, or bearer token was provided." }),
+            403: Type.String({ description: "Forbidden. The authenticated principal lacks the required functional permission." }),
         },
         detail: {
             tags: ["Audit"],
@@ -133,9 +127,10 @@ export default function register(app: ApiInstance) {
             ],
         },
         response: {
-            200: {...AuditLogClearResponseSchema, description: "Confirmation of the cleared audit log with the number of deleted entries."},
-            401: Type.String({ description: "Unauthenticated – missing or invalid session, API key, or bearer token." }),
-            403: Type.String({ description: "Permission denied – the authenticated principal lacks the required functional permission." }),
+            200: AuditLogClearResponseSchema,
+            401: Type.String({ description: "Unauthenticated. No valid session, API key, or bearer token was provided." }),
+            403: Type.String({ description: "Forbidden. The authenticated principal lacks the required functional permission." }),
+            500: Type.String({ description: "Internal server error." }),
         },
     });
 }

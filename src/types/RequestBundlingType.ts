@@ -93,5 +93,5 @@ export const RequestBundlingClientConfigSchema = Type.Object({
     maxRequests: Type.Number(),
     defaultExpectedProcessingMs: Type.Number(),
     defaultTimeoutMs: Type.Number(),
-});
+}, { description: "Client runtime configuration for request bundling: queue thresholds (age, bytes, count) and timeout defaults." });
 export type RequestBundlingClientConfigSchemaType = Static<typeof RequestBundlingClientConfigSchema>;

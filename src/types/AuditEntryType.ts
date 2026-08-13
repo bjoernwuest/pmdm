@@ -28,8 +28,8 @@ export const AuditLogResponseSchema = Type.Object({
     page: Type.Number(),
     pageSize: Type.Number(),
     total: Type.Number(),
-});
+}, { description: "Paginated audit log entries with page metadata." });
 export type AuditLogResponse = Static<typeof AuditLogResponseSchema>;
 
-export const AuditLogClearResponseSchema = Type.Object({ success: Type.Boolean(), deletedCount: Type.Number() });
+export const AuditLogClearResponseSchema = Type.Object({ success: Type.Boolean(), deletedCount: Type.Number() }, { description: "Confirmation with the number of deleted audit log entries." });
 export type AuditLogClearResponse = Static<typeof AuditLogClearResponseSchema>;

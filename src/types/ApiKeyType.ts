@@ -33,7 +33,7 @@ export const ApiKeysResponseSchema = Type.Object({
     total: Type.Number({minimum: 0}),
     availablePageSizes: Type.Array(Type.Number()),
     includeDisabled: Type.Boolean(),
-});
+}, { description: "Paged list of API keys with metadata and assigned permission names." });
 export type ApiKeysResponse = Static<typeof ApiKeysResponseSchema>;
 
 export const UserDisplayInfoSchema = Type.Object({
@@ -48,7 +48,7 @@ export const ApiKeyDetailSchema = Type.Object({
     permissionIdentifiers: Type.Array(Type.String({format: "uuid"})),
     allPermissions: Type.Array(FunctionalPermissionSelectSchema),
     relatedUsers: Type.Record(Type.String({format: "uuid"}), UserDisplayInfoSchema),
-});
+}, { description: "Single API key with metadata, its permission identifiers, all known permissions, and related user display info." });
 export type ApiKeyDetailResponse = Static<typeof ApiKeyDetailSchema>;
 
 export type CreateApiKeyRequest = {
@@ -68,9 +68,9 @@ export type CreateApiKeyResponse = {
 // --- Operation-specific request / response schemas ---
 
 export const ApiKeyCreateBodySchema = Type.Object({
-    name: Type.String({ minLength: 1, maxLength: 255 }),
-    description: Type.Optional(Type.String({ maxLength: 4000 })),
-    permissionIdentifiers: Type.Optional(Type.Array(Type.String({ format: "uuid" }))),
+    name: Type.String({ minLength: 1, maxLength: 255, description: "Human-readable name of the API key." }),
+    description: Type.Optional(Type.String({ maxLength: 4000, description: "Optional free-text note describing the purpose of the API key." })),
+    permissionIdentifiers: Type.Optional(Type.Array(Type.String({ format: "uuid" }), { description: "UUIDs of the functional permissions to grant to the API key." })),
 });
 export type ApiKeyCreateBody = Static<typeof ApiKeyCreateBodySchema>;
 
@@ -80,22 +80,22 @@ export const ApiKeyCreatedResponseSchema = Type.Object({
     expiresAt: Type.String(),
     keyLength: Type.Number(),
     validityDays: Type.Number(),
-});
+}, { description: "Newly created API key including the plaintext secret, which is returned only once." });
 export type ApiKeyCreatedResponse = Static<typeof ApiKeyCreatedResponseSchema>;
 
 export const ApiKeyUpdateMetadataBodySchema = Type.Object({
-    knownUpdatedAt: Type.String(),
-    name: Type.String({ minLength: 1, maxLength: 255 }),
-    description: Type.Optional(Type.String({ maxLength: 4000 })),
+    knownUpdatedAt: Type.String({ description: "Last known updatedAt timestamp of the API key for optimistic locking. The request fails with 409 if it no longer matches the stored value." }),
+    name: Type.String({ minLength: 1, maxLength: 255, description: "New human-readable name of the API key." }),
+    description: Type.Optional(Type.String({ maxLength: 4000, description: "Optional new free-text note describing the purpose of the API key." })),
 });
 export type ApiKeyUpdateMetadataBody = Static<typeof ApiKeyUpdateMetadataBodySchema>;
 
-export const ApiKeyUpdatedAtResponseSchema = Type.Object({ updatedAt: Type.String() });
+export const ApiKeyUpdatedAtResponseSchema = Type.Object({ updatedAt: Type.String() }, { description: "New updatedAt timestamp after the API key metadata was changed." });
 export type ApiKeyUpdatedAtResponse = Static<typeof ApiKeyUpdatedAtResponseSchema>;
 
 export const ApiKeyProlongBodySchema = Type.Object({
-    knownUpdatedAt: Type.String(),
-    days: Type.Number({ minimum: 1, maximum: 730 }),
+    knownUpdatedAt: Type.String({ description: "Last known updatedAt timestamp of the API key for optimistic locking. The request fails with 409 if it no longer matches the stored value." }),
+    days: Type.Number({ minimum: 1, maximum: 730, description: "Number of days by which to extend the expiry date of the API key." }),
 });
 export type ApiKeyProlongBody = Static<typeof ApiKeyProlongBodySchema>;
 
@@ -104,7 +104,7 @@ export const ApiKeyProlongResponseSchema = Type.Object({
     expiresAt: Type.String(),
     lastProlongedAt: Nullable(Type.String()),
     lastProlongedBy: Nullable(Type.String({ format: "uuid" })),
-});
+}, { description: "Updated API key state after prolongation (updatedAt, expiresAt, and prolongation metadata)." });
 export type ApiKeyProlongResponse = Static<typeof ApiKeyProlongResponseSchema>;
 
 export const ApiKeyDisableResponseSchema = Type.Object({
@@ -112,11 +112,11 @@ export const ApiKeyDisableResponseSchema = Type.Object({
     disabled: Type.Boolean(),
     disabledAt: Nullable(Type.String()),
     disabledBy: Nullable(Type.String({ format: "uuid" })),
-});
+}, { description: "Updated API key state after disabling (updatedAt, disabled flag, and disabling metadata)." });
 export type ApiKeyDisableResponse = Static<typeof ApiKeyDisableResponseSchema>;
 
 export const ApiKeyPermissionsBodySchema = Type.Object({
-    knownUpdatedAt: Type.String(),
-    permissionIdentifiers: Type.Array(Type.String({ format: "uuid" })),
+    knownUpdatedAt: Type.String({ description: "Last known updatedAt timestamp of the API key for optimistic locking. The request fails with 409 if it no longer matches the stored value." }),
+    permissionIdentifiers: Type.Array(Type.String({ format: "uuid" }), { description: "Complete replacement list of functional permission UUIDs assigned to the API key." }),
 });
 export type ApiKeyPermissionsBody = Static<typeof ApiKeyPermissionsBodySchema>;

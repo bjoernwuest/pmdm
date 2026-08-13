@@ -6,32 +6,13 @@ import { getConfigEntriesByKey, getAllConfigEntries } from "@/repo/ConfigRepo.ts
 import { getUserProfileConfigEntry, getUserProfileConfigEntries, upsertUserProfileConfigEntry, deleteUserProfileConfigEntry } from "@/repo/UserProfileConfigRepo.ts";
 import { parseConfigValue, validateConfigInputFormat } from "@/services/Config.ts";
 import { type ConfigEntrySelectType, schemaForConfigType } from "@/types/ConfigType.ts";
+import {
+    UserProfileConfigEntrySchema,
+    UserProfileConfigParamsSchema,
+    UserProfileConfigResponseSchema,
+    UserProfileConfigUpdateSchema,
+} from "@/types/UserProfileConfigType.ts";
 import { ErrorResponseSchema } from "@/types/ApiType.ts";
-
-const UserProfileConfigEntrySchema = Type.Object({
-    domain: Type.String(),
-    key: Type.String(),
-    description: Type.Optional(Type.Union([Type.String(), Type.Null()])),
-    type: Type.String(),
-    value: Type.Any(),
-    userValue: Type.Any(),
-    inputFormat: Type.String(),
-    outputFormat: Type.String(),
-}, { description: "A single user-profile configuration entry with the global default value and the current user's override." });
-
-const UserProfileConfigResponseSchema = Type.Object({
-    entries: Type.Array(UserProfileConfigEntrySchema),
-}, { description: "All user-profile configuration entries with global default and per-user override values." });
-
-const UserProfileConfigUpdateSchema = Type.Object({
-    value: Type.Any(),
-    knownValue: Type.Optional(Type.Any()),
-});
-
-const UserProfileConfigParamsSchema = Type.Object({
-    domain: Type.String(),
-    key: Type.String(),
-});
 
 function canonicalizeJson(value: unknown): unknown {
     if (Array.isArray(value)) return value.map((item) => canonicalizeJson(item));
@@ -94,7 +75,7 @@ export default function register(app: ApiInstance) {
         },
         response: {
             200: UserProfileConfigResponseSchema,
-            401: Type.String({ description: "Unauthenticated – no user identity could be resolved from the session." }),
+            401: Type.String({ description: "Unauthenticated. No valid session, API key, or bearer token was provided." }),
         },
     });
 
@@ -168,13 +149,6 @@ export default function register(app: ApiInstance) {
             description: "Upserts the current user's override for a specific user-configurable entry. Session-only. Send value=null to reset to default.",
             parameters: [
                 {
-                    name: "X-API-Key",
-                    description: "API key used for authentication. This endpoint additionally requires an authenticated browser session.",
-                    in: "header",
-                    required: false,
-                    schema: { type: "string", example: "your-api-key" },
-                },
-                {
                     name: "domain",
                     description: "The configuration domain.",
                     in: "path",
@@ -192,14 +166,14 @@ export default function register(app: ApiInstance) {
         },
         response: {
             200: UserProfileConfigEntrySchema,
-            400: Type.Union([Type.String(), ErrorResponseSchema], { description: "Invalid request – the provided value failed parsing or input-format validation." }),
-            401: Type.String({ description: "Unauthenticated – no user identity could be resolved from the session." }),
-            403: Type.String({ description: "Permission denied – this endpoint can only be modified via a browser session." }),
-            404: Type.String({ description: "Not found – the configuration entry does not exist or is not user-configurable." }),
+            400: Type.Union([Type.String(), ErrorResponseSchema], { description: "Bad request. The request body or parameters failed validation." }),
+            401: Type.String({ description: "Unauthenticated. No valid session, API key, or bearer token was provided." }),
+            403: Type.String({ description: "Forbidden. Profile configuration can only be modified via browser session." }),
+            404: Type.String({ description: "Not found. The requested resource does not exist." }),
             409: Type.Object({
                 error: Type.String(),
                 currentValue: Type.Any(),
-            }, { description: "Conflict – the profile entry was modified in another tab; currentValue contains the latest value." }),
+            }, { description: "Conflict. The profile entry was modified concurrently; currentValue contains the latest stored override value." }),
         },
     });
 }

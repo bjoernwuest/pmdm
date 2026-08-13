@@ -1,10 +1,8 @@
-import {FunctionalPermissionSelectSchema, type FunctionalPermissionSelectType} from "./FunctionalPermissionType.ts";
-import {type Static, Type} from "@sinclair/typebox";
+import {FunctionalPermissionSelectSchema, type FunctionalPermissionSelectType} from "@/types/FunctionalPermissionType.ts";
+import { Type, type Static } from '@sinclair/typebox';
 
-/** Generic claim bag extracted from an ID/access token. */
-export type Claims = Record<string, unknown>;
+export type Claims = Record<string, any>;
 
-/** Authz context produced by auth middleware for request handlers. */
 export type AuthorizedContext = {
     claims: Claims;
     permissions: FunctionalPermissionSelectType[];
@@ -41,6 +39,5 @@ export const MeContextResponseSchema = Type.Object({
     user: MeUserSchema,
     permissionNames: Type.Array(Type.String()),
     functionalPermissions: Type.Array(FunctionalPermissionSelectSchema),
-    debugFrontend: Type.Boolean(),
-});
+}, { description: "Current user identity (oid, displayName, preferredUsername) with functional permissions and permission names." });
 export type MeContextResponse = Static<typeof MeContextResponseSchema>;

@@ -28,7 +28,7 @@ export const STALE_TTL_MS = 30 * 60 * 1_000;
 // --- TypeBox schemas for route validation and OpenAPI docs ---
 
 export const SseExpressionsUpdateBodySchema = Type.Object({
-    expressions: Type.Array(Type.Any()),
+    expressions: Type.Array(Type.Any(), { description: "Expression filter entries. An empty array clears the filter for the session." }),
 });
 export type SseExpressionsUpdateBody = Static<typeof SseExpressionsUpdateBodySchema>;
 
@@ -38,10 +38,10 @@ export const SseExpressionFilterStateSchema = Type.Object({
     createdAt: Type.String(),
     lastSeenAt: Type.String(),
     streaming: Type.Boolean(),
-});
+}, { description: "Current SSE expression filter state for the session." });
 export type SseExpressionFilterState = Static<typeof SseExpressionFilterStateSchema>;
 
 export const SseKnownTagsResponseSchema = Type.Object({
     tags: Type.Array(Type.String()),
-});
+}, { description: "All PubSub tag names seen by the server since process start." });
 export type SseKnownTagsResponse = Static<typeof SseKnownTagsResponseSchema>;

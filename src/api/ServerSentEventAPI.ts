@@ -87,7 +87,8 @@ export default function register(app: ApiInstance) {
             ],
         },
         response: {
-            200: Type.Any({ description: "Server-sent event stream (text/event-stream) emitting connected, keepalive, and pubsub events." }),
+            200: Type.Any({ description: "SSE stream emitting 'connected', 'keepalive', and 'pubsub' events for the authenticated session." }),
+            401: Type.String({ description: "Unauthenticated. No valid session, API key, or bearer token was provided." }),
         },
     });
 
@@ -105,9 +106,9 @@ export default function register(app: ApiInstance) {
     }, {
         body: SseExpressionsUpdateBodySchema,
         response: {
-            200: {...SseExpressionFilterStateSchema, description: "The updated expression filter state for the current session."},
-            400: Type.String({ description: "Invalid request – malformed payload or invalid expressions." }),
-            401: Type.String({ description: "Unauthenticated – a session key could not be derived from the auth context." }),
+            200: SseExpressionFilterStateSchema,
+            400: Type.String({ description: "Bad request. The request body or parameters failed validation." }),
+            401: Type.String({ description: "Unauthenticated. No valid session, API key, or bearer token was provided." }),
         },
         detail: {
             tags: ["Realtime"],
@@ -136,7 +137,8 @@ export default function register(app: ApiInstance) {
         return { tags: getKnownTags() };
     }, {
         response: {
-            200: {...SseKnownTagsResponseSchema, description: "All PubSub tag names seen by the server-side PubSub bridge since process start."},
+            200: SseKnownTagsResponseSchema,
+            401: Type.String({ description: "Unauthenticated. No valid session, API key, or bearer token was provided." }),
         },
         detail: {
             tags: ["Realtime"],

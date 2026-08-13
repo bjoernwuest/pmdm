@@ -105,8 +105,8 @@ export default function register(app: ApiInstance) {
         return await getRequestBundlingClientRuntimeConfig(dbClient);
     }, {
         response: {
-            200: {...RequestBundlingClientConfigSchema, description: "Request bundling runtime configuration for browser clients."},
-            401: Type.String({ description: "Unauthenticated – missing or invalid session, API key, or bearer token." }),
+            200: RequestBundlingClientConfigSchema,
+            401: Type.String({ description: "Unauthenticated. No valid session, API key, or bearer token was provided." }),
         },
         detail: {
             tags: ["Request Bundling"],
@@ -317,9 +317,9 @@ export default function register(app: ApiInstance) {
         });
     }, {
         response: {
-            200: Type.Any({ description: "NDJSON stream (application/x-ndjson) with one result object per sub-request, streamed incrementally." }),
-            400: {...ErrorResponseSchema, description: "Invalid request – invalid JSON payload or malformed request bundling items."},
-            401: Type.String({ description: "Unauthenticated – missing or invalid session, API key, or bearer token." }),
+            200: Type.Any({ description: "NDJSON stream where each line is the result of one sub-request: clientRequestId, status, body or error, optional signal/mayHaveExecuted, and serverMayTakeUntil." }),
+            400: ErrorResponseSchema,
+            401: Type.String({ description: "Unauthenticated. No valid session, API key, or bearer token was provided." }),
         },
         detail: {
             tags: ["Request Bundling"],

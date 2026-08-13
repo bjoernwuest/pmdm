@@ -1,6 +1,5 @@
 import type { ApiInstance } from "@/apps/api.ts";
 import { getMyFunctionalPermissions } from "@/services/Auth.ts";
-import { debugFrontend } from "@/devmode.ts";
 import { Type } from "@sinclair/typebox";
 import { MeContextResponseSchema } from "@/types/AuthType.ts";
 
@@ -19,12 +18,11 @@ export default function register(app: ApiInstance) {
             },
             permissionNames: functionalPermissions.map((permission) => permission.functionalPermissionName),
             functionalPermissions,
-            debugFrontend,
         };
     }, {
         response: {
-            200: {...MeContextResponseSchema, description: "The authenticated user's identity, permission names, full functional permission list, and frontend debug flag."},
-            401: Type.String({ description: "Unauthenticated – missing or invalid session, API key, or bearer token." }),
+            200: MeContextResponseSchema,
+            401: Type.String({ description: "Unauthenticated. No valid session, API key, or bearer token was provided." }),
         },
         detail: {
             tags: ["Auth"],

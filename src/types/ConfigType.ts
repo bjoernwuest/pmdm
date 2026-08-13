@@ -70,7 +70,7 @@ export const ConfigEntryUiSchema = Type.Object({
     inputFormat: Type.String(),
     outputFormat: Type.String(),
     userProfile: Type.Boolean(),
-});
+}, { description: "One configuration entry in UI shape." });
 export type ConfigEntryUiSchemaType = Static<typeof ConfigEntryUiSchema>;
 
 export const ConfigDomainGroupSchema = Type.Object({
@@ -81,23 +81,23 @@ export type ConfigDomainGroupSchemaType = Static<typeof ConfigDomainGroupSchema>
 
 export const ConfigDomainsResponseSchema = Type.Object({
     domains: Type.Array(ConfigDomainGroupSchema),
-});
+}, { description: "All UI-editable configuration entries grouped by domain." });
 export type ConfigDomainsResponse = Static<typeof ConfigDomainsResponseSchema>;
 
 export const ConfigUpdateBodySchema = Type.Object({
-    value: Type.Any(),
-    knownValue: Type.Any(),
+    value: Type.Any({ description: "New value for the configuration entry." }),
+    knownValue: Type.Any({ description: "Last known stored value of the entry for optimistic locking. The request fails with 409 if it no longer matches the stored value." }),
 });
 export type ConfigUpdateBody = Static<typeof ConfigUpdateBodySchema>;
 
 export const ConfigParamsSchema = Type.Object({
-    domain: Type.String(),
-    key: Type.String(),
+    domain: Type.String({ description: "Configuration domain, e.g. 'auth' or 'ui'." }),
+    key: Type.String({ description: "Configuration key within the domain." }),
 });
 export type ConfigParams = Static<typeof ConfigParamsSchema>;
 
 export const ConfigUpdateConflictSchema = Type.Object({
     error: Type.String(),
     currentValue: Type.Any(),
-});
+}, { description: "Conflict payload containing the current stored value of the entry." });
 export type ConfigUpdateConflict = Static<typeof ConfigUpdateConflictSchema>;

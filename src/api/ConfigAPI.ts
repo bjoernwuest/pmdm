@@ -94,9 +94,9 @@ export default function register(app: ApiInstance) {
             ],
         },
         response: {
-            200: {...ConfigDomainsResponseSchema, description: "All editable application configuration entries grouped by configuration domain."},
-            401: Type.String({ description: "Unauthenticated – missing or invalid session, API key, or bearer token." }),
-            403: Type.String({ description: "Permission denied – the authenticated principal lacks the required functional permission." }),
+            200: ConfigDomainsResponseSchema,
+            401: Type.String({ description: "Unauthenticated. No valid session, API key, or bearer token was provided." }),
+            403: Type.String({ description: "Forbidden. The authenticated principal lacks the required functional permission." }),
         },
     });
 
@@ -163,12 +163,12 @@ export default function register(app: ApiInstance) {
             ],
         },
         response: {
-            200: {...ConfigEntryUiSchema, description: "The updated configuration entry in its UI representation."},
-            400: Type.Union([Type.String(), ErrorResponseSchema], { description: "Invalid request – value parsing, format validation, or type validation failed." }),
-            401: Type.String({ description: "Unauthenticated – missing or invalid session, API key, or bearer token." }),
-            403: Type.String({ description: "Permission denied – the authenticated principal lacks the required functional permission." }),
-            404: Type.String({ description: "Not found – the configuration entry does not exist or is not editable in the UI." }),
-            409: {...ConfigUpdateConflictSchema, description: "Conflict – the config entry was modified by another user; currentValue contains the latest value." },
+            200: ConfigEntryUiSchema,
+            400: Type.Union([Type.String(), ErrorResponseSchema], { description: "Bad request. The request body or parameters failed validation." }),
+            401: Type.String({ description: "Unauthenticated. No valid session, API key, or bearer token was provided." }),
+            403: Type.String({ description: "Forbidden. The authenticated principal lacks the required functional permission." }),
+            404: Type.String({ description: "Not found. The requested resource does not exist." }),
+            409: ConfigUpdateConflictSchema,
         },
     });
 }
