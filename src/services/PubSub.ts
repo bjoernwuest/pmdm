@@ -29,6 +29,49 @@ interface SubscriptionEntry {
     func: Subscriber;
 }
 
+// Transaction-scoped deferred publication. While a publish scope is active (installed by
+// `runInTransaction`), published messages are collected instead of dispatched; they are
+// dispatched in order when the scope commits, or discarded when it rolls back. Scopes nest
+// (savepoints): an inner commit merges into the enclosing scope.
+const publishScopeStack: PubSubMessage[][] = [];
+
+/**
+ * Opens a transaction publish scope. Called by `runInTransaction` before the callback runs.
+ */
+export function beginPublishScope(): void {
+    publishScopeStack.push([]);
+}
+
+/**
+ * Commits the current publish scope: dispatches its collected messages in order when it is
+ * the outermost scope, otherwise merges them into the enclosing scope.
+ */
+export function commitPublishScope(): void {
+    const scope = publishScopeStack.pop();
+    if (!scope || scope.length === 0) return;
+    if (publishScopeStack.length > 0) {
+        publishScopeStack[publishScopeStack.length - 1]!.push(...scope);
+    } else {
+        // Dispatch asynchronously, matching the non-transactional publish delivery contract.
+        setTimeout(() => PubSub.deliverDeferred(scope), 0);
+    }
+}
+
+/**
+ * Rolls back the current publish scope, discarding its collected messages.
+ */
+export function rollbackPublishScope(): void {
+    publishScopeStack.pop();
+}
+
+/**
+ * Returns the current publish scope nesting depth. Zero means no transaction
+ * publish scope is active, i.e. the caller would open the outermost scope.
+ */
+export function publishScopeDepth(): number {
+    return publishScopeStack.length;
+}
+
 class PubSubImpl {
     private subscriptions: SubscriptionEntry[] = [];
     private lastUid = -1;
@@ -47,6 +90,31 @@ class PubSubImpl {
      */
     publishSync(tags: Tag[], data?: any): boolean {
         return this.doPublish(tags, data, true, this.immediateExceptions);
+    }
+
+    /**
+     * Delivers previously deferred (transaction-scoped) messages in order.
+     * Called by `commitPublishScope` when the outermost scope drains.
+     */
+    deliverDeferred(messages: PubSubMessage[]): void {
+        for (const message of messages) {
+            const tagSet = new Set(message.tags);
+            for (const sub of this.subscriptions) {
+                if (this.expressionMatchesEntry(sub.expression, tagSet)) {
+                    if (this.immediateExceptions) {
+                        sub.func(message);
+                    } else {
+                        try {
+                            sub.func(message);
+                        } catch (ex) {
+                            setTimeout(() => {
+                                throw ex;
+                            }, 0);
+                        }
+                    }
+                }
+            }
+        }
     }
 
     /**
@@ -159,32 +227,19 @@ class PubSubImpl {
             timestamp: new Date().toISOString(),
         };
 
-        const deliver = () => {
-            const tagSet = new Set(tags);
-            for (const sub of this.subscriptions) {
-                if (this.expressionMatchesEntry(sub.expression, tagSet)) {
-                    if (immediateExceptions) {
-                        sub.func(message);
-                    } else {
-                        try {
-                            sub.func(message);
-                        } catch (ex) {
-                            setTimeout(() => {
-                                throw ex;
-                            }, 0);
-                        }
-                    }
-                }
-            }
-        };
-
         const hasSubscribers = this.subscriptions.length > 0;
         if (!hasSubscribers) return false;
 
+        // Inside a transaction scope the message is deferred until commit.
+        if (publishScopeStack.length > 0) {
+            publishScopeStack[publishScopeStack.length - 1]!.push(message);
+            return true;
+        }
+
         if (sync) {
-            deliver();
+            this.deliverDeferred([message]);
         } else {
-            setTimeout(deliver, 0);
+            setTimeout(() => this.deliverDeferred([message]), 0);
         }
 
         return true;

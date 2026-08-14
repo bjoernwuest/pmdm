@@ -1,4 +1,6 @@
 import {getConfigEntriesByKey} from "@/repo/ConfigRepo.ts";
+import PubSub from "@/services/PubSub.ts";
+import {TAG_CONFIG, TAG_UPSERT} from "@/types/PubSubType.ts";
 import {
     FALLBACK_CLIENT_DEFAULT_EXPECTED_PROCESSING_MS,
     FALLBACK_CLIENT_DEFAULT_TIMEOUT_MS,
@@ -14,7 +16,7 @@ import {
     type RequestBundlingClientRuntimeConfig,
     type RequestBundlingServerConfig
 } from "@/types/RequestBundlingType.ts";
-import {type ConfigEntrySelectType, ConfigValueTypes} from "@/types/ConfigType.ts";
+import {type ConfigEntryInsertType, type ConfigEntrySelectType, ConfigValueTypes} from "@/types/ConfigType.ts";
 
 import type {DBClient} from "@/services/DatabaseDriver.ts";
 
@@ -32,10 +34,17 @@ export const config = {
     cfgClientMaxRequests: { domain: configDomain, key: "Client.MaxRequests", description: "Maximum number of queued mutations before the browser sends a request bundling batch.", type: ConfigValueTypes.number, value: undefined, formatRegex: "^[1-9][0-9]*$", inputFormat: "^[1-9][0-9]*$", outputFormat: "", editInUI: true, mandatoryForStart: false, userProfile: false },
     cfgClientDefaultExpectedProcessingMs: { domain: configDomain, key: "Client.DefaultExpectedProcessingMs", description: "Default client hint for expected server processing time of bundled sub-requests (milliseconds).", type: ConfigValueTypes.number, value: undefined, formatRegex: "^[1-9][0-9]*$", inputFormat: "^[1-9][0-9]*$", outputFormat: "", editInUI: true, mandatoryForStart: false, userProfile: false },
     cfgClientDefaultTimeoutMs: { domain: configDomain, key: "Client.DefaultTimeoutMs", description: "Default client timeout budget used for queued bundled sub-requests (milliseconds).", type: ConfigValueTypes.number, value: undefined, formatRegex: "^[1-9][0-9]*$", inputFormat: "^[1-9][0-9]*$", outputFormat: "", editInUI: true, mandatoryForStart: false, userProfile: false },
-} satisfies Record<string, ConfigEntrySelectType>;
+} satisfies Record<string, ConfigEntryInsertType>;
 
 let cachedServerConfig: RequestBundlingServerConfig | undefined;
 let cachedClientConfig: RequestBundlingClientRuntimeConfig | undefined;
+
+// A runtime edit of any request_bundling config entry takes effect without restart:
+// the cached configs are dropped on the config-change event.
+PubSub.subscribe({ and: [TAG_CONFIG, configDomain, TAG_UPSERT] }, () => {
+    cachedServerConfig = undefined;
+    cachedClientConfig = undefined;
+});
 
 function toPositiveInteger(value: unknown, fallback: number): number {
     if (typeof value !== "number" || !Number.isFinite(value)) return fallback;
@@ -43,7 +52,7 @@ function toPositiveInteger(value: unknown, fallback: number): number {
     return rounded > 0 ? rounded : fallback;
 }
 
-async function readConfigNumber(db: DBClient, entry: ConfigEntrySelectType, fallback: number): Promise<number> {
+async function readConfigNumber(db: DBClient, entry: Pick<ConfigEntrySelectType, "domain" | "key">, fallback: number): Promise<number> {
     const result = await getConfigEntriesByKey(db, entry.domain, entry.key);
     return toPositiveInteger(result[0]?.value, fallback);
 }

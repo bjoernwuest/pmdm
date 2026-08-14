@@ -1,6 +1,8 @@
 // This file is the "database driver". Thus, besides the files in `/src/repo`, may deal directly with drizzle-orm.
 
 import {devMode, sqlLogging} from "@/devmode.ts";
+import {advisoryLockId, databaseUrl as databaseUrlFromEnv} from "@/services/Env.ts";
+import {beginPublishScope, commitPublishScope, rollbackPublishScope, publishScopeDepth} from "@/services/PubSub.ts";
 import postgres from "postgres";
 import {drizzle} from "drizzle-orm/postgres-js";
 import {type RunnableMigration, Umzug} from "umzug";
@@ -26,9 +28,8 @@ async function loadSchemaModules(): Promise<Record<string, unknown>> {
 
 const schema = await loadSchemaModules();
 
-// Get database URL from .env file
-const databaseUrl: string | undefined = process.env.DATABASE_URL;
-if (!databaseUrl) throw Error("DATABASE_URL environment variable is not set. Shutting down.");
+// Get database URL from the central env module (throws when missing)
+const databaseUrl: string = databaseUrlFromEnv;
 
 // Create a properly typed drizzle instance
 const createDrizzleInstance = (client: postgres.Sql) => drizzle(client, { schema, logger: sqlLogging });
@@ -58,11 +59,14 @@ export function getDatabaseConnection(): DBClient {
     if (!client) {
         if (devMode) console.log("Connecting to database...");
         try {
-            client = postgres(databaseUrl!, {
+            client = postgres(databaseUrl, {
                 max: 10,
                 idle_timeout: 20,
                 connect_timeout: 10,
                 connection: {
+                    // Pinning the session to UTC is defense-in-depth only — optimistic-lock
+                    // comparisons bind timestamptz values directly (no `::timestamp` casts),
+                    // so correctness no longer depends on this setting.
                     timezone: 'UTC',
                 },
             });
@@ -111,7 +115,6 @@ export async function closeDatabaseConnection() {
 export async function initDatabase(): Promise<void> {
     if (devMode) console.log("🚀 Starting programmatically controlled database migrations...");
 
-    const advisoryLockId = process.env.ADVISORY_LOCK ? BigInt(process.env.ADVISORY_LOCK) : -7482650123549836421n;
     const db = getDatabaseConnection() as DrizzleType;
     try {
         const umzugMigrationsTable = pgTable("migrations", {
@@ -189,6 +192,13 @@ export async function initDatabase(): Promise<void> {
     }
 }
 
+const TRANSACTION_MAX_ATTEMPTS = 4;
+const TRANSACTION_RETRY_BASE_DELAY_MS = 50;
+
+function isRetryableTransactionError(err: unknown): boolean {
+    return err instanceof postgres.PostgresError && (err.code === "40001" || err.code === "40P01");
+}
+
 /**
  * Executes a provided callback function within a database transaction.
  *
@@ -198,5 +208,27 @@ export async function initDatabase(): Promise<void> {
  * @return {Promise<T>} A promise that resolves to the result of the callback function.
  */
 export async function runInTransaction<T>(DBClient: DBClient, callback: (tx: DBClient) => Promise<T>): Promise<T> {
-    return await DBClient.transaction(async (tx) => callback(tx), { accessMode: "read write", deferrable: false, isolationLevel: "serializable" });
+    // PubSub events published while the transaction callback runs are deferred: they are
+    // dispatched only when the transaction commits and discarded on rollback, so subscribers
+    // never observe events from uncommitted (or failed) transactions.
+    const outermost = publishScopeDepth() === 0;
+
+    for (let attempt = 0; ; attempt++) {
+        beginPublishScope();
+        try {
+            const result = await DBClient.transaction(async (tx) => callback(tx), { accessMode: "read write", deferrable: false, isolationLevel: "serializable" });
+            commitPublishScope();
+            return result;
+        } catch (err) {
+            rollbackPublishScope();
+            if (outermost && attempt + 1 < TRANSACTION_MAX_ATTEMPTS && isRetryableTransactionError(err)) {
+                const retryableErr = err as postgres.PostgresError;
+                const delay = TRANSACTION_RETRY_BASE_DELAY_MS * 2 ** attempt + Math.floor(Math.random() * TRANSACTION_RETRY_BASE_DELAY_MS);
+                if (devMode) console.warn(`Transaction failed with retryable error ${retryableErr.code}, retrying in ${delay}ms (attempt ${attempt + 1} of ${TRANSACTION_MAX_ATTEMPTS - 1}).`);
+                await Bun.sleep(delay);
+                continue;
+            }
+            throw err;
+        }
+    }
 }

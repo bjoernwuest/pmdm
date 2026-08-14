@@ -1,4 +1,6 @@
-/** Application-wide configuration values which must not import application modules. */
-export const devMode: boolean = process.env.DEV_MODE === "1";
-
-export const sqlLogging: boolean = process.env.SQL_LOGGING === "1";
+/**
+ * Re-export of the central env module (`src/services/Env.ts`), kept so existing
+ * import sites of `devMode`/`sqlLogging` stay valid. `Env.ts` itself has no
+ * application-module imports, so this re-export cannot create a circular dependency.
+ */
+export { devMode, sqlLogging } from "@/services/Env.ts";

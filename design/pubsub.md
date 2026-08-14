@@ -426,15 +426,15 @@ empty expression list (or a sentinel) that matches everything.
 
 **Important:** Because tag expressions can be complex nested objects, they
 cannot be passed as a simple comma-separated query string. The SSE stream URL's
-`?topics=` parameter is replaced by the `PATCH /api/server_sent_events/topics`
+`?topics=` parameter is replaced by the `PATCH /api/server_sent_events/expressions`
 endpoint for initial seeding, and the `connected` event carries the full filter
 state.
 
-### Client Topic Sync (PATCH)
+### Client Expression Sync (PATCH)
 
 The browser [`ClientPubSub`](src/ui/pubsub.ts) currently syncs its active
-subscription topic strings to the server via
-[`PATCH /api/server_sent_events/topics`](src/api/ServerSentEventAPI.ts). In the
+subscription expressions (pre-migration: topic strings) to the server via
+[`PATCH /api/server_sent_events/expressions`](src/api/ServerSentEventAPI.ts). In the
 new system:
 
 - The client collects its active `TagExpression` objects.
@@ -455,10 +455,10 @@ The browser [`ClientPubSub`](src/ui/pubsub.ts) mirrors the server PubSub API:
 - `publishSync(tags: string[], data?)` replaces `publishSync(topic: string, data?)`
 - `getServerTopics()` becomes `getServerExpressions()` – returns the set of
   active tag expressions (or `["*"]` if only wildcard subscribers exist).
-- The debounced sync to `PATCH /api/server_sent_events/topics` now sends
+- The debounced sync to `PATCH /api/server_sent_events/expressions` now sends
   expressions instead of topic strings.
 
-The browser's [`handlePubSubEvent`](src/ui/server_sent_events.ts:17) in the
+The browser's [`handlePubSubEvent`](src/ui/sse_bridge.ts:17) in the
 EventSource bridge parses the new `{ tags, data, receivedAt }` envelope and
 calls `publishSync(tags, data)` into the local ClientPubSub.
 

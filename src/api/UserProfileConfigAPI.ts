@@ -3,7 +3,7 @@ import { Type } from "@sinclair/typebox";
 import { Value } from "@sinclair/typebox/value";
 import type { ApiInstance } from "@/apps/api.ts";
 import { getConfigEntriesByKey, getAllConfigEntries } from "@/repo/ConfigRepo.ts";
-import { getUserProfileConfigEntry, getUserProfileConfigEntries, upsertUserProfileConfigEntry, deleteUserProfileConfigEntry } from "@/repo/UserProfileConfigRepo.ts";
+import { getUserProfileConfigEntry, getUserProfileConfigEntries, upsertUserProfileConfigEntry, updateUserProfileConfigEntry, deleteUserProfileConfigEntry } from "@/repo/UserProfileConfigRepo.ts";
 import { parseConfigValue, validateConfigInputFormat } from "@/services/Config.ts";
 import { type ConfigEntrySelectType, schemaForConfigType } from "@/types/ConfigType.ts";
 import {
@@ -12,30 +12,19 @@ import {
     UserProfileConfigResponseSchema,
     UserProfileConfigUpdateSchema,
 } from "@/types/UserProfileConfigType.ts";
-import { ErrorResponseSchema } from "@/types/ApiType.ts";
-
-function canonicalizeJson(value: unknown): unknown {
-    if (Array.isArray(value)) return value.map((item) => canonicalizeJson(item));
-    if (value && typeof value === "object") {
-        const obj = value as Record<string, unknown>;
-        return Object.keys(obj).sort().reduce<Record<string, unknown>>((acc, key) => {
-            acc[key] = canonicalizeJson(obj[key]);
-            return acc;
-        }, {});
-    }
-    return value;
-}
-
-function equalsJson(a: unknown, b: unknown): boolean {
-    return JSON.stringify(canonicalizeJson(a)) === JSON.stringify(canonicalizeJson(b));
-}
+import {
+    BadRequestErrorResponseSchema,
+    NotFoundErrorResponseSchema,
+    OptimisticLockConflictResponseSchema,
+    UnauthenticatedErrorResponseSchema,
+} from "@/types/ApiType.ts";
 
 // noinspection JSUnusedGlobalSymbols
 export default function register(app: ApiInstance) {
     app.get("/me/config", async (context) => {
         const claims = context.session?.idTokenClaims ?? context.tokenClaims ?? {};
         const oid = typeof claims.oid === "string" ? claims.oid : undefined;
-        if (!oid) return status(401, "Not authenticated");
+        if (!oid) return status(401, { error: "Not authenticated" });
 
         const allEntries = await getAllConfigEntries(context.dbClient, true);
         const userProfileEntries = allEntries.filter((entry) => entry.userProfile === true);
@@ -55,6 +44,7 @@ export default function register(app: ApiInstance) {
             userValue: userOverrideMap.get(`${entry.domain}::${entry.key}`) ?? null,
             inputFormat: entry.inputFormat,
             outputFormat: entry.outputFormat,
+            updatedAt: userOverrides.find((o) => o.domain === entry.domain && o.key === entry.key)?.updatedAt ?? null,
         }));
 
         return { entries };
@@ -75,30 +65,23 @@ export default function register(app: ApiInstance) {
         },
         response: {
             200: UserProfileConfigResponseSchema,
-            401: Type.String({ description: "Unauthenticated. No valid session, API key, or bearer token was provided." }),
+            401: UnauthenticatedErrorResponseSchema,
         },
     });
 
     app.put("/me/config/:domain/:key", async (context) => {
         if (!context.session?.idTokenClaims) {
-            return status(403, "Profile configuration can only be modified via browser session");
+            return status(403, { error: "Profile configuration can only be modified via browser session" });
         }
 
         const claims = context.session.idTokenClaims;
         const oid = typeof claims.oid === "string" ? claims.oid : undefined;
-        if (!oid) return status(401, "Not authenticated");
+        if (!oid) return status(401, { error: "Not authenticated" });
 
         const [entry] = await getConfigEntriesByKey(context.dbClient, context.params.domain, context.params.key, { limit: 1 });
-        if (!entry || !entry.userProfile) return status(404, "Configuration entry not found or not user-configurable");
+        if (!entry || !entry.userProfile) return status(404, { error: "Configuration entry not found or not user-configurable" });
 
         const existingOverride = await getUserProfileConfigEntry(context.dbClient, oid, context.params.domain, context.params.key);
-
-        if (context.body.knownValue !== undefined && !equalsJson(context.body.knownValue, existingOverride?.value ?? null)) {
-            return status(409, {
-                error: "Profile entry was modified in another tab",
-                currentValue: existingOverride?.value ?? null,
-            });
-        }
 
         if (context.body.value === null || context.body.value === undefined) {
             await deleteUserProfileConfigEntry(context.dbClient, oid, context.params.domain, context.params.key);
@@ -111,24 +94,37 @@ export default function register(app: ApiInstance) {
                 userValue: null,
                 inputFormat: entry.inputFormat,
                 outputFormat: entry.outputFormat,
+                updatedAt: null,
             };
         }
 
         const parsed = parseConfigValue(entry.type, context.body.value);
-        if (!parsed.ok) return status(400, parsed.error);
+        if (!parsed.ok) return status(400, { error: parsed.error });
 
         const formatValidation = validateConfigInputFormat(entry, parsed.value);
-        if (!formatValidation.ok) return status(400, formatValidation.error);
+        if (!formatValidation.ok) return status(400, { error: formatValidation.error });
 
         const schema = schemaForConfigType(entry.type);
-        if (!Value.Check(schema, parsed.value)) return status(400, "Type validation failed");
+        if (!Value.Check(schema, parsed.value)) return status(400, { error: "Type validation failed" });
 
-        const [updated] = await upsertUserProfileConfigEntry(context.dbClient, {
-            domain: context.params.domain,
-            key: context.params.key,
-            userIdentifier: oid,
-            value: parsed.value,
-        });
+        let updated;
+        if (context.body.knownUpdatedAt !== undefined) {
+            // Compare-and-swap on the override's updatedAt: the write becomes a no-op on mismatch.
+            [updated] = await updateUserProfileConfigEntry(context.dbClient, oid, context.params.domain, context.params.key, parsed.value, context.body.knownUpdatedAt);
+            if (!updated) {
+                return status(409, {
+                    error: "Profile entry was modified in another tab",
+                    currentValue: existingOverride?.value ?? null,
+                });
+            }
+        } else {
+            [updated] = await upsertUserProfileConfigEntry(context.dbClient, {
+                domain: context.params.domain,
+                key: context.params.key,
+                userIdentifier: oid,
+                value: parsed.value,
+            });
+        }
 
         return {
             domain: entry.domain,
@@ -139,6 +135,7 @@ export default function register(app: ApiInstance) {
             userValue: updated!.value,
             inputFormat: entry.inputFormat,
             outputFormat: entry.outputFormat,
+            updatedAt: updated!.updatedAt,
         };
     }, {
         body: UserProfileConfigUpdateSchema,
@@ -166,14 +163,11 @@ export default function register(app: ApiInstance) {
         },
         response: {
             200: UserProfileConfigEntrySchema,
-            400: Type.Union([Type.String(), ErrorResponseSchema], { description: "Bad request. The request body or parameters failed validation." }),
-            401: Type.String({ description: "Unauthenticated. No valid session, API key, or bearer token was provided." }),
-            403: Type.String({ description: "Forbidden. Profile configuration can only be modified via browser session." }),
-            404: Type.String({ description: "Not found. The requested resource does not exist." }),
-            409: Type.Object({
-                error: Type.String(),
-                currentValue: Type.Any(),
-            }, { description: "Conflict. The profile entry was modified concurrently; currentValue contains the latest stored override value." }),
+            400: BadRequestErrorResponseSchema,
+            401: UnauthenticatedErrorResponseSchema,
+            403: Type.Object({ error: Type.String() }, { description: "Forbidden. Profile configuration can only be modified via browser session." }),
+            404: NotFoundErrorResponseSchema,
+            409: OptimisticLockConflictResponseSchema,
         },
     });
 }

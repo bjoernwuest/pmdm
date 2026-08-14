@@ -28,7 +28,7 @@ export class TTLMap<K, V> {
     // TTL in milliseconds. If 0 means no expiry.
     private readonly ttlMs: number;
     private readonly map = new Map<K, { value: V; expiresAt: number }>();
-    private purgeTimerId: NodeJS.Timeout | undefined;
+    private purgeTimerId: ReturnType<typeof setInterval> | undefined;
 
     constructor(ttlSeconds = 60, entries?: Iterable<[K, V]>) {
         this.ttlMs = ttlSeconds > 0 ? Math.floor(ttlSeconds * 1000) : 0;

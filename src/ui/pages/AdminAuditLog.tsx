@@ -3,7 +3,7 @@ import { PageSection, PageTemplate } from "@/ui/PageTemplate.tsx";
 import type { PageMeta } from "@/types/PageType.ts";
 import { FP_CLEAR_AUDIT_LOG, FP_READ_AUDIT_LOG } from "@/ui/auth/functional_permissions.ts";
 import { clearAuditLog, getAuditEntries, type AuditEntry } from "@/ui/api/AuditLog.ts";
-import { apiGet } from "@/ui/api/index.ts";
+import { getViewerContext } from "@/ui/api/session.ts";
 import { InputText } from "primereact/inputtext";
 
 type ViewerContext = { permissionNames: string[] };
@@ -25,7 +25,7 @@ export const meta: PageMeta = {
 
 const PAGE_SIZE = 50;
 
-function formatPayload(payload: Record<string, any>): string {
+function formatPayload(payload: Record<string, unknown>): string {
     try {
         return JSON.stringify(payload, null, 2);
     } catch {
@@ -68,7 +68,7 @@ export function Component() {
         setError(null);
         try {
             const [context, payload] = await Promise.all([
-                apiGet<ViewerContext>("/api/me/context"),
+                getViewerContext(),
                 getAuditEntries(page, PAGE_SIZE, {
                     jsonPathFilter: appliedJsonPath || undefined,
                     search: appliedSearch || undefined,

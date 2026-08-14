@@ -113,6 +113,32 @@ export async function getApiKeyFunctionalPermissions(db: DBClient, apiKeyIdentif
 }
 
 /**
+ * Lists the functional permissions assigned to each of the given API keys in one set-based query.
+ *
+ * @param db Database client.
+ * @param apiKeyIdentifiers API key identifiers.
+ * @returns Map from API key identifier to its assigned functional permissions.
+ */
+export async function getApiKeyFunctionalPermissionsForKeys(db: DBClient, apiKeyIdentifiers: string[]): Promise<Map<string, FunctionalPermissionSelectType[]>> {
+    const result = new Map<string, FunctionalPermissionSelectType[]>();
+    if (apiKeyIdentifiers.length === 0) return result;
+    const rows = await db
+        .select({ apiKeyIdentifier: ApiKeyFunctionalPermission.apiKeyIdentifier, functionalPermission: FunctionalPermission })
+        .from(ApiKeyFunctionalPermission)
+        .innerJoin(
+            FunctionalPermission,
+            eq(ApiKeyFunctionalPermission.functionalPermissionIdentifier, FunctionalPermission.identifier),
+        )
+        .where(inArray(ApiKeyFunctionalPermission.apiKeyIdentifier, apiKeyIdentifiers));
+    for (const row of rows) {
+        const existing = result.get(row.apiKeyIdentifier);
+        if (existing) existing.push(row.functionalPermission as FunctionalPermissionSelectType);
+        else result.set(row.apiKeyIdentifier, [row.functionalPermission as FunctionalPermissionSelectType]);
+    }
+    return result;
+}
+
+/**
  * Creates an API key row, hashes its secret, and stores permission assignments.
  *
  * @param db Database client.
@@ -138,7 +164,7 @@ export async function createApiKey(
             createdBy: data.createdBy,
             name: data.name,
             description: data.description ?? null,
-            keyHash: sql`crypt(${plainApiKey}, gen_salt('bf'))` as unknown as string,
+            keyHash: sql<string>`crypt(${plainApiKey}, gen_salt('bf'))`,
             expiresAt: data.expiresAt.toISOString(),
         })
         .returning();
@@ -181,12 +207,11 @@ export async function updateApiKeyMetadata(
         updatedAt: sql<string>`now()`,
     }).where(and(
         eq(ApiKeySchema.identifier, data.apiKeyIdentifier),
-        sql`${ApiKeySchema.updatedAt} = ${data.knownUpdatedAt}::timestamp`,
+        sql`${ApiKeySchema.updatedAt} = ${data.knownUpdatedAt}`,
     )).returning();
 
     if (rows[0]) {
-        PubSub.publish([TAG_API_KEY, TAG_UPDATE, TAG_AFTER], { identifiers: { api_key: data.apiKeyIdentifier } });
-        PubSub.publish([TAG_API_KEY, data.apiKeyIdentifier, TAG_UPDATE, TAG_AFTER], { identifier: data.apiKeyIdentifier, name: data.name, description: data.description });
+        PubSub.publish([TAG_API_KEY, data.apiKeyIdentifier, TAG_UPDATE, TAG_AFTER], { identifiers: { api_key: data.apiKeyIdentifier }, identifier: data.apiKeyIdentifier, name: data.name, description: data.description });
     }
     return rows[0];
 }
@@ -215,12 +240,11 @@ export async function prolongApiKey(
     }).where(and(
         eq(ApiKeySchema.identifier, data.apiKeyIdentifier),
         eq(ApiKeySchema.disabled, false),
-        sql`${ApiKeySchema.updatedAt} = ${data.knownUpdatedAt}::timestamp`,
+        sql`${ApiKeySchema.updatedAt} = ${data.knownUpdatedAt}`,
     )).returning();
 
     if (rows[0]) {
-        PubSub.publish([TAG_API_KEY, TAG_UPDATE, TAG_AFTER], { identifiers: { api_key: data.apiKeyIdentifier } });
-        PubSub.publish([TAG_API_KEY, data.apiKeyIdentifier, TAG_UPDATE, TAG_AFTER], { identifier: data.apiKeyIdentifier, expiresAt: data.expiresAt.toISOString(), lastProlongedBy: data.prolongByUserIdentifier });
+        PubSub.publish([TAG_API_KEY, data.apiKeyIdentifier, TAG_UPDATE, TAG_AFTER], { identifiers: { api_key: data.apiKeyIdentifier }, identifier: data.apiKeyIdentifier, expiresAt: data.expiresAt.toISOString(), lastProlongedBy: data.prolongByUserIdentifier });
     }
     return rows[0];
 }
@@ -248,12 +272,11 @@ export async function disableApiKey(
     }).where(and(
         eq(ApiKeySchema.identifier, data.apiKeyIdentifier),
         eq(ApiKeySchema.disabled, false),
-        sql`${ApiKeySchema.updatedAt} = ${data.knownUpdatedAt}::timestamp`,
+        sql`${ApiKeySchema.updatedAt} = ${data.knownUpdatedAt}`,
     )).returning();
 
     if (rows[0]) {
-        PubSub.publish([TAG_API_KEY, TAG_DISABLE, TAG_AFTER], { identifiers: { api_key: data.apiKeyIdentifier } });
-        PubSub.publish([TAG_API_KEY, data.apiKeyIdentifier, TAG_DISABLE, TAG_AFTER], { identifier: data.apiKeyIdentifier, disabled: true, disabledAt: rows[0].disabledAt, disabledBy: rows[0].disabledBy });
+        PubSub.publish([TAG_API_KEY, data.apiKeyIdentifier, TAG_DISABLE, TAG_AFTER], { identifiers: { api_key: data.apiKeyIdentifier }, identifier: data.apiKeyIdentifier, disabled: true, disabledAt: rows[0].disabledAt, disabledBy: rows[0].disabledBy });
     }
     return rows[0];
 }
@@ -274,9 +297,11 @@ export async function deleteApiKey(
 ): Promise<boolean> {
     const rows = await db.delete(ApiKeySchema).where(and(
         eq(ApiKeySchema.identifier, data.apiKeyIdentifier),
-        sql`${ApiKeySchema.updatedAt} = ${data.knownUpdatedAt}::timestamp`,
+        sql`${ApiKeySchema.updatedAt} = ${data.knownUpdatedAt}`,
     )).returning();
-    PubSub.publish([TAG_API_KEY, TAG_DELETE, TAG_AFTER], { identifiers: { api_key: data.apiKeyIdentifier } });
+    if (rows.length > 0) {
+        PubSub.publish([TAG_API_KEY, data.apiKeyIdentifier, TAG_DELETE, TAG_AFTER], { identifiers: { api_key: data.apiKeyIdentifier }, identifier: data.apiKeyIdentifier });
+    }
     return rows.length > 0;
 }
 
@@ -301,7 +326,7 @@ export async function replaceApiKeyFunctionalPermissions(
         .set({ updatedAt: sql<string>`now()` })
         .where(and(
             eq(ApiKeySchema.identifier, data.apiKeyIdentifier),
-            sql`${ApiKeySchema.updatedAt} = ${data.knownUpdatedAt}::timestamp`,
+            sql`${ApiKeySchema.updatedAt} = ${data.knownUpdatedAt}`,
         ))
         .returning({ identifier: ApiKeySchema.identifier });
     if (touched.length < 1) return false;
@@ -337,7 +362,6 @@ export async function validateApiKeySecret(db: DBClient, apiKeySecret: string): 
             sql`${ApiKeySchema.expiresAt} > now()`,
             sql`${ApiKeySchema.keyHash} = crypt(${apiKeySecret}, ${ApiKeySchema.keyHash})`,
         ))
-        .orderBy(desc(ApiKeySchema.createdAt))
         .limit(1);
     return row;
 }

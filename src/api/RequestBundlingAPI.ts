@@ -1,6 +1,7 @@
 import type { ApiInstance } from "@/apps/api.ts";
 import { Type } from "@sinclair/typebox";
 import { devMode } from "@/devmode.ts";
+import { bundlingDebug, internalApiBaseUrl, port as envPort } from "@/services/Env.ts";
 import type {
     RequestBundlingRequestItem,
     RequestBundlingResponseItem,
@@ -8,7 +9,7 @@ import type {
 } from "@/types/RequestBundlingType.ts";
 import { getRequestBundlingClientRuntimeConfig, getRequestBundlingServerConfig } from "@/services/RequestBundling.ts";
 import { RequestBundlingClientConfigSchema } from "@/types/RequestBundlingType.ts";
-import { ErrorResponseSchema } from "@/types/ApiType.ts";
+import { ErrorResponseSchema, UnauthenticatedErrorResponseSchema } from "@/types/ApiType.ts";
 
 /** Mutating HTTP methods accepted by request bundling. */
 const ALLOWED_METHODS = new Set(["POST", "PUT", "PATCH", "DELETE"]);
@@ -106,7 +107,7 @@ export default function register(app: ApiInstance) {
     }, {
         response: {
             200: RequestBundlingClientConfigSchema,
-            401: Type.String({ description: "Unauthenticated. No valid session, API key, or bearer token was provided." }),
+            401: UnauthenticatedErrorResponseSchema,
         },
         detail: {
             tags: ["Request Bundling"],
@@ -139,9 +140,9 @@ export default function register(app: ApiInstance) {
             return toJsonResponse(400, { error: "requests must be a non-empty array of valid request bundling items" });
         }
 
-        const serverPort = Number(process.env.PORT) || 8000;
+        const serverPort = envPort;
         const localOrigin = `http://localhost:${serverPort}`;
-        const origin = devMode ? localOrigin : (process.env.INTERNAL_API_BASE_URL || localOrigin);
+        const origin = devMode ? localOrigin : (internalApiBaseUrl || localOrigin);
         const authorizationHeader = request.headers.get("Authorization") ?? undefined;
         const apiKeyHeader = request.headers.get("X-API-Key") ?? undefined;
         const cookieHeader = request.headers.get("Cookie") ?? undefined;
@@ -262,7 +263,7 @@ export default function register(app: ApiInstance) {
                         }
                     }
 
-                    if (!response.ok && process.env.BUNDLING_DEBUG === "1") {
+                    if (!response.ok && bundlingDebug) {
                         console.warn(`[api/request_bundling] sub-request ${response.status}`, {
                             method: req.method,
                             url: subUrl,
@@ -290,7 +291,13 @@ export default function register(app: ApiInstance) {
                 }
             };
 
-            await Promise.allSettled(requests.map((req) => dispatchOne(req)));
+            // Sub-requests are executed sequentially, in request order (the documented
+            // semantic): each sub-request is awaited before the next starts, so ordering
+            // assumptions like create-then-update within one batch hold. Per-request results
+            // are still streamed as NDJSON as each completes.
+            for (const req of requests) {
+                await dispatchOne(req);
+            }
             flush();
 
             try {
@@ -319,7 +326,7 @@ export default function register(app: ApiInstance) {
         response: {
             200: Type.Any({ description: "NDJSON stream where each line is the result of one sub-request: clientRequestId, status, body or error, optional signal/mayHaveExecuted, and serverMayTakeUntil." }),
             400: ErrorResponseSchema,
-            401: Type.String({ description: "Unauthenticated. No valid session, API key, or bearer token was provided." }),
+            401: UnauthenticatedErrorResponseSchema,
         },
         detail: {
             tags: ["Request Bundling"],

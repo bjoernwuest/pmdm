@@ -9,6 +9,7 @@ export type UserProfileConfigEntry = {
     userValue: unknown;
     inputFormat: string;
     outputFormat: string;
+    updatedAt: string | null;
 };
 
 export type UserProfileConfigResponse = {
@@ -17,7 +18,7 @@ export type UserProfileConfigResponse = {
 
 export type UserProfileConfigUpdateRequest = {
     value: unknown;
-    knownValue?: unknown;
+    knownUpdatedAt?: string;
 };
 
 export async function getUserProfileConfigEntries(): Promise<UserProfileConfigResponse> {

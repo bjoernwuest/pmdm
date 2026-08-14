@@ -5,8 +5,8 @@ import { Identifier, identifierColumnType, timestamps } from "./helpers.ts";
 /**
  * Represents the "users" database table.
  *
- * Contains information about users such as their first name, last name, email, and active status.
- * Includes additional identifier and timestamp fields as well as an index on the isActive column.
+ * Contains information about users such as their first name, last name, email, and disabled status.
+ * Includes additional identifier and timestamp fields as well as an index on the disabled column.
  */
 export const User = pgTable("users", {
     firstName: text("first_name").notNull(),
@@ -32,7 +32,7 @@ export const User = pgTable("users", {
  * - timestamps: Tracks creation and update times for entries in this table.
  *
  * Indexes:
- * - group_isactive_idx: Index created on the "isActive" field to optimize queries filtering by activity status.
+ * - group_disabled_idx: Index created on the "disabled" field to optimize queries filtering by disabled status.
  */
 export const Group = pgTable("groups", {
     groupName: text("group_name").notNull(),

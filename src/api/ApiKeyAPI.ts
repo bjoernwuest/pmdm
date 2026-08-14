@@ -1,7 +1,7 @@
 import type {ApiInstance} from "@/apps/api.ts";
 import {status} from "elysia";
 import { Type } from "@sinclair/typebox";
-import {authorize, getApiKeyLength, getApiKeyValidityDays, getLoggedinUserObject} from "@/services/Auth.ts";
+import {getApiKeyLength, getApiKeyValidityDays, getLoggedinUserObject, requirePermissions} from "@/services/Auth.ts";
 import {FP_CREATE_API_KEYS, FP_PROLONG_API_KEYS, FP_VIEW_API_KEYS,} from "@/services/auth/FunctionalPermissions.ts";
 import {
     createApiKey,
@@ -10,6 +10,7 @@ import {
     getApiKey,
     getApiKeyCount,
     getApiKeyFunctionalPermissions,
+    getApiKeyFunctionalPermissionsForKeys,
     getApiKeys,
     isPgcryptoMissingError,
     prolongApiKey,
@@ -31,22 +32,30 @@ import {
     ApiKeyUpdateMetadataBodySchema,
     ApiKeyUpdatedAtResponseSchema,
 } from "@/types/ApiKeyType.ts";
-import { OptimisticLockBodySchema, SuccessResponseSchema } from "@/types/ApiType.ts";
+import {
+    ApiKeyIdParamsSchema,
+    ConflictErrorResponseSchema,
+    ForbiddenErrorResponseSchema,
+    ForbiddenHumanUserErrorResponseSchema,
+    IncludeDisabledQuerySchema,
+    InternalServerErrorResponseSchema,
+    NotFoundErrorResponseSchema,
+    OptimisticLockBodySchema,
+    PaginationQuerySchema,
+    SuccessResponseSchema,
+    UnauthenticatedErrorResponseSchema,
+} from "@/types/ApiType.ts";
 import type { IdentifierType } from "@/types/helpers.ts";
 import {getUserListPageSizes} from "@/services/ui_config.ts";
-
-function parseBooleanQuery(value: unknown): boolean {
-    return value === true || value === "true" || value === "1";
-}
+import {parseBooleanQuery} from "@/utils/parseBooleanQuery.ts";
+import type {FunctionalPermissionSelectType} from "@/types/_FunctionalPermissionType.ts";
 
 // noinspection JSUnusedGlobalSymbols
 export default function register(app: ApiInstance) {
     app.get("/api_keys", async (context) => {
         const claims = context.session?.idTokenClaims ?? context.tokenClaims ?? {};
-        const authz = await authorize(context.dbClient, claims, [FP_VIEW_API_KEYS]);
-        if (!authz.some((perm) => perm.identifier === FP_VIEW_API_KEYS.identifier)) {
-            return status(403, `Permission denied. Required: ${FP_VIEW_API_KEYS.functionalPermissionName}`);
-        }
+        const permissionCheck = await requirePermissions(context.dbClient, claims, [FP_VIEW_API_KEYS]);
+        if (!permissionCheck.ok) return permissionCheck.denial;
 
         const availablePageSizes = await getUserListPageSizes(context.dbClient, typeof claims.oid === "string" ? claims.oid : undefined);
         const page = Math.max(0, Number(context.query.page ?? 0));
@@ -55,8 +64,9 @@ export default function register(app: ApiInstance) {
 
         const total = await getApiKeyCount(context.dbClient, includeDisabled);
         const rows = await getApiKeys(context.dbClient, { page, pageSize }, includeDisabled);
-        const apiKeys = await Promise.all(rows.map(async (apiKey) => {
-            const permissions = await getApiKeyFunctionalPermissions(context.dbClient, apiKey.identifier);
+        const permissionsByKey = await getApiKeyFunctionalPermissionsForKeys(context.dbClient, rows.map((apiKey) => apiKey.identifier));
+        const apiKeys = rows.map((apiKey) => {
+            const permissions = permissionsByKey.get(apiKey.identifier) ?? [];
             return {
                 identifier: apiKey.identifier,
                 name: apiKey.name,
@@ -72,7 +82,7 @@ export default function register(app: ApiInstance) {
                 disabledBy: apiKey.disabledBy ?? null,
                 permissionNames: permissions.map((perm) => perm.functionalPermissionName),
             };
-        }));
+        });
 
         return {
             apiKeys,
@@ -83,10 +93,11 @@ export default function register(app: ApiInstance) {
             includeDisabled,
         };
     }, {
+        query: Type.Composite([PaginationQuerySchema, IncludeDisabledQuerySchema]),
         response: {
             200: ApiKeysResponseSchema,
-            401: Type.String({ description: "Unauthenticated. No valid session, API key, or bearer token was provided." }),
-            403: Type.String({ description: "Forbidden. The authenticated principal lacks the required functional permission." }),
+            401: UnauthenticatedErrorResponseSchema,
+            403: ForbiddenErrorResponseSchema,
         },
         detail: {
             tags: ["API Key"],
@@ -127,13 +138,11 @@ export default function register(app: ApiInstance) {
 
     app.get("/api_keys/:apikeyid", async (context) => {
         const claims = context.session?.idTokenClaims ?? context.tokenClaims ?? {};
-        const authz = await authorize(context.dbClient, claims, [FP_VIEW_API_KEYS]);
-        if (!authz.some((perm) => perm.identifier === FP_VIEW_API_KEYS.identifier)) {
-            return status(403, `Permission denied. Required: ${FP_VIEW_API_KEYS.functionalPermissionName}`);
-        }
+        const permissionCheck = await requirePermissions(context.dbClient, claims, [FP_VIEW_API_KEYS]);
+        if (!permissionCheck.ok) return permissionCheck.denial;
 
         const apiKey = await getApiKey(context.dbClient, context.params.apikeyid);
-        if (!apiKey) return status(404, "API key does not exist");
+        if (!apiKey) return status(404, { error: "API key does not exist" });
 
         const [permissions, allPermissions] = await Promise.all([
             getApiKeyFunctionalPermissions(context.dbClient, apiKey.identifier),
@@ -179,11 +188,12 @@ export default function register(app: ApiInstance) {
             relatedUsers,
         };
     }, {
+        params: ApiKeyIdParamsSchema,
         response: {
             200: ApiKeyDetailSchema,
-            401: Type.String({ description: "Unauthenticated. No valid session, API key, or bearer token was provided." }),
-            403: Type.String({ description: "Forbidden. The authenticated principal lacks the required functional permission." }),
-            404: Type.String({ description: "Not found. The requested resource does not exist." }),
+            401: UnauthenticatedErrorResponseSchema,
+            403: ForbiddenErrorResponseSchema,
+            404: NotFoundErrorResponseSchema,
         },
         detail: {
             tags: ["API Key"],
@@ -210,13 +220,11 @@ export default function register(app: ApiInstance) {
 
     app.post("/api_keys", async (context) => {
         const claims = context.session?.idTokenClaims ?? context.tokenClaims ?? {};
-        const authz = await authorize(context.dbClient, claims, [FP_CREATE_API_KEYS]);
-        if (!authz.some((perm) => perm.identifier === FP_CREATE_API_KEYS.identifier)) {
-            return status(403, `Permission denied. Required: ${FP_CREATE_API_KEYS.functionalPermissionName}`);
-        }
+        const permissionCheck = await requirePermissions(context.dbClient, claims, [FP_CREATE_API_KEYS]);
+        if (!permissionCheck.ok) return permissionCheck.denial;
 
         const user = await getLoggedinUserObject(context.dbClient, claims);
-        if (!user) return status(403, 'Permission denied. Must be executed by human user');
+        if (!user) return status(403, { error: 'Permission denied. Must be executed by human user' });
         const keyLength = await getApiKeyLength(context.dbClient);
         const validityDays = await getApiKeyValidityDays(context.dbClient);
         const expiresAt = new Date(Date.now() + validityDays * 24 * 60 * 60 * 1000);
@@ -235,7 +243,7 @@ export default function register(app: ApiInstance) {
             });
         } catch (error) {
             if (isPgcryptoMissingError(error)) {
-                return status(500, "API key could not be created because PostgreSQL extension 'pgcrypto' is not installed. Run: CREATE EXTENSION IF NOT EXISTS pgcrypto;");
+                return status(500, { error: "API key could not be created because PostgreSQL extension 'pgcrypto' is not installed. Run: CREATE EXTENSION IF NOT EXISTS pgcrypto;" });
             }
             throw error;
         }
@@ -251,9 +259,9 @@ export default function register(app: ApiInstance) {
         body: ApiKeyCreateBodySchema,
         response: {
             200: ApiKeyCreatedResponseSchema,
-            401: Type.String({ description: "Unauthenticated. No valid session, API key, or bearer token was provided." }),
-            403: Type.String({ description: "Forbidden. The authenticated principal lacks the required functional permission. Must be executed by a human user via browser session." }),
-            500: Type.String({ description: "Internal server error." }),
+            401: UnauthenticatedErrorResponseSchema,
+            403: ForbiddenHumanUserErrorResponseSchema,
+            500: InternalServerErrorResponseSchema,
         },
         detail: {
             tags: ["API Key"],
@@ -273,10 +281,8 @@ export default function register(app: ApiInstance) {
 
     app.put("/api_keys/:apikeyid", async (context) => {
         const claims = context.session?.idTokenClaims ?? context.tokenClaims ?? {};
-        const authz = await authorize(context.dbClient, claims, [FP_PROLONG_API_KEYS]);
-        if (!authz.some((perm) => perm.identifier === FP_PROLONG_API_KEYS.identifier)) {
-            return status(403, `Permission denied. Required: ${FP_PROLONG_API_KEYS.functionalPermissionName}`);
-        }
+        const permissionCheck = await requirePermissions(context.dbClient, claims, [FP_PROLONG_API_KEYS]);
+        if (!permissionCheck.ok) return permissionCheck.denial;
 
         const updated = await updateApiKeyMetadata(context.dbClient, {
             apiKeyIdentifier: context.params.apikeyid,
@@ -285,15 +291,16 @@ export default function register(app: ApiInstance) {
             description: context.body.description ?? null,
         });
 
-        if (!updated) return status(409, "API key was modified by another user");
+        if (!updated) return status(409, { error: "API key was modified by another user" });
         return { updatedAt: updated.updatedAt };
     }, {
+        params: ApiKeyIdParamsSchema,
         body: ApiKeyUpdateMetadataBodySchema,
         response: {
             200: ApiKeyUpdatedAtResponseSchema,
-            401: Type.String({ description: "Unauthenticated. No valid session, API key, or bearer token was provided." }),
-            403: Type.String({ description: "Forbidden. The authenticated principal lacks the required functional permission." }),
-            409: Type.String({ description: "Conflict. The resource was modified concurrently; retry with the current value (optimistic locking)." }),
+            401: UnauthenticatedErrorResponseSchema,
+            403: ForbiddenErrorResponseSchema,
+            409: ConflictErrorResponseSchema,
         },
         detail: {
             tags: ["API Key"],
@@ -320,13 +327,11 @@ export default function register(app: ApiInstance) {
 
     app.put("/api_keys/:apikeyid/prolong", async (context) => {
         const claims = context.session?.idTokenClaims ?? context.tokenClaims ?? {};
-        const authz = await authorize(context.dbClient, claims, [FP_PROLONG_API_KEYS]);
-        if (!authz.some((perm) => perm.identifier === FP_PROLONG_API_KEYS.identifier)) {
-            return status(403, `Permission denied. Required: ${FP_PROLONG_API_KEYS.functionalPermissionName}`);
-        }
+        const permissionCheck = await requirePermissions(context.dbClient, claims, [FP_PROLONG_API_KEYS]);
+        if (!permissionCheck.ok) return permissionCheck.denial;
 
         const user = await getLoggedinUserObject(context.dbClient, claims);
-        if (!user) return status(403, 'Permission denied. Must be executed by human user');
+        if (!user) return status(403, { error: 'Permission denied. Must be executed by human user' });
         const expiresAt = new Date(Date.now() + context.body.days * 24 * 60 * 60 * 1000);
 
         const updated = await prolongApiKey(context.dbClient, {
@@ -336,7 +341,7 @@ export default function register(app: ApiInstance) {
             expiresAt,
         });
 
-        if (!updated) return status(409, "API key was modified, disabled, or no longer exists");
+        if (!updated) return status(409, { error: "API key was modified, disabled, or no longer exists" });
         return {
             updatedAt: updated.updatedAt,
             expiresAt: updated.expiresAt,
@@ -344,12 +349,13 @@ export default function register(app: ApiInstance) {
             lastProlongedBy: updated.lastProlongedBy ?? null,
         };
     }, {
+        params: ApiKeyIdParamsSchema,
         body: ApiKeyProlongBodySchema,
         response: {
             200: ApiKeyProlongResponseSchema,
-            401: Type.String({ description: "Unauthenticated. No valid session, API key, or bearer token was provided." }),
-            403: Type.String({ description: "Forbidden. The authenticated principal lacks the required functional permission. Must be executed by a human user via browser session." }),
-            409: Type.String({ description: "Conflict. The resource was modified concurrently; retry with the current value (optimistic locking)." }),
+            401: UnauthenticatedErrorResponseSchema,
+            403: ForbiddenHumanUserErrorResponseSchema,
+            409: ConflictErrorResponseSchema,
         },
         detail: {
             tags: ["API Key"],
@@ -376,19 +382,17 @@ export default function register(app: ApiInstance) {
 
     app.put("/api_keys/:apikeyid/disable", async (context) => {
         const claims = context.session?.idTokenClaims ?? context.tokenClaims ?? {};
-        const authz = await authorize(context.dbClient, claims, [FP_PROLONG_API_KEYS]);
-        if (!authz.some((perm) => perm.identifier === FP_PROLONG_API_KEYS.identifier)) {
-            return status(403, `Permission denied. Required: ${FP_PROLONG_API_KEYS.functionalPermissionName}`);
-        }
+        const permissionCheck = await requirePermissions(context.dbClient, claims, [FP_PROLONG_API_KEYS]);
+        if (!permissionCheck.ok) return permissionCheck.denial;
 
         const user = await getLoggedinUserObject(context.dbClient, claims);
-        if (!user) return status(403, 'Permission denied. Must be executed by human user');
+        if (!user) return status(403, { error: 'Permission denied. Must be executed by human user' });
         const updated = await disableApiKey(context.dbClient, {
             apiKeyIdentifier: context.params.apikeyid,
             knownUpdatedAt: context.body.knownUpdatedAt,
             disabledBy: user.identifier,
         });
-        if (!updated) return status(409, "API key was modified, already disabled, or no longer exists");
+        if (!updated) return status(409, { error: "API key was modified, already disabled, or no longer exists" });
         return {
             updatedAt: updated.updatedAt,
             disabled: updated.disabled,
@@ -396,12 +400,13 @@ export default function register(app: ApiInstance) {
             disabledBy: updated.disabledBy ?? null,
         };
     }, {
+        params: ApiKeyIdParamsSchema,
         body: OptimisticLockBodySchema,
         response: {
             200: ApiKeyDisableResponseSchema,
-            401: Type.String({ description: "Unauthenticated. No valid session, API key, or bearer token was provided." }),
-            403: Type.String({ description: "Forbidden. The authenticated principal lacks the required functional permission. Must be executed by a human user via browser session." }),
-            409: Type.String({ description: "Conflict. The resource was modified concurrently; retry with the current value (optimistic locking)." }),
+            401: UnauthenticatedErrorResponseSchema,
+            403: ForbiddenHumanUserErrorResponseSchema,
+            409: ConflictErrorResponseSchema,
         },
         detail: {
             tags: ["API Key"],
@@ -428,13 +433,11 @@ export default function register(app: ApiInstance) {
 
     app.put("/api_keys/:apikeyid/permissions", async (context) => {
         const claims = context.session?.idTokenClaims ?? context.tokenClaims ?? {};
-        const authz = await authorize(context.dbClient, claims, [FP_PROLONG_API_KEYS]);
-        if (!authz.some((perm) => perm.identifier === FP_PROLONG_API_KEYS.identifier)) {
-            return status(403, `Permission denied. Required: ${FP_PROLONG_API_KEYS.functionalPermissionName}`);
-        }
+        const permissionCheck = await requirePermissions(context.dbClient, claims, [FP_PROLONG_API_KEYS]);
+        if (!permissionCheck.ok) return permissionCheck.denial;
 
         const user = await getLoggedinUserObject(context.dbClient, claims);
-        if (!user) return status(403, 'Permission denied. Must be executed by human user');
+        if (!user) return status(403, { error: 'Permission denied. Must be executed by human user' });
         const ok = await runInTransaction(context.dbClient, async (tx) => {
             return await replaceApiKeyFunctionalPermissions(tx, {
                 apiKeyIdentifier: context.params.apikeyid,
@@ -444,15 +447,16 @@ export default function register(app: ApiInstance) {
             });
         });
 
-        if (!ok) return status(409, "API key was modified by another user");
+        if (!ok) return status(409, { error: "API key was modified by another user" });
         return { success: true };
     }, {
+        params: ApiKeyIdParamsSchema,
         body: ApiKeyPermissionsBodySchema,
         response: {
             200: SuccessResponseSchema,
-            401: Type.String({ description: "Unauthenticated. No valid session, API key, or bearer token was provided." }),
-            403: Type.String({ description: "Forbidden. The authenticated principal lacks the required functional permission. Must be executed by a human user via browser session." }),
-            409: Type.String({ description: "Conflict. The resource was modified concurrently; retry with the current value (optimistic locking)." }),
+            401: UnauthenticatedErrorResponseSchema,
+            403: ForbiddenHumanUserErrorResponseSchema,
+            409: ConflictErrorResponseSchema,
         },
         detail: {
             tags: ["API Key"],
@@ -479,24 +483,23 @@ export default function register(app: ApiInstance) {
 
     app.delete("/api_keys/:apikeyid", async (context) => {
         const claims = context.session?.idTokenClaims ?? context.tokenClaims ?? {};
-        const authz = await authorize(context.dbClient, claims, [FP_PROLONG_API_KEYS]);
-        if (!authz.some((perm) => perm.identifier === FP_PROLONG_API_KEYS.identifier)) {
-            return status(403, `Permission denied. Required: ${FP_PROLONG_API_KEYS.functionalPermissionName}`);
-        }
+        const permissionCheck = await requirePermissions(context.dbClient, claims, [FP_PROLONG_API_KEYS]);
+        if (!permissionCheck.ok) return permissionCheck.denial;
 
         const deleted = await deleteApiKey(context.dbClient, {
             apiKeyIdentifier: context.params.apikeyid,
             knownUpdatedAt: context.body.knownUpdatedAt,
         });
-        if (!deleted) return status(409, "API key was modified by another user");
+        if (!deleted) return status(409, { error: "API key was modified by another user" });
         return { success: true };
     }, {
+        params: ApiKeyIdParamsSchema,
         body: OptimisticLockBodySchema,
         response: {
             200: SuccessResponseSchema,
-            401: Type.String({ description: "Unauthenticated. No valid session, API key, or bearer token was provided." }),
-            403: Type.String({ description: "Forbidden. The authenticated principal lacks the required functional permission." }),
-            409: Type.String({ description: "Conflict. The resource was modified concurrently; retry with the current value (optimistic locking)." }),
+            401: UnauthenticatedErrorResponseSchema,
+            403: ForbiddenErrorResponseSchema,
+            409: ConflictErrorResponseSchema,
         },
         detail: {
             tags: ["API Key"],

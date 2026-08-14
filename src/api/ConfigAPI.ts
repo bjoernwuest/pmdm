@@ -1,10 +1,9 @@
 import {status} from "elysia";
-import { Type } from "@sinclair/typebox";
 import {Value} from "@sinclair/typebox/value";
 import type {ApiInstance} from "@/apps/api.ts";
-import {authorize} from "@/services/Auth.ts";
+import {requirePermissions} from "@/services/Auth.ts";
 import {FP_MANAGE_CONFIGURATION} from "@/services/auth/FunctionalPermissions.ts";
-import {getAllConfigEntries, getConfigEntriesByKey, upsertConfigEntry} from "@/repo/ConfigRepo.ts";
+import {getAllConfigEntries, getConfigEntriesByKey, updateConfigEntry, upsertConfigEntry} from "@/repo/ConfigRepo.ts";
 import {parseConfigValue, validateConfigInputFormat} from "@/services/Config.ts";
 import {
     type ConfigEntrySelectType,
@@ -13,25 +12,14 @@ import {
     ConfigEntryUiSchema,
     ConfigUpdateBodySchema,
     ConfigParamsSchema,
-    ConfigUpdateConflictSchema,
 } from "@/types/ConfigType.ts";
-import { ErrorResponseSchema } from "@/types/ApiType.ts";
-
-function canonicalizeJson(value: unknown): unknown {
-    if (Array.isArray(value)) return value.map((item) => canonicalizeJson(item));
-    if (value && typeof value === "object") {
-        const obj = value as Record<string, unknown>;
-        return Object.keys(obj).sort().reduce<Record<string, unknown>>((acc, key) => {
-            acc[key] = canonicalizeJson(obj[key]);
-            return acc;
-        }, {});
-    }
-    return value;
-}
-
-function equalsJson(a: unknown, b: unknown): boolean {
-    return JSON.stringify(canonicalizeJson(a)) === JSON.stringify(canonicalizeJson(b));
-}
+import {
+    BadRequestErrorResponseSchema,
+    ForbiddenErrorResponseSchema,
+    NotFoundErrorResponseSchema,
+    OptimisticLockConflictResponseSchema,
+    UnauthenticatedErrorResponseSchema,
+} from "@/types/ApiType.ts";
 
 function toUiEntry(entry: ConfigEntrySelectType): {
     domain: string;
@@ -42,6 +30,7 @@ function toUiEntry(entry: ConfigEntrySelectType): {
     inputFormat: string;
     outputFormat: string;
     userProfile: boolean;
+    updatedAt: string;
 } {
     return {
         domain: entry.domain,
@@ -52,16 +41,16 @@ function toUiEntry(entry: ConfigEntrySelectType): {
         inputFormat: entry.inputFormat,
         outputFormat: entry.outputFormat,
         userProfile: entry.userProfile,
+        updatedAt: entry.updatedAt,
     };
 }
 
 // noinspection JSUnusedGlobalSymbols
 export default function register(app: ApiInstance) {
     app.get("/config", async (context) => {
-        const authz = await authorize(context.dbClient, context.session?.idTokenClaims ?? context.tokenClaims ?? {}, [FP_MANAGE_CONFIGURATION]);
-        if (!authz.some((perm) => perm.identifier === FP_MANAGE_CONFIGURATION.identifier)) {
-            return status(403, `Permission denied. Required: ${FP_MANAGE_CONFIGURATION.functionalPermissionName}`);
-        }
+        const claims = context.session?.idTokenClaims ?? context.tokenClaims ?? {};
+        const permissionCheck = await requirePermissions(context.dbClient, claims, [FP_MANAGE_CONFIGURATION]);
+        if (!permissionCheck.ok) return permissionCheck.denial;
 
         const entries = await getAllConfigEntries(context.dbClient, true);
         const grouped = entries.reduce<Map<string, ReturnType<typeof toUiEntry>[]>>((acc, entry) => {
@@ -95,42 +84,38 @@ export default function register(app: ApiInstance) {
         },
         response: {
             200: ConfigDomainsResponseSchema,
-            401: Type.String({ description: "Unauthenticated. No valid session, API key, or bearer token was provided." }),
-            403: Type.String({ description: "Forbidden. The authenticated principal lacks the required functional permission." }),
+            401: UnauthenticatedErrorResponseSchema,
+            403: ForbiddenErrorResponseSchema,
         },
     });
 
     app.put("/config/:domain/:key", async (context) => {
-        const authz = await authorize(context.dbClient, context.session?.idTokenClaims ?? context.tokenClaims ?? {}, [FP_MANAGE_CONFIGURATION]);
-        if (!authz.some((perm) => perm.identifier === FP_MANAGE_CONFIGURATION.identifier)) {
-            return status(403, `Permission denied. Required: ${FP_MANAGE_CONFIGURATION.functionalPermissionName}`);
-        }
+        const claims = context.session?.idTokenClaims ?? context.tokenClaims ?? {};
+        const permissionCheck = await requirePermissions(context.dbClient, claims, [FP_MANAGE_CONFIGURATION]);
+        if (!permissionCheck.ok) return permissionCheck.denial;
 
         const [entry] = await getConfigEntriesByKey(context.dbClient, context.params.domain, context.params.key, { limit: 1 });
-        if (!entry || !entry.editInUI) return status(404, "Configuration entry not found");
+        if (!entry || !entry.editInUI) return status(404, { error: "Configuration entry not found" });
 
-        if (!equalsJson(context.body.knownValue, entry.value)) {
+        const parsed = parseConfigValue(entry.type, context.body.value);
+        if (!parsed.ok) return status(400, { error: parsed.error });
+
+        const formatValidation = validateConfigInputFormat(entry, parsed.value);
+        if (!formatValidation.ok) return status(400, { error: formatValidation.error });
+
+        const schema = schemaForConfigType(entry.type);
+        if (!Value.Check(schema, parsed.value)) return status(400, { error: "Type validation failed" });
+
+        const [updated] = await updateConfigEntry(context.dbClient, context.params.domain, context.params.key, parsed.value, context.body.knownUpdatedAt);
+        if (!updated) {
+            const [current] = await getConfigEntriesByKey(context.dbClient, context.params.domain, context.params.key, { limit: 1 });
             return status(409, {
                 error: "Config entry was modified by another user",
-                currentValue: entry.value,
+                currentValue: current?.value ?? null,
             });
         }
 
-        const parsed = parseConfigValue(entry.type, context.body.value);
-        if (!parsed.ok) return status(400, parsed.error);
-
-        const formatValidation = validateConfigInputFormat(entry, parsed.value);
-        if (!formatValidation.ok) return status(400, formatValidation.error);
-
-        const schema = schemaForConfigType(entry.type);
-        if (!Value.Check(schema, parsed.value)) return status(400, "Type validation failed");
-
-        const [updated] = await upsertConfigEntry(context.dbClient, {
-            ...entry,
-            value: parsed.value,
-        });
-
-        return toUiEntry(updated!);
+        return toUiEntry(updated);
     }, {
         body: ConfigUpdateBodySchema,
         params: ConfigParamsSchema,
@@ -164,11 +149,11 @@ export default function register(app: ApiInstance) {
         },
         response: {
             200: ConfigEntryUiSchema,
-            400: Type.Union([Type.String(), ErrorResponseSchema], { description: "Bad request. The request body or parameters failed validation." }),
-            401: Type.String({ description: "Unauthenticated. No valid session, API key, or bearer token was provided." }),
-            403: Type.String({ description: "Forbidden. The authenticated principal lacks the required functional permission." }),
-            404: Type.String({ description: "Not found. The requested resource does not exist." }),
-            409: ConfigUpdateConflictSchema,
+            400: BadRequestErrorResponseSchema,
+            401: UnauthenticatedErrorResponseSchema,
+            403: ForbiddenErrorResponseSchema,
+            404: NotFoundErrorResponseSchema,
+            409: OptimisticLockConflictResponseSchema,
         },
     });
 }

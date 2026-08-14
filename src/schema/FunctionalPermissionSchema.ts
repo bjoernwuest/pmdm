@@ -1,4 +1,4 @@
-import { pgTable, primaryKey, text, uuid } from "drizzle-orm/pg-core";
+import { index, pgTable, primaryKey, text, uuid } from "drizzle-orm/pg-core";
 import { foreignKey } from "drizzle-orm/pg-core";
 import { Identifier, timestamps } from "./helpers";
 import { Group, User } from "./UserSchema.ts";
@@ -42,20 +42,6 @@ export const FunctionalPermission = pgTable("functional_permissions", {
  * - Combines `functionalPermissionIdentifier` and `grantedTo` to form a composite primary key named "functional_permissions_of_group_pkey".
  *
  * Foreign Keys:
- **/
-/**
- * Represents the "functional_permissions_of_group" table in the database.
- * This table is used to define the functional permissions granted to specific groups.
- *
- * Fields:
- * - `functionalPermissionIdentifier`: A UUID representing the unique identifier of the functional permission. This field is required.
- * - `grantedTo`: A UUID representing the unique identifier of the group to which the functional permission is granted. This field is required.
- * - `grantedBy`: A UUID representing the unique identifier of the user who granted the permission. This field is required.
- *
- * Primary Key:
- * - Combines `functionalPermissionIdentifier` and `grantedTo` to form a composite primary key named "functional_permissions_of_group_pkey".
- *
- * Foreign Keys:
  * - `func_perms_of_group_permission_fkey`: Links `functionalPermissionIdentifier` to the `identifier` field of the `FunctionalPermission` table. Cascades on delete.
  * - `func_perms_of_group_granted_to_fkey`: Links `grantedTo` to the `identifier` field of the `Group` table. Cascades on delete.
  * - `func_perms_of_group_granted_by_fkey`: Links `grantedBy` to the `identifier` field of the `User` table. Cascades on delete.
@@ -69,4 +55,7 @@ export const FunctionalPermissionsOfGroup = pgTable("functional_permissions_of_g
     foreignKey({name: "func_perms_of_group_permission_fkey", columns: [table.functionalPermissionIdentifier], foreignColumns: [FunctionalPermission.identifier]}).onDelete("cascade"),
     foreignKey({name: "func_perms_of_group_granted_to_fkey", columns: [table.grantedTo], foreignColumns: [Group.identifier]}).onDelete("cascade"),
     foreignKey({name: "func_perms_of_group_granted_by_fkey", columns: [table.grantedBy], foreignColumns: [User.identifier]}).onDelete("cascade"),
+    // Serves the `grantedTo in (...)` filters (getFunctionalPermissionsOfUser/getFunctionalPermissionsOfGroups);
+    // the composite PK order (functionalPermissionIdentifier, grantedTo) does not.
+    index("functional_permissions_of_group_granted_to_idx").on(table.grantedTo),
 ]);

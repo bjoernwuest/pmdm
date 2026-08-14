@@ -1,6 +1,10 @@
-// Applications using this template are encouraged to place their functional permission in this file and not in `functional_perms.ts` to achieve stability with upgrades of the template.
+// Applications using this template are encouraged to place their functional permissions in
+// this file and not in `FunctionalPermissions.ts` to achieve stability with upgrades of the template.
+//
+// Add each permission as a `FunctionalPermissionInsertType` entry to the exported
+// `functionalPermissionDefinitions` array. `registerFunctionalPermissions()` (in
+// `FunctionalPermissions.ts`) registers these alongside the built-in permissions at startup.
 
-import type { FunctionalPermissionSelectType, FunctionalPermissionInsertType } from "@/types/FunctionalPermissionType.ts";
-import { FunctionalPermissionNames } from "@/ui/auth/functional_permissions.ts";
-import { registerFunctionalPermission } from "@/repo/FunctionalPermissionRepo.ts";
-import { getDatabaseConnection } from "@/services/DatabaseDriver.ts";
+import type {FunctionalPermissionInsertType} from "@/types/FunctionalPermissionType.ts";
+
+export const functionalPermissionDefinitions: FunctionalPermissionInsertType[] = [];

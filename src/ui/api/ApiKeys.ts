@@ -6,8 +6,9 @@ import type {
 } from "@/types/ApiKeyType.ts";
 
 export async function getApiKeys(page: number, pageSize: number, includeDisabled: boolean): Promise<ApiKeysResponse> {
-    const includeDisabledParam = includeDisabled ? "&includeDisabled=true" : "";
-    return apiGet<ApiKeysResponse>(`/api/api_keys?page=${page}&pageSize=${pageSize}${includeDisabledParam}`);
+    const params = new URLSearchParams({ page: String(page), pageSize: String(pageSize) });
+    if (includeDisabled) params.set("includeDisabled", "true");
+    return apiGet<ApiKeysResponse>(`/api/api_keys?${params.toString()}`);
 }
 
 export async function getApiKeyDetail(apiKeyIdentifier: string): Promise<ApiKeyDetailResponse> {

@@ -24,7 +24,20 @@ git push origin master
 # Needed configuration
 Create a PostgresSQL database with user and password. Enter this information in a file `.env` in your project root:
 DATABASE_URL=postgresql://<username>:<password>@<postgresql-host>:<postgresql-port, usually 5432>/<name of database>
-ADVISORY_LOCK=<generate and enter a 64bit integer number (postitive or negative)>
+ADVISORY_LOCK=<optional: a 64bit integer number (positive or negative); when unset, the application default -7482650123549836421 is used>
+
+# Trusted proxy configuration
+The application honors `X-Forwarded-Proto`/`X-Forwarded-Host` request headers **only** when the environment variable `TRUST_PROXY=1` is set. By default (unset), forwarded headers are ignored entirely and the public URL is derived from the incoming request itself.
+
+- Enable `TRUST_PROXY=1` **only** when the application runs behind a reverse proxy that terminates TLS and *sets/overwrites* `X-Forwarded-Proto` and `X-Forwarded-Host` on every request.
+- The proxy **must strip** any client-supplied `X-Forwarded-Proto`/`X-Forwarded-Host` headers before setting its own.
+- Enabling `TRUST_PROXY` without such a proxy exposes the deployment to host-header spoofing (OIDC `redirect_uri` would be built from attacker-controlled headers).
+
+Example nginx configuration:
+```nginx
+proxy_set_header X-Forwarded-Proto $scheme;
+proxy_set_header X-Forwarded-Host $host;
+```
 
 # First start
 1. run `bun run drizzle` to generate the database schema and migration.

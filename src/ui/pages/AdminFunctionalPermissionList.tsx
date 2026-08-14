@@ -1,8 +1,10 @@
 import { useEffect, useState } from "react";
-import { useLocation, useNavigate, useSearchParams } from "react-router-dom";
+import { useLocation, useNavigate } from "react-router-dom";
 import { PageTemplate, PageSection } from "@/ui/PageTemplate.tsx";
 import type { PageMeta } from "@/types/PageType.ts";
-import { apiGet } from "@/ui/api/index.ts";
+import { getFunctionalPermissions } from "@/ui/api/FunctionalPermissions.ts";
+import { useAdminListQuery } from "@/ui/useAdminListQuery.ts";
+import { AdminPager } from "@/ui/AdminPager.tsx";
 import { FP_READ_FUNCTIONAL_PERMISSIONS } from "@/ui/auth/functional_permissions.ts";
 import type { FunctionalPermissionsResponse } from "@/types/ApiType.ts";
 
@@ -28,23 +30,19 @@ function formatTs(value: Date | string): string {
 export function Component() {
     const navigate = useNavigate();
     const location = useLocation();
-    const [searchParams, setSearchParams] = useSearchParams();
     const [permissions, setPermissions] = useState<FunctionalPermissionsResponse["functionalPermissions"]>([]);
     const [isLoading, setIsLoading] = useState(true);
+    const [error, setError] = useState<string | null>(null);
     const [isPageLoading, setIsPageLoading] = useState(false);
-    const queryPage = Number(searchParams.get("page") ?? "1");
-    const queryPageSize = Number(searchParams.get("pageSize") ?? "10");
-    const page = Number.isInteger(queryPage) && queryPage > 0 ? queryPage : 1;
-    const pageSize = Number.isInteger(queryPageSize) && queryPageSize > 0 ? queryPageSize : 10;
-    const [availablePageSizes, setAvailablePageSizes] = useState<number[]>([10, 20, 50]);
-    const [total, setTotal] = useState(0);
-
-    const updateQuery = (patch: { page?: number; pageSize?: number }) => {
-        const next = new URLSearchParams(searchParams);
-        if (patch.page !== undefined) next.set("page", String(patch.page));
-        if (patch.pageSize !== undefined) next.set("pageSize", String(patch.pageSize));
-        setSearchParams(next);
-    };
+    const {
+        page,
+        pageSize,
+        availablePageSizes,
+        total,
+        setAvailablePageSizes,
+        setTotal,
+        updateQuery,
+    } = useAdminListQuery();
 
     useEffect(() => {
         let cancelled = false;
@@ -52,16 +50,21 @@ export function Component() {
             const setLoading = page === 1 && permissions.length === 0 ? setIsLoading : setIsPageLoading;
             setLoading(true);
             try {
-                const payload = await apiGet<FunctionalPermissionsResponse>(`/api/functionalpermissions?page=${page - 1}&pageSize=${pageSize}`);
+                const payload = await getFunctionalPermissions(page - 1, pageSize);
                 if (!cancelled) {
                     setPermissions(payload.functionalPermissions);
                     if (payload.page !== page - 1) updateQuery({ page: payload.page + 1 });
                     setTotal(payload.total);
                     setAvailablePageSizes(payload.availablePageSizes);
                     if (!payload.availablePageSizes.includes(pageSize) && payload.availablePageSizes.length > 0) {
-                        updateQuery({ page: 1, pageSize: payload.availablePageSizes[0]! });
+                        const [firstPageSize] = payload.availablePageSizes;
+                        if (typeof firstPageSize === "number") {
+                            updateQuery({ page: 1, pageSize: firstPageSize });
+                        }
                     }
                 }
+            } catch (err) {
+                if (!cancelled) setError(err instanceof Error ? err.message : "Could not load functional permissions");
             } finally {
                 if (!cancelled) {
                     setIsLoading(false);
@@ -73,13 +76,12 @@ export function Component() {
         return () => {
             cancelled = true;
         };
-    }, [page, pageSize, searchParams.toString()]);
-
-    const totalPages = Math.max(1, Math.ceil(total / pageSize));
+    }, [page, pageSize]);
 
     return (
         <PageTemplate urn={meta.urn} title={meta.title} description={meta.description}>
             <PageSection title="Functional permission list">
+                {error ? <p className="admin-config-error">{error}</p> : null}
                 {isLoading || isPageLoading ? (
                     <p>Loading functional permissions...</p>
                 ) : (
@@ -96,7 +98,13 @@ export function Component() {
                                 </tr>
                             </thead>
                             <tbody>
-                                {permissions.map((permission) => (
+                                {permissions.length === 0 ? (
+                                    <tr>
+                                        <td colSpan={6} style={{ textAlign: "center", padding: "2rem" }}>
+                                            No functional permissions found.
+                                        </td>
+                                    </tr>
+                                ) : (permissions.map((permission) => (
                                     <tr
                                         key={permission.identifier}
                                         className="admin-clickable-row"
@@ -117,33 +125,17 @@ export function Component() {
                                         <td>{formatTs(permission.createdAt)}</td>
                                         <td>{formatTs(permission.updatedAt)}</td>
                                     </tr>
-                                ))}
+                                )))}
                             </tbody>
                         </table>
-                        <div className="admin-pager-row">
-                            <button type="button" disabled={page <= 1} onClick={() => updateQuery({ page: Math.max(1, page - 1) })}>
-                                Previous
-                            </button>
-                            <span>Page {page} of {totalPages}</span>
-                            <button type="button" disabled={page >= totalPages} onClick={() => updateQuery({ page: Math.min(totalPages, page + 1) })}>
-                                Next
-                            </button>
-                            <label>
-                                Page size
-                                <select
-                                    className="admin-page-size"
-                                    value={pageSize}
-                                    onChange={(event) => {
-                                        updateQuery({ page: 1, pageSize: Number(event.target.value) });
-                                    }}
-                                >
-                                    {availablePageSizes.map((size) => (
-                                        <option key={size} value={size}>{size}</option>
-                                    ))}
-                                </select>
-                            </label>
-                            <span>{total} functional permissions</span>
-                        </div>
+                        <AdminPager
+                            page={page}
+                            pageSize={pageSize}
+                            total={total}
+                            availablePageSizes={availablePageSizes}
+                            onUpdate={updateQuery}
+                            entityLabel="functional permissions"
+                        />
                     </>
                 )}
             </PageSection>

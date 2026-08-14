@@ -13,6 +13,7 @@ import {
     SseExpressionFilterStateSchema,
     SseKnownTagsResponseSchema,
 } from "@/types/ServerSentEventsType.ts";
+import { BadRequestErrorResponseSchema, UnauthenticatedErrorResponseSchema } from "@/types/ApiType.ts";
 
 /**
  * Derive a stable session key from the request's auth context.
@@ -88,7 +89,7 @@ export default function register(app: ApiInstance) {
         },
         response: {
             200: Type.Any({ description: "SSE stream emitting 'connected', 'keepalive', and 'pubsub' events for the authenticated session." }),
-            401: Type.String({ description: "Unauthenticated. No valid session, API key, or bearer token was provided." }),
+            401: UnauthenticatedErrorResponseSchema,
         },
     });
 
@@ -100,15 +101,15 @@ export default function register(app: ApiInstance) {
      */
     app.patch("/server_sent_events/expressions", async ({ request, tokenClaims, body }) => {
         const sessionKey = deriveSseKey(request, tokenClaims);
-        if (!sessionKey) return status(401, "Could not derive session key");
+        if (!sessionKey) return status(401, { error: "Could not derive session key" });
 
         return status(200, updateServerSentEventClientExpressions(sessionKey, body.expressions));
     }, {
         body: SseExpressionsUpdateBodySchema,
         response: {
             200: SseExpressionFilterStateSchema,
-            400: Type.String({ description: "Bad request. The request body or parameters failed validation." }),
-            401: Type.String({ description: "Unauthenticated. No valid session, API key, or bearer token was provided." }),
+            400: BadRequestErrorResponseSchema,
+            401: UnauthenticatedErrorResponseSchema,
         },
         detail: {
             tags: ["Realtime"],
@@ -138,7 +139,7 @@ export default function register(app: ApiInstance) {
     }, {
         response: {
             200: SseKnownTagsResponseSchema,
-            401: Type.String({ description: "Unauthenticated. No valid session, API key, or bearer token was provided." }),
+            401: UnauthenticatedErrorResponseSchema,
         },
         detail: {
             tags: ["Realtime"],

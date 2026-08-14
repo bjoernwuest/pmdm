@@ -4,7 +4,9 @@ import Toggle from "@/ui/components/Toggle";
 import Label, { type LabelHandle } from "@/ui/components/Label";
 import { PageTemplate, PageSection } from "@/ui/PageTemplate.tsx";
 import type { PageMeta } from "@/types/PageType.ts";
-import { apiDelete, apiGet, apiPost } from "@/ui/api/index.ts";
+import { getGroupDetail, getGroupFunctionalPermissions, grantPermissionsToGroup, revokePermissionsFromGroup } from "@/ui/api/Groups.ts";
+import { getFunctionalPermissions } from "@/ui/api/FunctionalPermissions.ts";
+import { getViewerContext } from "@/ui/api/session.ts";
 import type { FunctionalPermissionsResponse, GroupFunctionalPermissionResponseType } from "@/types/ApiType.ts";
 import {
     FP_EDIT_FUNCTIONAL_PERMISSION_ASSIGNMENTS,
@@ -12,7 +14,7 @@ import {
     FP_READ_GROUPS
 } from "@/ui/auth/functional_permissions.ts";
 import type { FunctionalPermissionSelectType } from "@/types/FunctionalPermissionType.ts";
-import { subscribe } from "@/ui/pubsub";
+import { subscribe, unsubscribe } from "@/ui/pubsub";
 import {
     TAG_GROUP,
     TAG_FUNCTIONAL_PERMISSION,
@@ -27,6 +29,9 @@ export const meta: PageMeta = {
     id: "admin-group-detail",
     urn: "urn:bun-starter:ui:page:admin-group-detail",
     path: "/admin/groups/:groupid",
+    detailBreadcrumb: {
+        resolveLabel: async (params) => (await getGroupDetail(params.groupid ?? "")).group.groupName,
+    },
     title: "Group details",
     description: "Read-only group details.",
     menu: {
@@ -52,6 +57,7 @@ export function Component() {
     const [permissionsTotal, setPermissionsTotal] = useState(0);
     const [permissionsAvailablePageSizes, setPermissionsAvailablePageSizes] = useState<number[]>([10, 20, 50]);
     const [isLoading, setIsLoading] = useState(true);
+    const [error, setError] = useState<string | null>(null);
     const [isSaving, setIsSaving] = useState(false);
 
     // Label refs for pubsub-driven updates
@@ -73,9 +79,7 @@ export function Component() {
 
     const refreshAssigned = async () => {
         if (!groupid) return;
-        const refreshed = await apiGet<FunctionalPermissionSelectType[]>(
-            `/api/groups/${encodeURIComponent(groupid)}/functionalpermissions`,
-        );
+        const refreshed = await getGroupFunctionalPermissions(groupid);
         setAssignedPermissions(refreshed);
     };
 
@@ -85,10 +89,10 @@ export function Component() {
 
         setIsLoading(true);
         void Promise.all([
-            apiGet<ViewerContext>("/api/me/context"),
-            apiGet<GroupFunctionalPermissionResponseType>(`/api/groups/${encodeURIComponent(groupid)}`),
-            apiGet<FunctionalPermissionSelectType[]>(`/api/groups/${encodeURIComponent(groupid)}/functionalpermissions`),
-            apiGet<FunctionalPermissionsResponse>(`/api/functionalpermissions?page=${permissionsPage - 1}&pageSize=${permissionsPageSize}`),
+            getViewerContext(),
+            getGroupDetail(groupid),
+            getGroupFunctionalPermissions(groupid),
+            getFunctionalPermissions(permissionsPage - 1, permissionsPageSize),
         ]).then(([context, group, assigned, all]) => {
             if (cancelled) return;
             setViewerContext(context);
@@ -99,13 +103,27 @@ export function Component() {
             setPermissionsAvailablePageSizes(all.availablePageSizes);
             if (all.page !== permissionsPage - 1) updateQuery({ permissionsPage: all.page + 1 });
             if (!all.availablePageSizes.includes(permissionsPageSize) && all.availablePageSizes.length > 0) {
-                updateQuery({ permissionsPage: 1, permissionsPageSize: all.availablePageSizes[0]! });
+                const [firstPageSize] = all.availablePageSizes;
+                if (typeof firstPageSize === "number") {
+                    updateQuery({ permissionsPage: 1, permissionsPageSize: firstPageSize });
+                }
             }
-            // Seed Labels with initial values
+            // Guarded re-seed: call setText only when the incoming value differs
+            // from the component's current value (see the three-phase model in Label.tsx).
             const g = group.group;
-            nameRef.current?.setText(g.groupName, { groupId: g.identifier, field: "name" });
-            statusRef.current?.setText(g.disabled ? "Disabled" : "Enabled", { groupId: g.identifier, field: "status" });
-            updatedRef.current?.setText(new Date(g.updatedAt).toLocaleString(), { groupId: g.identifier, field: "updated" });
+            if (nameRef.current && nameRef.current.getText() !== g.groupName) {
+                nameRef.current.setText(g.groupName, { groupId: g.identifier, field: "name" });
+            }
+            const statusText = g.disabled ? "Disabled" : "Enabled";
+            if (statusRef.current && statusRef.current.getText() !== statusText) {
+                statusRef.current.setText(statusText, { groupId: g.identifier, field: "status" });
+            }
+            const updatedText = new Date(g.updatedAt).toLocaleString();
+            if (updatedRef.current && updatedRef.current.getText() !== updatedText) {
+                updatedRef.current.setText(updatedText, { groupId: g.identifier, field: "updated" });
+            }
+        }).catch((err: unknown) => {
+            if (!cancelled) setError(err instanceof Error ? err.message : "Could not load group");
         }).finally(() => {
             if (!cancelled) setIsLoading(false);
         });
@@ -136,7 +154,7 @@ export function Component() {
         );
         return () => {
             if (typeof token === "string") {
-                import("@/ui/pubsub").then((m) => m.unsubscribe(token));
+                unsubscribe(token);
             }
         };
     }, [groupid]);
@@ -152,7 +170,7 @@ export function Component() {
         );
         return () => {
             if (typeof token === "string") {
-                import("@/ui/pubsub").then((m) => m.unsubscribe(token));
+                unsubscribe(token);
             }
         };
     }, [groupid]);
@@ -169,6 +187,7 @@ export function Component() {
     return (
         <PageTemplate urn={meta.urn} title={meta.title} description={meta.description}>
             <PageSection title="Group details">
+                {error ? <p className="admin-config-error">{error}</p> : null}
                 {isLoading || !groupPayload ? (
                     <p>Loading group details...</p>
                 ) : (
@@ -212,17 +231,13 @@ export function Component() {
                                                                 setIsSaving(true);
                                                                 try {
                                                                     if (t.getValue()) {
-                                                                        await apiPost(
-                                                                            `/api/groups/${encodeURIComponent(groupid)}/functionalpermissions`,
-                                                                            { permissionIdentifiers: [permission.identifier] },
-                                                                        );
+                                                                        await grantPermissionsToGroup(groupid, [permission.identifier]);
                                                                     } else {
-                                                                        await apiDelete(
-                                                                            `/api/groups/${encodeURIComponent(groupid)}/functionalpermissions`,
-                                                                            { permissionIdentifiers: [permission.identifier] },
-                                                                        );
+                                                                        await revokePermissionsFromGroup(groupid, [permission.identifier]);
                                                                     }
                                                                     await refreshAssigned();
+                                                                } catch (err) {
+                                                                    setError(err instanceof Error ? err.message : "Failed to update permission assignment");
                                                                 } finally {
                                                                     setIsSaving(false);
                                                                 }

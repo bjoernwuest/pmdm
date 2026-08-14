@@ -1,4 +1,4 @@
-import {type DBClient, getDatabaseConnection} from "./DatabaseDriver.ts";
+import {type DBClient} from "./DatabaseDriver.ts";
 import { getConfigEntriesByKey } from "@/repo/ConfigRepo.ts";
 import { devMode } from "@/devmode.ts";
 import { walkDir } from "@/utils/fs.ts";
@@ -44,8 +44,7 @@ export function clearSetupKey() { setupKey = undefined; }
  * @return {Promise<Map<string, ConfigEntryType[]>} A promise resolving to a map containing service file names as keys
  * and arrays of missing configuration entries as values.
  */
-async function getMissingConfigParameters(DBClient: DBClient | Promise<DBClient>): Promise<Map<string, ConfigEntrySelectType[]>> {
-    const db = (DBClient instanceof Promise) ? await DBClient : DBClient;
+async function getMissingConfigParameters(db: DBClient): Promise<Map<string, ConfigEntrySelectType[]>> {
     const commonPath = "src/services";
     const result: Map<string, ConfigEntrySelectType[]> = new Map();
     if (devMode) console.log("Discovering missing config entries that would require the setup routine...");
@@ -81,6 +80,8 @@ async function getMissingConfigParameters(DBClient: DBClient | Promise<DBClient>
  *
  * @type {Map<string, ConfigEntryType[]> | undefined}
  */
+// Caching policy (see src/services/AGENTS.md): lazy-singleton cache of DB-derived state;
+// the current re-check semantics (`!demand || 0 < demand.size`) are SPEC-004's subject and unchanged here.
 let demand: Map<string, ConfigEntrySelectType[]> | undefined = undefined;
 
 /**
@@ -91,7 +92,7 @@ let demand: Map<string, ConfigEntrySelectType[]> | undefined = undefined;
  * @return {Promise<Map<string, ConfigEntryType[]>>} A Promise that resolves to a Map object containing
  * the configuration parameters and their corresponding entry types. If size is 0, no setup is required.
  */
-export async function getSetupDemand(): Promise<Map<string, ConfigEntrySelectType[]>> {
-    if (!demand || 0 < demand.size) demand = await getMissingConfigParameters(getDatabaseConnection());
+export async function getSetupDemand(db: DBClient): Promise<Map<string, ConfigEntrySelectType[]>> {
+    if (!demand || 0 < demand.size) demand = await getMissingConfigParameters(db);
     return demand as Map<string, ConfigEntrySelectType[]>;
 }

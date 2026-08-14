@@ -27,10 +27,13 @@ export const timestampColumnType = (name: string) => timestamp(name, { mode: "st
  * @property {object} createdAt - The timestamp indicating when the record was created.
  *                                This field is non-nullable and defaults to the current time.
  * @property {object} updatedAt - The timestamp indicating when the record was last updated.
- *                                This field is non-nullable, defaults to the current time,
- *                                and is automatically updated to the current date on modification.
+ *                                This field is non-nullable and defaults to the current time.
+ *
+ * The database (`now()`) is the single producer of `updatedAt` values: update paths must set
+ * `updatedAt: sql\`now()\`` explicitly (no `$onUpdate` driver-side generation), so optimistic-lock
+ * comparisons always run against timestamptz values produced by the database clock.
  */
 export const timestamps = {
     createdAt: timestampColumnType("created_at").notNull().defaultNow(),
-    updatedAt: timestampColumnType("updated_at").notNull().defaultNow().$onUpdate(() => new Date().toISOString()),
+    updatedAt: timestampColumnType("updated_at").notNull().defaultNow(),
 }

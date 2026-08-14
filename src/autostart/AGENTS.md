@@ -1,5 +1,7 @@
 # AI Agent Guidelines: Autostart
 
+**Precedence:** sub-directory AGENTS.md take precedence over parent AGENTS.md files; this file is the authoritative layer doc for its folder.
+
 Files in this directory are auto-discovered by [`src/main.ts`](src/main.ts) on startup.
 Each `.ts` file is dynamically imported and its `start(db: DBClient)` function is called.
 

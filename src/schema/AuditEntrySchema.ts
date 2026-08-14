@@ -1,4 +1,4 @@
-import { jsonb, pgTable, text } from "drizzle-orm/pg-core";
+import { index, jsonb, pgTable, text } from "drizzle-orm/pg-core";
 import { Identifier, timestamps } from "./helpers.ts";
 
 /**
@@ -15,4 +15,9 @@ export const AuditEntrySchema = pgTable("audit_log", {
     topic: text("topic").notNull(),
     payload: jsonb("payload").notNull().$type<Record<string, any>>(),
     ...timestamps,
-});
+}, (table) => [
+    // Backs the `orderBy(desc(createdAt))` + offset pagination used by every audit-log query.
+    // The `topic ILIKE '%…%'` search uses leading wildcards and defeats btree indexing;
+    // a trigram (pg_trgm) GIN index would be required and is not introduced here.
+    index("audit_log_created_at_idx").on(table.createdAt),
+]);

@@ -2,7 +2,7 @@ import { useEffect, useMemo, useState } from "react";
 import { Link } from "react-router-dom";
 import { PageTemplate, PageSection } from "@/ui/PageTemplate.tsx";
 import type { PageMeta } from "@/types/PageType.ts";
-import { apiGet } from "@/ui/api/index.ts";
+import { getViewerContext } from "@/ui/api/session.ts";
 import {
     FP_MANAGE_CONFIGURATION,
     FP_READ_API_DOCUMENTATION,
@@ -57,7 +57,7 @@ export function Component() {
 
     useEffect(() => {
         let cancelled = false;
-        void apiGet<ViewerContext>("/api/me/context").then((payload) => {
+        void getViewerContext().then((payload) => {
             if (!cancelled) setViewerContext(payload);
         }).catch(() => undefined);
 

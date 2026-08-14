@@ -1,13 +1,15 @@
 import { useEffect, useRef, useState } from "react";
-import { useLocation, useNavigate, useSearchParams } from "react-router-dom";
+import { useLocation, useNavigate } from "react-router-dom";
 import Toggle from "@/ui/components/Toggle";
 import Label, { type LabelHandle } from "@/ui/components/Label";
 import { PageTemplate, PageSection } from "@/ui/PageTemplate.tsx";
 import type { PageMeta } from "@/types/PageType.ts";
-import { apiGet } from "@/ui/api/index.ts";
+import { getGroups } from "@/ui/api/Groups.ts";
 import type { GroupsResponse } from "@/types/ApiType.ts";
 import { FP_READ_GROUPS } from "@/ui/auth/functional_permissions.ts";
-import { subscribe } from "@/ui/pubsub";
+import { subscribe, unsubscribe } from "@/ui/pubsub";
+import { useAdminListQuery } from "@/ui/useAdminListQuery.ts";
+import { AdminPager } from "@/ui/AdminPager.tsx";
 import { TAG_GROUP, TAG_UPDATE, TAG_DISABLE } from "@/types/PubSubType";
 
 export const meta: PageMeta = {
@@ -28,28 +30,20 @@ export const meta: PageMeta = {
 export function Component() {
     const navigate = useNavigate();
     const location = useLocation();
-    const [searchParams, setSearchParams] = useSearchParams();
     const [groups, setGroups] = useState<GroupsResponse["groups"]>([]);
     const [isLoading, setIsLoading] = useState(true);
+    const [error, setError] = useState<string | null>(null);
     const [isPageLoading, setIsPageLoading] = useState(false);
-    const queryPage = Number(searchParams.get("page") ?? "1");
-    const queryPageSize = Number(searchParams.get("pageSize") ?? "10");
-    const showDisabledGroups = searchParams.get("showDisabled") === "1";
-    const page = Number.isInteger(queryPage) && queryPage > 0 ? queryPage : 1;
-    const pageSize = Number.isInteger(queryPageSize) && queryPageSize > 0 ? queryPageSize : 10;
-    const [availablePageSizes, setAvailablePageSizes] = useState<number[]>([10, 20, 50]);
-    const [total, setTotal] = useState(0);
-
-    const updateQuery = (patch: { page?: number; pageSize?: number; showDisabled?: boolean }) => {
-        const next = new URLSearchParams(searchParams);
-        if (patch.page !== undefined) next.set("page", String(patch.page));
-        if (patch.pageSize !== undefined) next.set("pageSize", String(patch.pageSize));
-        if (patch.showDisabled !== undefined) {
-            if (patch.showDisabled) next.set("showDisabled", "1");
-            else next.delete("showDisabled");
-        }
-        setSearchParams(next);
-    };
+    const {
+        page,
+        pageSize,
+        showDisabled: showDisabledGroups,
+        availablePageSizes,
+        total,
+        setAvailablePageSizes,
+        setTotal,
+        updateQuery,
+    } = useAdminListQuery();
 
     // --- Label refs for pubsub-driven updates ---
     interface GroupLabelRefs {
@@ -74,14 +68,16 @@ export function Component() {
     // PubSub subscription for live updates
     useEffect(() => {
         const token = subscribe(
-            { or: [TAG_UPDATE, TAG_DISABLE] },
+            { and: [TAG_GROUP, { or: [TAG_UPDATE, TAG_DISABLE] }] },
             (msg) => {
                 const tags = msg.tags;
-                const groupId = tags.find((t) => /^[0-9a-f-]{36}$/i.test(t));
+                const data = msg.data as Record<string, unknown> | undefined;
+                // Entity identifier comes from the payload (instance-form convention), not from a tag regex.
+                const rawGroupId = data?.identifier ?? (data?.identifiers as Record<string, unknown> | undefined)?.group;
+                const groupId = typeof rawGroupId === "string" ? rawGroupId : undefined;
                 if (!groupId) return;
                 const refs = labelRefs.current.get(groupId);
                 if (!refs) return;
-                const data = msg.data as Record<string, unknown> | undefined;
 
                 if (tags.includes(TAG_UPDATE)) {
                     if (data?.groupName !== undefined) refs.name.current?.setText(String(data.groupName), { groupId, field: "name" });
@@ -95,7 +91,7 @@ export function Component() {
         );
         return () => {
             if (typeof token === "string") {
-                import("@/ui/pubsub").then((m) => m.unsubscribe(token));
+                unsubscribe(token);
             }
         };
     }, []);
@@ -106,17 +102,21 @@ export function Component() {
             const setLoading = page === 1 && groups.length === 0 ? setIsLoading : setIsPageLoading;
             setLoading(true);
             try {
-                const includeInactiveParam = showDisabledGroups ? "&includeInactive=true" : "";
-                const payload = await apiGet<GroupsResponse>(`/api/groups?page=${page - 1}&pageSize=${pageSize}${includeInactiveParam}`);
+                const payload = await getGroups(page - 1, pageSize, showDisabledGroups);
                 if (!cancelled) {
                     setGroups(payload.groups);
                     if (payload.page !== page - 1) updateQuery({ page: payload.page + 1 });
                     setTotal(payload.total);
                     setAvailablePageSizes(payload.availablePageSizes);
-                    if (!payload.availablePageSizes.includes(pageSize) && payload.availablePageSizes.length > 0) {
-                        updateQuery({ page: 1, pageSize: payload.availablePageSizes[0]! });
+                    if (!payload.availablePageSizes.includes(pageSize)) {
+                        const [firstPageSize] = payload.availablePageSizes;
+                        if (typeof firstPageSize === "number") {
+                            updateQuery({ page: 1, pageSize: firstPageSize });
+                        }
                     }
                 }
+            } catch (err) {
+                if (!cancelled) setError(err instanceof Error ? err.message : "Could not load groups");
             } finally {
                 if (!cancelled) {
                     setIsLoading(false);
@@ -128,13 +128,14 @@ export function Component() {
         return () => {
             cancelled = true;
         };
-    }, [page, pageSize, searchParams.toString()]);
+    }, [page, pageSize, showDisabledGroups]);
 
     const totalPages = Math.max(1, Math.ceil(total / pageSize));
 
     return (
         <PageTemplate urn={meta.urn} title={meta.title} description={meta.description}>
             <PageSection title="Group list">
+                {error ? <p className="admin-config-error">{error}</p> : null}
                 <div className="admin-toggle-row">
                     <span>Show disabled groups</span>
                     <Toggle<boolean>
@@ -160,15 +161,22 @@ export function Component() {
                                 </tr>
                             </thead>
                             <tbody>
-                                {groups.map((group) => {
-                                    if (!labelRefs.current.has(group.identifier)) {
-                                        labelRefs.current.set(group.identifier, {
+                                {groups.length === 0 ? (
+                                    <tr>
+                                        <td colSpan={5} style={{ textAlign: "center", padding: "2rem" }}>
+                                            No groups found.
+                                        </td>
+                                    </tr>
+                                ) : (groups.map((group) => {
+                                    let refs = labelRefs.current.get(group.identifier);
+                                    if (!refs) {
+                                        refs = {
                                             name: { current: null },
                                             status: { current: null },
                                             updated: { current: null },
-                                        });
+                                        };
+                                        labelRefs.current.set(group.identifier, refs);
                                     }
-                                    const refs = labelRefs.current.get(group.identifier)!;
                                     return (
                                         <tr
                                             key={group.identifier}
@@ -190,33 +198,17 @@ export function Component() {
                                             <td><Label ref={refs.updated} text={new Date(group.updatedAt).toLocaleString()} size="small" /></td>
                                         </tr>
                                     );
-                                })}
+                                }))}
                             </tbody>
                         </table>
-                        <div className="admin-pager-row">
-                            <button type="button" disabled={page <= 1} onClick={() => updateQuery({ page: Math.max(1, page - 1) })}>
-                                Previous
-                            </button>
-                            <span>Page {page} of {totalPages}</span>
-                            <button type="button" disabled={page >= totalPages} onClick={() => updateQuery({ page: Math.min(totalPages, page + 1) })}>
-                                Next
-                            </button>
-                            <label>
-                                Page size
-                                <select
-                                    className="admin-page-size"
-                                    value={pageSize}
-                                    onChange={(event) => {
-                                        updateQuery({ page: 1, pageSize: Number(event.target.value) });
-                                    }}
-                                >
-                                    {availablePageSizes.map((size) => (
-                                        <option key={size} value={size}>{size}</option>
-                                    ))}
-                                </select>
-                            </label>
-                            <span>{total} groups</span>
-                        </div>
+                        <AdminPager
+                            page={page}
+                            pageSize={pageSize}
+                            total={total}
+                            availablePageSizes={availablePageSizes}
+                            onUpdate={updateQuery}
+                            entityLabel="groups"
+                        />
                     </>
                 )}
             </PageSection>

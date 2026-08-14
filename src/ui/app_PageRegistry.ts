@@ -1,4 +1,6 @@
-// Applications using this template are encouraged to place their page registrations in this file and not in `PageRegistry.ts` to achieve stability with upgrades of the template.
+// Role of this file in the three-file arrangement: the DOWNSTREAM ESCAPE HATCH — applications
+// using this template place their page registrations here (surviving template upgrades) instead
+// of editing `PageRegistry.ts`. `PageRegistry.ts` merges these into the auto-generated list.
 
 import type {PageModule} from "@/types/PageType.ts";
 

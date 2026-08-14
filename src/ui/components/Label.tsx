@@ -1,6 +1,7 @@
 import {
   forwardRef,
   useImperativeHandle,
+  useMemo,
   useRef,
   useState,
 } from 'react';
@@ -44,8 +45,11 @@ export interface LabelHandle {
 // ---------------------------------------------------------------------------
 
 interface LabelProps {
-  /** Initial display text. After mount, text is managed internally
-   *  via `setText()` — this prop is only used for the initial render. */
+  /** Initial display text. Text ownership is a three-phase model: this prop seeds the
+   *  initial mount value; the page's data-reload effect re-seeds from fresh server data
+   *  (guarded — only when the incoming value differs via `getText()`); PubSub handlers
+   *  apply live patches via `setText()`. After mount, text is managed internally via
+   *  `setText()` — this prop is only used for the initial render. */
   text?: string;
 
   /** When `false`, the component renders nothing (`null`).
@@ -97,10 +101,10 @@ function LabelInner(
   const containerRef = useRef<HTMLDivElement>(null);
 
   // --- imperative API handle -----------------------------------------------
+  // Built once (memoized) and exposed via useImperativeHandle — no render-phase
+  // ref mutation, so the component is render-pure under StrictMode.
 
-  const handleRef = useRef<LabelHandle>(null!);
-
-  handleRef.current = {
+  const handle = useMemo<LabelHandle>(() => ({
     setText(newText: string, context?: Record<string, unknown>) {
       textRef.current = newText;
       setTextState(newText);
@@ -134,13 +138,13 @@ function LabelInner(
     getHintText() {
       return hintTextRef.current;
     },
-  };
+  }), []);
 
-  useImperativeHandle(ref, () => handleRef.current, []);
+  useImperativeHandle(ref, () => handle, [handle]);
 
   // --- tooltip -------------------------------------------------------------
 
-  const tooltipText = onTooltipRef.current?.(handleRef.current as LabelHandle);
+  const tooltipText = onTooltipRef.current?.(handle);
 
   // --- render --------------------------------------------------------------
 

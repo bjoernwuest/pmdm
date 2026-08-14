@@ -2,6 +2,7 @@ import {
   forwardRef,
   useCallback,
   useImperativeHandle,
+  useMemo,
   useRef,
   useState,
 } from 'react';
@@ -193,27 +194,30 @@ const InputField = forwardRef<InputFieldHandle, InputFieldProps>(
     const inputRef = useRef<HTMLElement>(null);
 
     // --- dirty transition helper -----------------------------------------
+    // Returns true when the dirty state actually changed; the onDirty callback is
+    // invoked by the handle (which has access to `handle`) to avoid a declaration cycle.
 
-    const updateDirty = useCallback((newDirty: boolean) => {
+    const applyDirty = useCallback((newDirty: boolean): boolean => {
       const prev = dirtyRef.current;
       if (prev !== newDirty) {
         dirtyRef.current = newDirty;
         setDirtyState(newDirty);
-        onDirtyRef.current?.(handleRef.current);
+        return true;
       }
+      return false;
     }, []);
 
     // --- imperative API handle -------------------------------------------
+    // Built once (memoized) and exposed via useImperativeHandle — no render-phase
+    // ref mutation, so the component is render-pure under StrictMode.
 
-    const handleRef = useRef<InputFieldHandle>(null!);
-
-    handleRef.current = {
+    const handle = useMemo<InputFieldHandle>(() => ({
       setOriginalValue(value: string, context: Record<string, unknown> = {}) {
         originalValueRef.current = value;
         contextRef.current = context;
         currentValueRef.current = value;
         setCurrentValue(value);
-        updateDirty(false);
+        if (applyDirty(false)) onDirtyRef.current?.(handle);
       },
 
       getContext() {
@@ -256,7 +260,7 @@ const InputField = forwardRef<InputFieldHandle, InputFieldProps>(
       resetToOriginal() {
         currentValueRef.current = originalValueRef.current;
         setCurrentValue(originalValueRef.current);
-        updateDirty(false);
+        if (applyDirty(false)) onDirtyRef.current?.(handle);
         hintTextRef.current = '';
         setHintTextState('');
       },
@@ -266,26 +270,26 @@ const InputField = forwardRef<InputFieldHandle, InputFieldProps>(
       },
 
       setDirty(status: boolean) {
-        updateDirty(status);
+        if (applyDirty(status)) onDirtyRef.current?.(handle);
       },
 
       setFormatter(formatter: InputFormatter) {
         formatterRef.current = formatter;
       },
-    };
+    }), [applyDirty]);
 
-    useImperativeHandle(ref, () => handleRef.current, []);
+    useImperativeHandle(ref, () => handle, [handle]);
 
     // --- event handlers --------------------------------------------------
 
     const handleFocus = useCallback(() => {
       setFocused(true);
-      onFocus?.(handleRef.current);
+      onFocus?.(handle);
     }, [onFocus]);
 
     const handleBlur = useCallback(() => {
       setFocused(false);
-      onBlur?.(handleRef.current);
+      onBlur?.(handle);
 
       // If the Save button was used, skip auto-save to avoid double execution
       if (saveButtonUsedRef.current) {
@@ -301,12 +305,12 @@ const InputField = forwardRef<InputFieldHandle, InputFieldProps>(
         if (disableAfterSaveRef.current) {
           afterSaveDisabledRef.current = true;
           setAfterSaveDisabled(true);
-          onSave?.(handleRef.current, 'blur', () => {
+          onSave?.(handle, 'blur', () => {
             afterSaveDisabledRef.current = false;
             setAfterSaveDisabled(false);
           });
         } else {
-          onSave?.(handleRef.current, 'blur');
+          onSave?.(handle, 'blur');
         }
       }
     }, [onBlur, onSave]);
@@ -319,14 +323,14 @@ const InputField = forwardRef<InputFieldHandle, InputFieldProps>(
         if (formatterRef.current) {
           newValue = formatterRef.current(
             rawValue,
-            handleRef.current,
+            handle,
             e.nativeEvent as InputEvent,
           );
         }
 
         currentValueRef.current = newValue;
         setCurrentValue(newValue);
-        onChange?.(handleRef.current);
+        onChange?.(handle);
       },
       [onChange],
     );
@@ -336,17 +340,17 @@ const InputField = forwardRef<InputFieldHandle, InputFieldProps>(
       if (disableAfterSaveRef.current) {
         afterSaveDisabledRef.current = true;
         setAfterSaveDisabled(true);
-        onSave?.(handleRef.current, 'button', () => {
+        onSave?.(handle, 'button', () => {
           afterSaveDisabledRef.current = false;
           setAfterSaveDisabled(false);
         });
       } else {
-        onSave?.(handleRef.current, 'button');
+        onSave?.(handle, 'button');
       }
     }, [onSave]);
 
     const handleRestoreClick = useCallback(() => {
-      handleRef.current.resetToOriginal();
+      handle.resetToOriginal();
     }, []);
 
     // --- derived values --------------------------------------------------
@@ -366,7 +370,7 @@ const InputField = forwardRef<InputFieldHandle, InputFieldProps>(
 
     // --- tooltip ---------------------------------------------------------
 
-    const tooltipText = onTooltip?.(handleRef.current);
+    const tooltipText = onTooltip?.(handle);
 
     // --- render ----------------------------------------------------------
 

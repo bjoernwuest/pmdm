@@ -1,5 +1,5 @@
 import { buildServerSentEventsStreamUrl } from "@/ui/api/index.ts";
-import { getActiveServerTopics, publishSync } from "./pubsub.ts";
+import { publishSync } from "./pubsub.ts";
 
 let eventSource: EventSource | null = null;
 let unloadListenerRegistered = false;

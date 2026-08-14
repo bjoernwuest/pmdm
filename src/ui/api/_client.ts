@@ -1,5 +1,5 @@
 import { enqueueRequestBundledMutation, type RequestBundlingOptions } from "./_request_bundling.ts";
-import { ApiError } from "./errors.ts";
+import { ApiError, extractErrorMessage } from "./errors.ts";
 import { triggerLoginRedirect } from "./session.ts";
 
 /** Shared fetch options used for same-origin API calls from the UI. */
@@ -15,18 +15,6 @@ async function parseResponseBody(response: Response): Promise<unknown> {
     }
 
     return await response.text();
-}
-
-/** Pulls a human-readable error message from known response body shapes. */
-function extractErrorMessage(body: unknown, fallback: string): string {
-    if (body && typeof body === "object") {
-        const candidate = body as { message?: unknown; error?: unknown };
-        if (typeof candidate.message === "string") return candidate.message;
-        if (typeof candidate.error === "string") return candidate.error;
-    }
-
-    if (typeof body === "string" && body.length > 0) return body;
-    return fallback;
 }
 
 /**

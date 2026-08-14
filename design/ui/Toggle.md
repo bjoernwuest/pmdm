@@ -774,11 +774,11 @@ This section maps every existing toggle/checkbox/chip pattern in the codebase to
 ### List Filter Toggles
 
 **Current locations:**
-- [`AdminUserList.tsx`](../../src/ui/pages/AdminUserList.tsx), line 92: `InputSwitch` for show disabled users
-- [`AdminGroupList.tsx`](../../src/ui/pages/AdminGroupList.tsx), line 96: `InputSwitch` for show disabled groups
-- [`AdminApiKeyList.tsx`](../../src/ui/pages/AdminApiKeyList.tsx), line 194: `InputSwitch` for show disabled API keys
-- [`AdminUserDetail.tsx`](../../src/ui/pages/AdminUserDetail.tsx), line 77: `InputSwitch` for show inactive
-- [`AdminFunctionalPermissionDetail.tsx`](../../src/ui/pages/AdminFunctionalPermissionDetail.tsx), line 127: `InputSwitch` for show disabled groups
+- [`AdminUserList.tsx`](../../src/ui/pages/AdminUserList.tsx), line 92: `InputSwitch` for show disabled users — **migrated** to `Toggle`
+- [`AdminGroupList.tsx`](../../src/ui/pages/AdminGroupList.tsx), line 96: `InputSwitch` for show disabled groups — **migrated** to `Toggle`
+- [`AdminApiKeyList.tsx`](../../src/ui/pages/AdminApiKeyList.tsx), line 194: `InputSwitch` for show disabled API keys — **migrated** to `Toggle`
+- [`AdminUserDetail.tsx`](../../src/ui/pages/AdminUserDetail.tsx), line 77: `InputSwitch` for show inactive — **migrated** to `Toggle`
+- [`AdminFunctionalPermissionDetail.tsx`](../../src/ui/pages/AdminFunctionalPermissionDetail.tsx), line 127: `InputSwitch` for show disabled groups — **migrated** to `Toggle`
 
 **Current pattern:** Direct `InputSwitch` in `admin-toggle-row` div
 **Replacement:** `<Toggle<boolean> variant="toggle" options={[{ value: true, label: "Show disabled users" }, { value: false, label: "Hide disabled users" }]} ref={ref} onChange={...} />`

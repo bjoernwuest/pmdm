@@ -1,5 +1,7 @@
-import { promises as fs } from "fs";
-import path from "path";
+// Node `fs`/`path` are retained via explicit `node:`-prefixed imports: `walkDir` needs
+// `readdir` with dirent types and path manipulation, which have no Bun-native equivalent.
+import { promises as fs } from "node:fs";
+import path from "node:path";
 
 /**
  * Recursively walks through a directory and yields file paths with specified extensions.

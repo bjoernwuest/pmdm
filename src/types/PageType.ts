@@ -41,6 +41,15 @@ export type PageMeta = {
     menu: MenuEntry;
     /** Functional permissions required to see or access this page. */
     requiredFunctionalPermissions?: readonly string[];
+    /**
+     * Optional declarative detail-breadcrumb capability. When present, the app shell
+     * resolves the page's detail breadcrumb label generically by invoking
+     * `resolveLabel` with the matched route params (fetch via the `src/ui/api/` wrappers;
+     * failures silently fall back to the static menu label).
+     */
+    detailBreadcrumb?: {
+        resolveLabel: (params: Readonly<Record<string, string | undefined>>) => Promise<string>;
+    };
 };
 
 /** A page module combines metadata with the React component that renders the page. */
