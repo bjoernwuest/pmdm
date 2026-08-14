@@ -131,7 +131,7 @@ export async function getByIdentifier<TTable extends BaseConfigurationTable>(db:
  */
 export async function setDisabled<TTable extends BaseConfigurationTable>(db: DBClient, table: EnsureBaseColumns<TTable>, userDisabling: UserSelectType, elements: UUIDType | IdentifierType | UUIDType[] | IdentifierType[], disabled: boolean, knownUpdatedAt: string | undefined, pubSubTags: Tag[] | undefined): Promise<InferSelectModel<TTable>[]> {
     const identifiers = getIdentifiers(elements);
-    const updateValues = { disabled: disabled, updatedBy: userDisabling.identifier } as const;
+    const updateValues = { disabled: disabled, updatedBy: userDisabling.identifier, updatedAt: sql`now()` } as const;
     const result = await db.update(table).set(updateValues as any).where(and(inArray((table as any).identifier, identifiers), knownUpdatedAt ? eq((table as any).updatedAt, knownUpdatedAt) : undefined)).returning();
     if (pubSubTags) result.forEach(r => PubSub.publish(pubSubTags, r));
     return result as unknown as InferSelectModel<TTable>[];
@@ -162,7 +162,7 @@ export function enable<TTable extends BaseConfigurationTable>(db: DBClient,table
 export async function update<TTable extends BaseConfigurationTable>(db: DBClient, table: EnsureBaseColumns<TTable>, userUpdating: UserSelectType, elements: UUIDType | IdentifierType | UUIDType[] | IdentifierType[], paramToUpdate: RepositoryUpdateInput<TTable>, knownUpdatedAt: string | undefined, pubSubTags: Tag[] | undefined): Promise<InferSelectModel<TTable>[]> {
     const identifiers = getIdentifiers(elements);
 
-    const updateValues = { ...paramToUpdate, updatedBy: userUpdating.identifier } as const;
+    const updateValues = { ...paramToUpdate, updatedBy: userUpdating.identifier, updatedAt: sql`now()` } as const;
     const result = await db.update(table).set(updateValues as any).where(and(inArray((table as any).identifier, identifiers), knownUpdatedAt ? eq((table as any).updatedAt, knownUpdatedAt) : undefined)).returning();
     if (pubSubTags) result.forEach(r => PubSub.publish(pubSubTags, r));
     return result as unknown as InferSelectModel<TTable>[];

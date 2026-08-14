@@ -179,7 +179,7 @@ export async function revokePermission(db: DBClient, dataTypeIdentifier: string,
  * @returns The updated permission row.
  */
 export async function updatePermission(db: DBClient, dataTypeIdentifier: string, groupIdentifier: string, role: DataTypeGroupRoles, showByDefault: boolean = true, knownUpdatedAt?: string): Promise<DataTypePermissionSelectType[]> {
-    const result = await db.update(DataTypePermission).set({showByDefault: showByDefault} as any)
+    const result = await db.update(DataTypePermission).set({showByDefault: showByDefault, updatedAt: sql`now()`} as any)
         .where(
             and(
                 eq(DataTypePermission.dataTypeIdentifier, dataTypeIdentifier),

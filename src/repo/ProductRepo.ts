@@ -388,7 +388,7 @@ export async function updateProduct(
         .set(updateData)
         .where(and(
             eq(Products.productNumber, productNumber),
-            knownUpdatedAt ? sql`${Products.updatedAt} = ${knownUpdatedAt}::timestamp` : undefined,
+            knownUpdatedAt ? sql`${Products.updatedAt} = ${knownUpdatedAt}` : undefined,
         ))
         .returning();
 
@@ -473,7 +473,7 @@ export async function setProductDisabled(
         .set({ disabled, updatedAt: sql`now()` })
         .where(and(
             eq(Products.productNumber, productNumber),
-            knownUpdatedAt ? sql`${Products.updatedAt} = ${knownUpdatedAt}::timestamp` : undefined,
+            knownUpdatedAt ? sql`${Products.updatedAt} = ${knownUpdatedAt}` : undefined,
         ))
         .returning();
 

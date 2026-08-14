@@ -2071,7 +2071,7 @@ async function reevaluateMandatoryAndRequestorCanEdit(
             && (row.defaultValue === null || row.defaultValue === "null")) {
             const [invalidated] = await tx
                 .update(ProductRequestsValues)
-                .set({ approvedBy: null, approvedAt: null } as any)
+                .set({ approvedBy: null, approvedAt: null, updatedAt: sql`now()` } as any)
                 .where(and(
                     eq(ProductRequestsValues.productRequest, requestId),
                     eq(ProductRequestsValues.dataType, row.dataType),
@@ -2489,7 +2489,7 @@ export async function cascadeBreakApprovals(
         if (valueRow) {
             await tx
                 .update(ProductRequestsValues)
-                .set({ approvedBy: null, approvedAt: null } as any)
+                .set({ approvedBy: null, approvedAt: null, updatedAt: sql`now()` } as any)
                 .where(and(
                     eq(ProductRequestsValues.productRequest, requestId),
                     eq(ProductRequestsValues.dataType, dep.dataType),
@@ -2543,7 +2543,7 @@ export async function checkAllApproved(
     if (totalCount > 0 && totalCount === approvedCount) {
         await tx
             .update(ProductRequests)
-            .set({ status: ProductRequestStatus.importing })
+            .set({ status: ProductRequestStatus.importing, updatedAt: sql`now()` })
             .where(eq(ProductRequests.identifier, requestId));
 
         // Calculate on_export values before creating export rows so the
@@ -2641,7 +2641,7 @@ export async function cancelProductRequest(
     // Update status to cancelled
     const [updated] = await tx
         .update(ProductRequests)
-        .set({ status: ProductRequestStatus.cancelled })
+        .set({ status: ProductRequestStatus.cancelled, updatedAt: sql`now()` })
         .where(eq(ProductRequests.identifier, requestId))
         .returning();
 

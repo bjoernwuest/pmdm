@@ -89,7 +89,7 @@ cp .env.template .env
 2. Fill in the required variables in `.env`:
 
 - `DATABASE_URL` — PostgreSQL connection string (required)
-- `ADVISORY_LOCK` — PostgreSQL advisory lock ID for migrations (required)
+- `ADVISORY_LOCK` — PostgreSQL advisory lock ID for migrations (optional; when unset, the application default `-7482650123549836421` from `src/services/Env.ts` is used)
 
 > EntraID credentials and all other application settings are configured through the setup wizard (stored in the database), not in `.env`.
 

@@ -1,6 +1,6 @@
 import type { ApiInstance } from "@/apps/api.ts";
 import { status, t } from "elysia";
-import { authorize, getLoggedinUserObject } from "@/services/Auth.ts";
+import { getLoggedinUserObject, requirePermissions } from "@/services/Auth.ts";
 import type { FunctionalPermissionSelectType } from "@/types/FunctionalPermissionType.ts";
 import { runInTransaction, type DBClient } from "@/services/DatabaseDriver.ts";
 import { getUserListPageSizes } from "@/services/ui_config.ts";
@@ -9,6 +9,16 @@ import type { UserSelectType } from "@/types/UserType.ts";
 import type {BaseColumnsNamedSelectType} from "@/schema/_base.ts";
 import type { Tag } from "@/types/PubSubType";
 import type {SQL} from "drizzle-orm";
+import { Type } from "@sinclair/typebox";
+import { parseBooleanQuery } from "@/utils/parseBooleanQuery.ts";
+import {
+    ConflictErrorResponseSchema,
+    ForbiddenErrorResponseSchema,
+    IncludeDisabledQuerySchema,
+    NotFoundErrorResponseSchema,
+    PaginationQuerySchema,
+    UnauthenticatedErrorResponseSchema,
+} from "@/types/ApiType.ts";
 
 /**
  * Repository contract required by the generic configuration route registrar.
@@ -149,16 +159,6 @@ export type RegisterConfigurationEntityRoutesOptions<
 };
 
 /**
- * Parses truthy query values used for includeDisabled filters.
- *
- * @param value Raw query value from Elysia context.
- * @returns `true` when value is `true`, `"true"`, or `"1"`; otherwise `false`.
- */
-function parseBooleanQuery(value: unknown): boolean {
-    return value === true || value === "true" || value === "1";
-}
-
-/**
  * Registers CRUD-style configuration routes for simple name-based entities.
  *
  * The generated mutation handlers call repo methods which publish changes through
@@ -189,16 +189,19 @@ export function registerConfigurationEntityRoutes<
     app.get(options.basePath, async (context) => {
         const claims = context.session?.idTokenClaims ?? context.tokenClaims ?? {};
         const allListPerms = [options.viewPermission, ...(options.alternativeListViewPermissions ?? [])];
-        const permChecks = options.gatekeeperPermission
-            ? [options.gatekeeperPermission, ...allListPerms]
-            : allListPerms;
-        const authz = await authorize(context.dbClient, claims, permChecks);
-        if (options.gatekeeperPermission && !authz.some((perm) => perm.identifier === options.gatekeeperPermission!.identifier)) {
-            return status(403, `Permission denied. Required: ${options.gatekeeperPermission!.functionalPermissionName}`);
+        const permissionCheck = await requirePermissions(
+            context.dbClient,
+            claims,
+            options.gatekeeperPermission ? [options.gatekeeperPermission] : [],
+            allListPerms,
+        );
+        if (!permissionCheck.ok) return permissionCheck.denial;
+        if (options.gatekeeperPermission && !permissionCheck.authz.some((perm) => perm.identifier === options.gatekeeperPermission!.identifier)) {
+            return status(403, { error: `Permission denied. Required: ${options.gatekeeperPermission!.functionalPermissionName}` });
         }
-        if (!authz.some((perm) => allListPerms.some((ap) => ap.identifier === perm.identifier))) {
+        if (!permissionCheck.authz.some((perm) => allListPerms.some((ap) => ap.identifier === perm.identifier))) {
             const requiredNames = allListPerms.map((p) => p.functionalPermissionName).join(" or ");
-            return status(403, `Permission denied. Required: ${requiredNames}`);
+            return status(403, { error: `Permission denied. Required: ${requiredNames}` });
         }
 
         const availablePageSizes = await getUserListPageSizes(context.dbClient, typeof claims.oid === "string" ? claims.oid : undefined);
@@ -221,11 +224,7 @@ export function registerConfigurationEntityRoutes<
         };
         return payload;
     }, {
-        query: t.Object({
-            page: t.Optional(t.Union([t.Number({ minimum: 0 }), t.String()])),
-            pageSize: t.Optional(t.Union([t.Number({ minimum: 1 }), t.String()])),
-            includeDisabled: t.Optional(t.Union([t.Boolean(), t.String()])),
-        }),
+        query: Type.Composite([PaginationQuerySchema, IncludeDisabledQuerySchema]),
         response: {
             200: t.Object({
                 [options.listResponseKey]: t.Array((options.listEntitySchema ?? options.entitySchema) as any),
@@ -235,8 +234,8 @@ export function registerConfigurationEntityRoutes<
                 availablePageSizes: t.Array(t.Number({ minimum: 1 })),
                 includeDisabled: t.Boolean(),
             } as any, { description: `Paged ${pluralLabel} with pagination metadata and disabled-inclusion flag.` }),
-            401: t.String({ description: "Unauthenticated – missing or invalid session, API key, or bearer token." }),
-            403: t.String({ description: "Permission denied – the authenticated principal lacks the required functional permission." }),
+            401: UnauthenticatedErrorResponseSchema,
+            403: ForbiddenErrorResponseSchema,
         },
             detail: {
             tags: [singularLabel],
@@ -271,28 +270,24 @@ export function registerConfigurationEntityRoutes<
 
     app.get(`${options.basePath}/:${options.routeParam}`, async (context) => {
         const claims = context.session?.idTokenClaims ?? context.tokenClaims ?? {};
-        const permChecks = options.gatekeeperPermission
-            ? [options.gatekeeperPermission, options.viewPermission]
-            : [options.viewPermission];
-        const authz = await authorize(context.dbClient, claims, permChecks);
-        if (options.gatekeeperPermission && !authz.some((perm) => perm.identifier === options.gatekeeperPermission!.identifier)) {
-            return status(403, `Permission denied. Required: ${options.gatekeeperPermission!.functionalPermissionName}`);
-        }
-        if (!authz.some((perm) => perm.identifier === options.viewPermission.identifier)) {
-            return status(403, `Permission denied. Required: ${options.viewPermission.functionalPermissionName}`);
-        }
+        const permissionCheck = await requirePermissions(
+            context.dbClient,
+            claims,
+            options.gatekeeperPermission ? [options.gatekeeperPermission, options.viewPermission] : [options.viewPermission],
+        );
+        if (!permissionCheck.ok) return permissionCheck.denial;
 
         const identifier = context.params[options.routeParam] as string;
         const item = await options.repo.getByIdentifier(context.dbClient, identifier, true);
-        if (!item) return status(404, `${options.entityLabel} does not exist`);
+        if (!item) return status(404, { error: `${options.entityLabel} does not exist` });
         return { [options.detailResponseKey]: item };
     }, {
         params: t.Object({ [options.routeParam]: t.String({ format: "uuid" }) } as any),
         response: {
             200: t.Object({ [options.detailResponseKey]: (options.detailEntitySchema ?? options.entitySchema) as any }, { description: `A single ${options.entityLabel.toLowerCase()} including disabled entries.` }),
-            401: t.String({ description: "Unauthenticated – missing or invalid session, API key, or bearer token." }),
-            403: t.String({ description: "Permission denied – the authenticated principal lacks the required functional permission." }),
-            404: t.String({ description: "Not found – the referenced resource does not exist." }),
+            401: UnauthenticatedErrorResponseSchema,
+            403: ForbiddenErrorResponseSchema,
+            404: NotFoundErrorResponseSchema,
         },
         detail: {
             tags: [singularLabel],
@@ -313,16 +308,12 @@ export function registerConfigurationEntityRoutes<
 
     app.post(options.basePath, async (context) => {
         const claims = context.session?.idTokenClaims ?? context.tokenClaims ?? {};
-        const permChecks = options.gatekeeperPermission
-            ? [options.gatekeeperPermission, options.managePermission]
-            : [options.managePermission];
-        const authz = await authorize(context.dbClient, claims, permChecks);
-        if (options.gatekeeperPermission && !authz.some((perm) => perm.identifier === options.gatekeeperPermission!.identifier)) {
-            return status(403, `Permission denied. Required: ${options.gatekeeperPermission!.functionalPermissionName}`);
-        }
-        if (!authz.some((perm) => perm.identifier === options.managePermission.identifier)) {
-            return status(403, `Permission denied. Required: ${options.managePermission.functionalPermissionName}`);
-        }
+        const permissionCheck = await requirePermissions(
+            context.dbClient,
+            claims,
+            options.gatekeeperPermission ? [options.gatekeeperPermission, options.managePermission] : [options.managePermission],
+        );
+        if (!permissionCheck.ok) return permissionCheck.denial;
 
         const created = await runInTransaction(context.dbClient, async (tx) => {
             const user = (await getLoggedinUserObject(tx, claims)) ?? (await getSystemUser(tx));
@@ -332,15 +323,15 @@ export function registerConfigurationEntityRoutes<
             return options.repo.create(tx, user, createInput);
         });
 
-        if (created.length === 0) return status(409, `A ${options.entityLabel.toLowerCase()} with this name already exists`);
+        if (created.length === 0) return status(409, { error: `A ${options.entityLabel.toLowerCase()} with this name already exists` });
         return { [options.detailResponseKey]: created[0]! };
     }, {
         body: (options.createBodySchema ?? t.Object({ name: t.String({ minLength: 1, maxLength: 255 }) })) as any,
         response: {
             200: t.Object({ [options.detailResponseKey]: options.entitySchema } as any, { description: `The newly created ${options.entityLabel.toLowerCase()}.` }),
-            401: t.String({ description: "Unauthenticated – missing or invalid session, API key, or bearer token." }),
-            403: t.String({ description: "Permission denied – the authenticated principal lacks the required functional permission." }),
-            409: t.String({ description: `Conflict – a ${options.entityLabel.toLowerCase()} with this name already exists.` }),
+            401: UnauthenticatedErrorResponseSchema,
+            403: ForbiddenErrorResponseSchema,
+            409: ConflictErrorResponseSchema,
         },
         detail: {
             tags: [singularLabel],
@@ -354,16 +345,12 @@ export function registerConfigurationEntityRoutes<
 
     app.put(`${options.basePath}/:${options.routeParam}`, async (context) => {
         const claims = context.session?.idTokenClaims ?? context.tokenClaims ?? {};
-        const permChecks = options.gatekeeperPermission
-            ? [options.gatekeeperPermission, options.managePermission]
-            : [options.managePermission];
-        const authz = await authorize(context.dbClient, claims, permChecks);
-        if (options.gatekeeperPermission && !authz.some((perm) => perm.identifier === options.gatekeeperPermission!.identifier)) {
-            return status(403, `Permission denied. Required: ${options.gatekeeperPermission!.functionalPermissionName}`);
-        }
-        if (!authz.some((perm) => perm.identifier === options.managePermission.identifier)) {
-            return status(403, `Permission denied. Required: ${options.managePermission.functionalPermissionName}`);
-        }
+        const permissionCheck = await requirePermissions(
+            context.dbClient,
+            claims,
+            options.gatekeeperPermission ? [options.gatekeeperPermission, options.managePermission] : [options.managePermission],
+        );
+        if (!permissionCheck.ok) return permissionCheck.denial;
 
         const identifier = context.params[options.routeParam] as string;
         const updated = await runInTransaction(context.dbClient, async (tx) => {
@@ -377,8 +364,8 @@ export function registerConfigurationEntityRoutes<
             return rows[0] ?? false;
         });
 
-        if (updated === null) return status(404, `${options.entityLabel} does not exist`);
-        if (updated === false) return status(409, `${options.entityLabel} was modified by another user`);
+        if (updated === null) return status(404, { error: `${options.entityLabel} does not exist` });
+        if (updated === false) return status(409, { error: `${options.entityLabel} was modified by another user` });
         return { [options.detailResponseKey]: updated };
     }, {
         params: t.Object({ [options.routeParam]: t.String({ format: "uuid" }) } as any),
@@ -388,10 +375,10 @@ export function registerConfigurationEntityRoutes<
         })) as any,
         response: {
             200: t.Object({ [options.detailResponseKey]: options.entitySchema } as any, { description: `The updated ${options.entityLabel.toLowerCase()}.` }),
-            401: t.String({ description: "Unauthenticated – missing or invalid session, API key, or bearer token." }),
-            403: t.String({ description: "Permission denied – the authenticated principal lacks the required functional permission." }),
-            404: t.String({ description: "Not found – the referenced resource does not exist." }),
-            409: t.String({ description: `Conflict – optimistic locking failed; the ${options.entityLabel.toLowerCase()} was modified by another user.` }),
+            401: UnauthenticatedErrorResponseSchema,
+            403: ForbiddenErrorResponseSchema,
+            404: NotFoundErrorResponseSchema,
+            409: ConflictErrorResponseSchema,
         },
         detail: {
             tags: [singularLabel],
@@ -412,16 +399,12 @@ export function registerConfigurationEntityRoutes<
 
     app.patch(`${options.basePath}/:${options.routeParam}/disabled`, async (context) => {
         const claims = context.session?.idTokenClaims ?? context.tokenClaims ?? {};
-        const permChecks = options.gatekeeperPermission
-            ? [options.gatekeeperPermission, options.managePermission]
-            : [options.managePermission];
-        const authz = await authorize(context.dbClient, claims, permChecks);
-        if (options.gatekeeperPermission && !authz.some((perm) => perm.identifier === options.gatekeeperPermission!.identifier)) {
-            return status(403, `Permission denied. Required: ${options.gatekeeperPermission!.functionalPermissionName}`);
-        }
-        if (!authz.some((perm) => perm.identifier === options.managePermission.identifier)) {
-            return status(403, `Permission denied. Required: ${options.managePermission.functionalPermissionName}`);
-        }
+        const permissionCheck = await requirePermissions(
+            context.dbClient,
+            claims,
+            options.gatekeeperPermission ? [options.gatekeeperPermission, options.managePermission] : [options.managePermission],
+        );
+        if (!permissionCheck.ok) return permissionCheck.denial;
 
         const identifier = context.params[options.routeParam] as string;
         const updated = await runInTransaction(context.dbClient, async (tx) => {
@@ -434,8 +417,8 @@ export function registerConfigurationEntityRoutes<
             return rows[0] ?? false;
         });
 
-        if (updated === null) return status(404, `${options.entityLabel} does not exist`);
-        if (updated === false) return status(409, `${options.entityLabel} was modified by another user`);
+        if (updated === null) return status(404, { error: `${options.entityLabel} does not exist` });
+        if (updated === false) return status(409, { error: `${options.entityLabel} was modified by another user` });
         return { [options.detailResponseKey]: updated };
     }, {
         params: t.Object({ [options.routeParam]: t.String({ format: "uuid" }) } as any),
@@ -445,10 +428,10 @@ export function registerConfigurationEntityRoutes<
         }),
         response: {
             200: t.Object({ [options.detailResponseKey]: options.entitySchema } as any, { description: `The ${options.entityLabel.toLowerCase()} with updated disabled status.` }),
-            401: t.String({ description: "Unauthenticated – missing or invalid session, API key, or bearer token." }),
-            403: t.String({ description: "Permission denied – the authenticated principal lacks the required functional permission." }),
-            404: t.String({ description: "Not found – the referenced resource does not exist." }),
-            409: t.String({ description: `Conflict – optimistic locking failed; the ${options.entityLabel.toLowerCase()} was modified by another user.` }),
+            401: UnauthenticatedErrorResponseSchema,
+            403: ForbiddenErrorResponseSchema,
+            404: NotFoundErrorResponseSchema,
+            409: ConflictErrorResponseSchema,
         },
         detail: {
             tags: [singularLabel],

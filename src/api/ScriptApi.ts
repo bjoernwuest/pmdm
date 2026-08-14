@@ -1,6 +1,6 @@
 import type { ApiInstance } from "@/apps/api.ts";
-import { authorize, getLoggedinUserObject } from "@/services/Auth.ts";
-import { FP_MANAGE_DATA_TYPES } from "@/services/auth/FunctionalPermissions.ts";
+import { getLoggedinUserObject, requirePermissions } from "@/services/Auth.ts";
+import { FP_MANAGE_DATA_TYPES } from "@/services/auth/ApplicationDefinedFunctionalPermissions.ts";
 import * as ScriptEngine from "@/services/ScriptEngine.ts";
 import type { ScriptCategory, ScriptPrincipal, ScriptTriggerCause } from "@/types/ScriptEngineType.ts";
 import {
@@ -9,7 +9,7 @@ import {
     ScriptValidateRequestSchema,
     ScriptValidateResponseSchema,
 } from "@/types/ScriptEngineType.ts";
-import { status, t } from "elysia";
+import { ForbiddenErrorResponseSchema, UnauthenticatedErrorResponseSchema } from "@/types/ApiType.ts";
 
 /**
  * Registers the Script Engine authoring-support routes (preview + validate).
@@ -43,10 +43,8 @@ export default function register(app: ApiInstance): void {
     // -----------------------------------------------------------------------
     app.post("/scripts/preview", async (context) => {
         const claims = context.session?.idTokenClaims ?? context.tokenClaims ?? {};
-        const authz = await authorize(context.dbClient, claims, [FP_MANAGE_DATA_TYPES]);
-        if (!authz.some((p) => p.identifier === FP_MANAGE_DATA_TYPES.identifier)) {
-            return status(403, { error: `Permission denied. Required: ${FP_MANAGE_DATA_TYPES.functionalPermissionName}` });
-        }
+        const permissionCheck = await requirePermissions(context.dbClient, claims, [FP_MANAGE_DATA_TYPES]);
+        if (!permissionCheck.ok) return permissionCheck.denial;
 
         const body = context.body as {
             script: string;
@@ -74,8 +72,8 @@ export default function register(app: ApiInstance): void {
         body: ScriptPreviewRequestSchema,
         response: {
             200: {...ScriptPreviewResponseSchema, description: "The script execution result, or null with an error message when execution failed."},
-            401: t.Object({ error: t.String() }, { description: "Unauthenticated – missing or invalid session, API key, or bearer token." }),
-            403: t.Object({ error: t.String() }, { description: "Permission denied – the authenticated principal lacks the required functional permission." }),
+            401: UnauthenticatedErrorResponseSchema,
+            403: ForbiddenErrorResponseSchema,
         },
         detail: {
             tags: ["Scripts"],
@@ -95,10 +93,8 @@ export default function register(app: ApiInstance): void {
     // -----------------------------------------------------------------------
     app.post("/scripts/validate", async (context) => {
         const claims = context.session?.idTokenClaims ?? context.tokenClaims ?? {};
-        const authz = await authorize(context.dbClient, claims, [FP_MANAGE_DATA_TYPES]);
-        if (!authz.some((p) => p.identifier === FP_MANAGE_DATA_TYPES.identifier)) {
-            return status(403, { error: `Permission denied. Required: ${FP_MANAGE_DATA_TYPES.functionalPermissionName}` });
-        }
+        const permissionCheck = await requirePermissions(context.dbClient, claims, [FP_MANAGE_DATA_TYPES]);
+        if (!permissionCheck.ok) return permissionCheck.denial;
 
         const body = context.body as { script: string };
 
@@ -115,8 +111,8 @@ export default function register(app: ApiInstance): void {
         body: ScriptValidateRequestSchema,
         response: {
             200: {...ScriptValidateResponseSchema, description: "Syntax validation result with a validity flag and an optional error message."},
-            401: t.Object({ error: t.String() }, { description: "Unauthenticated – missing or invalid session, API key, or bearer token." }),
-            403: t.Object({ error: t.String() }, { description: "Permission denied – the authenticated principal lacks the required functional permission." }),
+            401: UnauthenticatedErrorResponseSchema,
+            403: ForbiddenErrorResponseSchema,
         },
         detail: {
             tags: ["Scripts"],

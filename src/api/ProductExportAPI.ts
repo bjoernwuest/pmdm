@@ -1,13 +1,13 @@
 import type { ApiInstance } from "@/apps/api.ts";
 import { runInTransaction } from "@/services/DatabaseDriver.ts";
 import type { DBClient } from "@/services/DatabaseDriver.ts";
-import { authorize, getLoggedinUserObject } from "@/services/Auth.ts";
+import { getLoggedinUserObject, requirePermissions } from "@/services/Auth.ts";
 import {
     FP_VIEW_PRODUCT_EXPORTS,
     FP_EXPORT_PRODUCT_REQUESTS,
     FP_CONFIRM_IMPORT,
     FP_EDIT_EXPORT_STATUS,
-} from "@/services/auth/FunctionalPermissions.ts";
+} from "@/services/auth/ApplicationDefinedFunctionalPermissions.ts";
 import {
     getExportPageData,
     getExportRowsByRequest,
@@ -26,6 +26,15 @@ import { LookupsValues } from "@/schema/LookupsSchema.ts";
 import { ConsumablesValues } from "@/schema/ConsumableSchema.ts";
 import { getUserListPageSizes } from "@/services/ui_config.ts";
 import { status, t } from "elysia";
+import { Type } from "@sinclair/typebox";
+import {
+    BadRequestErrorResponseSchema,
+    ConflictErrorResponseSchema,
+    ForbiddenErrorResponseSchema,
+    NotFoundErrorResponseSchema,
+    PaginationQuerySchema,
+    UnauthenticatedErrorResponseSchema,
+} from "@/types/ApiType.ts";
 import { and, eq, inArray, sql } from "drizzle-orm";
 import type { ProductExportsListResponse, ImportProductExportsResponse } from "@/types/ProductExportType.ts";
 
@@ -36,10 +45,8 @@ export default function register(app: ApiInstance): void {
     // -----------------------------------------------------------------------
     app.get("/product_exports", async (context) => {
         const claims = context.session?.idTokenClaims ?? context.tokenClaims ?? {};
-        const authz = await authorize(context.dbClient, claims, [FP_VIEW_PRODUCT_EXPORTS]);
-        if (!authz.some((perm) => perm.identifier === FP_VIEW_PRODUCT_EXPORTS.identifier)) {
-            return status(403, `Permission denied. Required: ${FP_VIEW_PRODUCT_EXPORTS.functionalPermissionName}`);
-        }
+        const permissionCheck = await requirePermissions(context.dbClient, claims, [FP_VIEW_PRODUCT_EXPORTS]);
+        if (!permissionCheck.ok) return permissionCheck.denial;
 
         const availablePageSizes = await getUserListPageSizes(context.dbClient, typeof claims.oid === "string" ? claims.oid : undefined);
         const page = Math.max(0, Number(context.query.page ?? 0));
@@ -68,11 +75,10 @@ export default function register(app: ApiInstance): void {
             availablePageSizes,
         } satisfies ProductExportsListResponse & { availablePageSizes: number[] };
     }, {
-        query: t.Object({
-            page: t.Optional(t.Union([t.Number({ minimum: 0 }), t.String()])),
-            pageSize: t.Optional(t.Union([t.Number({ minimum: 1 }), t.String()])),
-            filter: t.Optional(t.String()),
-        }),
+        query: Type.Composite([
+            PaginationQuerySchema,
+            Type.Object({ filter: Type.Optional(Type.String()) }),
+        ]),
         detail: {
             tags: ["Product Exports"],
             summary: "List product exports",
@@ -111,8 +117,8 @@ export default function register(app: ApiInstance): void {
                 total: t.Number(),
                 availablePageSizes: t.Array(t.Number()),
             }, { description: "Paginated list of product requests in importing status, the involved target systems, and pagination metadata." }),
-            401: t.String({ description: "Unauthenticated – missing or invalid session, API key, or bearer token." }),
-            403: t.String({ description: "Permission denied – the authenticated principal lacks the required functional permission." }),
+            401: UnauthenticatedErrorResponseSchema,
+            403: ForbiddenErrorResponseSchema,
         },
     });
 
@@ -121,28 +127,26 @@ export default function register(app: ApiInstance): void {
     // -----------------------------------------------------------------------
     app.get("/product_exports/export", async (context) => {
         const claims = context.session?.idTokenClaims ?? context.tokenClaims ?? {};
-        const authz = await authorize(context.dbClient, claims, [FP_EXPORT_PRODUCT_REQUESTS]);
-        if (!authz.some((perm) => perm.identifier === FP_EXPORT_PRODUCT_REQUESTS.identifier)) {
-            return status(403, `Permission denied. Required: ${FP_EXPORT_PRODUCT_REQUESTS.functionalPermissionName}`);
-        }
+        const permissionCheck = await requirePermissions(context.dbClient, claims, [FP_EXPORT_PRODUCT_REQUESTS]);
+        if (!permissionCheck.ok) return permissionCheck.denial;
 
         const targetSystemId = context.query.targetSystem as string;
         const format = context.query.format as string;
         const productRequestsParam = context.query.productRequests as string;
 
-        if (!targetSystemId) return status(400, "targetSystem is required");
-        if (!format || !["xlsx", "csv", "json"].includes(format)) return status(400, "format must be xlsx, csv, or json");
-        if (!productRequestsParam) return status(400, "productRequests is required");
+        if (!targetSystemId) return status(400, { error: "targetSystem is required" });
+        if (!format || !["xlsx", "csv", "json"].includes(format)) return status(400, { error: "format must be xlsx, csv, or json" });
+        if (!productRequestsParam) return status(400, { error: "productRequests is required" });
 
         const requestIds = productRequestsParam.split(",").map((s) => s.trim()).filter(Boolean);
-        if (requestIds.length === 0) return status(400, "No product requests provided");
+        if (requestIds.length === 0) return status(400, { error: "No product requests provided" });
 
         const userId = (await getLoggedinUserObject(context.dbClient, claims))?.identifier;
 
         const exportData = await buildExportData(context.dbClient, targetSystemId, requestIds);
 
         if (exportData.error) {
-            return status(exportData.error.status, exportData.error.message);
+            return status(exportData.error.status, { error: exportData.error.message });
         }
 
         await runInTransaction(context.dbClient, async (tx) => {
@@ -239,10 +243,10 @@ export default function register(app: ApiInstance): void {
         },
         response: {
             200: t.Any({ description: "The exported file: JSON rows for format=json, text/csv for format=csv, or an XLSX spreadsheet (application/vnd.openxmlformats-officedocument.spreadsheetml.sheet) for format=xlsx." }),
-            400: t.String({ description: "Invalid request – missing or invalid targetSystem, format, or productRequests parameters." }),
-            401: t.String({ description: "Unauthenticated – missing or invalid session, API key, or bearer token." }),
-            403: t.String({ description: "Permission denied – the authenticated principal lacks the required functional permission." }),
-            404: t.String({ description: "Not found – no product requests or target system found." }),
+            400: BadRequestErrorResponseSchema,
+            401: UnauthenticatedErrorResponseSchema,
+            403: ForbiddenErrorResponseSchema,
+            404: NotFoundErrorResponseSchema,
         },
     });
 
@@ -252,15 +256,15 @@ export default function register(app: ApiInstance): void {
     app.post("/product_exports/import", async (context) => {
         const claims = context.session?.idTokenClaims ?? context.tokenClaims ?? {};
         const targetSystemId = context.query.targetSystem as string;
-        if (!targetSystemId) return status(400, "targetSystem is required");
+        if (!targetSystemId) return status(400, { error: "targetSystem is required" });
 
-        const checkPerms = await authorize(context.dbClient, claims, [FP_EXPORT_PRODUCT_REQUESTS, FP_CONFIRM_IMPORT]);
-        const hasExportPerm = checkPerms.some((p) => p.identifier === FP_EXPORT_PRODUCT_REQUESTS.identifier);
-        const hasImportPerm = checkPerms.some((p) => p.identifier === FP_CONFIRM_IMPORT.identifier);
+        const permissionCheck = await requirePermissions(context.dbClient, claims, [], [FP_EXPORT_PRODUCT_REQUESTS, FP_CONFIRM_IMPORT]);
+        const hasExportPerm = permissionCheck.authz.some((p) => p.identifier === FP_EXPORT_PRODUCT_REQUESTS.identifier);
+        const hasImportPerm = permissionCheck.authz.some((p) => p.identifier === FP_CONFIRM_IMPORT.identifier);
 
         const reqFormData = await context.request.formData();
         const file = reqFormData.get("file");
-        if (!file) return status(400, "No file provided");
+        if (!file) return status(400, { error: "No file provided" });
 
         const { loadWorkbook } = await import("@office-kit/xlsx/io");
         const { getSheet, sheetNames } = await import("@office-kit/xlsx/workbook");
@@ -271,26 +275,26 @@ export default function register(app: ApiInstance): void {
             const buf = await (file as Blob).arrayBuffer();
             wb = await loadWorkbook({ toBytes: async () => new Uint8Array(buf) });
         } catch (e: any) {
-            return status(400, `Failed to parse XLSX file: ${e.message}`);
+            return status(400, { error: `Failed to parse XLSX file: ${e.message}` });
         }
 
         const names = sheetNames(wb);
-        if (names.length === 0) return status(400, "XLSX file has no sheets");
+        if (names.length === 0) return status(400, { error: "XLSX file has no sheets" });
         const ws = getSheet(wb, names[0]!);
-        if (!ws) return status(400, "XLSX file has no sheets");
+        if (!ws) return status(400, { error: "XLSX file has no sheets" });
 
         const headerA = getCell(ws, 1, 1)?.value?.toString()?.trim() ?? "";
         const headerB = getCell(ws, 1, 2)?.value?.toString()?.trim() ?? "";
         const headerC = getCell(ws, 1, 3)?.value?.toString()?.trim() ?? "";
 
         if (!headerA || headerA.toLowerCase() !== "productnumber") {
-            return status(400, "Column A header must be 'productNumber'");
+            return status(400, { error: "Column A header must be 'productNumber'" });
         }
         if (!headerB || headerB.toLowerCase() !== "exported") {
-            return status(400, "Column B header must be 'exported'");
+            return status(400, { error: "Column B header must be 'exported'" });
         }
         if (!headerC || headerC.toLowerCase() !== "imported") {
-            return status(400, "Column C header must be 'imported'");
+            return status(400, { error: "Column C header must be 'imported'" });
         }
 
         type ImportRow = { productNumber: string; exported: boolean; imported: boolean };
@@ -415,9 +419,9 @@ export default function register(app: ApiInstance): void {
                     message: t.String(),
                 })),
             }, { description: "Import summary with total rows, counts of marked exported/imported entries, and per-row errors." }),
-            400: t.String({ description: "Invalid request – missing targetSystem, missing file, malformed XLSX, or invalid template structure." }),
-            401: t.String({ description: "Unauthenticated – missing or invalid session, API key, or bearer token." }),
-            403: t.String({ description: "Permission denied – the authenticated principal lacks the required functional permission." }),
+            400: BadRequestErrorResponseSchema,
+            401: UnauthenticatedErrorResponseSchema,
+            403: ForbiddenErrorResponseSchema,
         },
     });
 
@@ -426,13 +430,8 @@ export default function register(app: ApiInstance): void {
     // -----------------------------------------------------------------------
     app.patch("/product_exports/:productRequestId/:targetSystemId/exported", async (context) => {
         const claims = context.session?.idTokenClaims ?? context.tokenClaims ?? {};
-        const authz = await authorize(context.dbClient, claims, [FP_EXPORT_PRODUCT_REQUESTS, FP_EDIT_EXPORT_STATUS]);
-        if (!authz.some((perm) => perm.identifier === FP_EXPORT_PRODUCT_REQUESTS.identifier)) {
-            return status(403, `Permission denied. Required: ${FP_EXPORT_PRODUCT_REQUESTS.functionalPermissionName}`);
-        }
-        if (!authz.some((perm) => perm.identifier === FP_EDIT_EXPORT_STATUS.identifier)) {
-            return status(403, `Permission denied. Required: ${FP_EDIT_EXPORT_STATUS.functionalPermissionName}`);
-        }
+        const permissionCheck = await requirePermissions(context.dbClient, claims, [FP_EXPORT_PRODUCT_REQUESTS, FP_EDIT_EXPORT_STATUS]);
+        if (!permissionCheck.ok) return permissionCheck.denial;
 
         const productRequestId = context.params.productRequestId as string;
         const targetSystemId = context.params.targetSystemId as string;
@@ -473,13 +472,13 @@ export default function register(app: ApiInstance): void {
 
             const rows = await getExportRowsByRequest(context.dbClient, productRequestId);
             const row = rows.find((r) => r.targetSystem === targetSystemId);
-            return row ?? status(404, "Product export row not found");
+            return row ?? status(404, { error: "Product export row not found" });
         } catch (e: any) {
-            if (e instanceof AlreadyExportedError) return status(409, "Already exported");
-            if (e.message === "Product request not found") return status(404, e.message);
-            if (e.message === "Product export row not found") return status(404, e.message);
-            if (e.message === "Product request is not in importing status") return status(409, e.message);
-            return status(400, e.message);
+            if (e instanceof AlreadyExportedError) return status(409, { error: "Already exported" });
+            if (e.message === "Product request not found") return status(404, { error: e.message });
+            if (e.message === "Product export row not found") return status(404, { error: e.message });
+            if (e.message === "Product request is not in importing status") return status(409, { error: e.message });
+            return status(400, { error: e.message });
         }
     }, {
         params: t.Object({
@@ -510,11 +509,11 @@ export default function register(app: ApiInstance): void {
         },
         response: {
             200: t.Any({ description: "The updated product export row for the product request and target system." }),
-            400: t.String({ description: "Invalid request – malformed parameters or unexpected processing error." }),
-            401: t.String({ description: "Unauthenticated – missing or invalid session, API key, or bearer token." }),
-            403: t.String({ description: "Permission denied – the authenticated principal lacks the required functional permission." }),
-            404: t.String({ description: "Not found – the product request or product export row does not exist." }),
-            409: t.String({ description: "Conflict – the export was already marked as exported or the request is not in importing status." }),
+            400: BadRequestErrorResponseSchema,
+            401: UnauthenticatedErrorResponseSchema,
+            403: ForbiddenErrorResponseSchema,
+            404: NotFoundErrorResponseSchema,
+            409: ConflictErrorResponseSchema,
         },
     });
 
@@ -523,13 +522,8 @@ export default function register(app: ApiInstance): void {
     // -----------------------------------------------------------------------
     app.patch("/product_exports/:productRequestId/:targetSystemId/imported", async (context) => {
         const claims = context.session?.idTokenClaims ?? context.tokenClaims ?? {};
-        const authz = await authorize(context.dbClient, claims, [FP_CONFIRM_IMPORT, FP_EDIT_EXPORT_STATUS]);
-        if (!authz.some((perm) => perm.identifier === FP_CONFIRM_IMPORT.identifier)) {
-            return status(403, `Permission denied. Required: ${FP_CONFIRM_IMPORT.functionalPermissionName}`);
-        }
-        if (!authz.some((perm) => perm.identifier === FP_EDIT_EXPORT_STATUS.identifier)) {
-            return status(403, `Permission denied. Required: ${FP_EDIT_EXPORT_STATUS.functionalPermissionName}`);
-        }
+        const permissionCheck = await requirePermissions(context.dbClient, claims, [FP_CONFIRM_IMPORT, FP_EDIT_EXPORT_STATUS]);
+        if (!permissionCheck.ok) return permissionCheck.denial;
 
         const productRequestId = context.params.productRequestId as string;
         const targetSystemId = context.params.targetSystemId as string;
@@ -570,13 +564,13 @@ export default function register(app: ApiInstance): void {
 
             const rows = await getExportRowsByRequest(context.dbClient, productRequestId);
             const row = rows.find((r) => r.targetSystem === targetSystemId);
-            return row ?? status(404, "Product export row not found");
+            return row ?? status(404, { error: "Product export row not found" });
         } catch (e: any) {
-            if (e instanceof AlreadyImportedError) return status(409, "Already imported");
-            if (e.message === "Product request not found") return status(404, e.message);
-            if (e.message === "Product export row not found") return status(404, e.message);
-            if (e.message === "Product request is not in importing status") return status(409, e.message);
-            return status(400, e.message);
+            if (e instanceof AlreadyImportedError) return status(409, { error: "Already imported" });
+            if (e.message === "Product request not found") return status(404, { error: e.message });
+            if (e.message === "Product export row not found") return status(404, { error: e.message });
+            if (e.message === "Product request is not in importing status") return status(409, { error: e.message });
+            return status(400, { error: e.message });
         }
     }, {
         params: t.Object({
@@ -607,11 +601,11 @@ export default function register(app: ApiInstance): void {
         },
         response: {
             200: t.Any({ description: "The updated product export row for the product request and target system." }),
-            400: t.String({ description: "Invalid request – malformed parameters or unexpected processing error." }),
-            401: t.String({ description: "Unauthenticated – missing or invalid session, API key, or bearer token." }),
-            403: t.String({ description: "Permission denied – the authenticated principal lacks the required functional permission." }),
-            404: t.String({ description: "Not found – the product request or product export row does not exist." }),
-            409: t.String({ description: "Conflict – the export was already marked as imported or the request is not in importing status." }),
+            400: BadRequestErrorResponseSchema,
+            401: UnauthenticatedErrorResponseSchema,
+            403: ForbiddenErrorResponseSchema,
+            404: NotFoundErrorResponseSchema,
+            409: ConflictErrorResponseSchema,
         },
     });
 }

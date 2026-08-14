@@ -1,6 +1,6 @@
 import type { ApiInstance } from "@/apps/api.ts";
-import { authorize, getLoggedinUserObject } from "@/services/Auth.ts";
-import { FP_DO_CONFIGURATION, FP_MANAGE_PRODUCT_TYPES, FP_VIEW_PRODUCT_TYPES } from "@/services/auth/FunctionalPermissions.ts";
+import { getLoggedinUserObject, requirePermissions } from "@/services/Auth.ts";
+import { FP_DO_CONFIGURATION, FP_MANAGE_PRODUCT_TYPES, FP_VIEW_PRODUCT_TYPES } from "@/services/auth/ApplicationDefinedFunctionalPermissions.ts";
 import {
     message_CreateProductType,
     message_DisableProductType,
@@ -43,6 +43,16 @@ import { status, t } from "elysia";
 import { Group } from "@/schema/UserSchema.ts";
 import { getUserListPageSizes } from "@/services/ui_config.ts";
 import { eq } from "drizzle-orm";
+import { Type } from "@sinclair/typebox";
+import {
+    BadRequestErrorResponseSchema,
+    ConflictErrorResponseSchema,
+    ForbiddenErrorResponseSchema,
+    InternalServerErrorResponseSchema,
+    NotFoundErrorResponseSchema,
+    PaginationQuerySchema,
+    UnauthenticatedErrorResponseSchema,
+} from "@/types/ApiType.ts";
 
 /**
  * Registers CRUD and sub-resource endpoints for product types.
@@ -94,17 +104,12 @@ export default function register(app: ApiInstance): void {
     // GET /product_types/:producttypeid/datatypes — List assigned DataTypes
     app.get("/product_types/:producttypeid/datatypes", async (context) => {
         const claims = context.session?.idTokenClaims ?? context.tokenClaims ?? {};
-        const authz = await authorize(context.dbClient, claims, [FP_DO_CONFIGURATION, FP_VIEW_PRODUCT_TYPES]);
-        if (!authz.some((perm) => perm.identifier === FP_DO_CONFIGURATION.identifier)) {
-            return status(403, `Permission denied. Required: ${FP_DO_CONFIGURATION.functionalPermissionName}`);
-        }
-        if (!authz.some((perm) => perm.identifier === FP_VIEW_PRODUCT_TYPES.identifier)) {
-            return status(403, `Permission denied. Required: ${FP_VIEW_PRODUCT_TYPES.functionalPermissionName}`);
-        }
+        const permissionCheck = await requirePermissions(context.dbClient, claims, [FP_DO_CONFIGURATION, FP_VIEW_PRODUCT_TYPES]);
+        if (!permissionCheck.ok) return permissionCheck.denial;
 
         const productTypeIdentifier = context.params.producttypeid as string;
         const existing = await ProductTypeRepo.getByIdentifier(context.dbClient, productTypeIdentifier, true);
-        if (!existing) return status(404, "Product type does not exist");
+        if (!existing) return status(404, { error: "Product type does not exist" });
 
         const availablePageSizes = await getUserListPageSizes(context.dbClient, typeof claims.oid === "string" ? claims.oid : undefined);
         const page = Math.max(0, Number(context.query.page ?? 0));
@@ -124,11 +129,10 @@ export default function register(app: ApiInstance): void {
         };
     }, {
         params: t.Object({ producttypeid: t.String({ format: "uuid" }) }),
-        query: t.Object({
-            page: t.Optional(t.Union([t.Number({ minimum: 0 }), t.String()])),
-            pageSize: t.Optional(t.Union([t.Number({ minimum: 1 }), t.String()])),
-            includeDisabledDataTypes: t.Optional(t.Union([t.Boolean(), t.String()])),
-        }),
+        query: Type.Composite([
+            PaginationQuerySchema,
+            Type.Object({ includeDisabledDataTypes: Type.Optional(Type.Union([Type.Boolean(), Type.String()])) }),
+        ]),
         detail: {
             tags: ["Product type"],
             summary: "List assigned data types for a product type",
@@ -173,22 +177,17 @@ export default function register(app: ApiInstance): void {
                 availablePageSizes: t.Array(t.Number()),
                 dataTypeAssignments: t.Array(t.Any()),
             }, { description: "Paged data type assignments of the product type with pagination metadata." }),
-            401: t.String({ description: "Unauthenticated – missing or invalid session, API key, or bearer token." }),
-            403: t.String({ description: "Permission denied – the authenticated principal lacks the required functional permission." }),
-            404: t.String({ description: "Not found – no product type with this identifier exists." }),
+            401: UnauthenticatedErrorResponseSchema,
+            403: ForbiddenErrorResponseSchema,
+            404: NotFoundErrorResponseSchema,
         },
     });
 
     // POST /product_types/:producttypeid/datatypes — Assign a DataType
     app.post("/product_types/:producttypeid/datatypes", async (context) => {
         const claims = context.session?.idTokenClaims ?? context.tokenClaims ?? {};
-        const authz = await authorize(context.dbClient, claims, [FP_DO_CONFIGURATION, FP_MANAGE_PRODUCT_TYPES]);
-        if (!authz.some((perm) => perm.identifier === FP_DO_CONFIGURATION.identifier)) {
-            return status(403, `Permission denied. Required: ${FP_DO_CONFIGURATION.functionalPermissionName}`);
-        }
-        if (!authz.some((perm) => perm.identifier === FP_MANAGE_PRODUCT_TYPES.identifier)) {
-            return status(403, `Permission denied. Required: ${FP_MANAGE_PRODUCT_TYPES.functionalPermissionName}`);
-        }
+        const permissionCheck = await requirePermissions(context.dbClient, claims, [FP_DO_CONFIGURATION, FP_MANAGE_PRODUCT_TYPES]);
+        if (!permissionCheck.ok) return permissionCheck.denial;
 
         const productTypeIdentifier = context.params.producttypeid as string;
         const created = await runInTransaction(context.dbClient, async (tx) => {
@@ -198,8 +197,8 @@ export default function register(app: ApiInstance): void {
             return assignDataType(tx, user, productTypeIdentifier, context.body.dataTypeIdentifier);
         });
 
-        if (created === null) return status(404, "Product type does not exist");
-        if (created.length === 0) return status(409, "Data type already assigned to this product type");
+        if (created === null) return status(404, { error: "Product type does not exist" });
+        if (created.length === 0) return status(409, { error: "Data type already assigned to this product type" });
         return { assignment: created[0] };
     }, {
         params: t.Object({ producttypeid: t.String({ format: "uuid" }) }),
@@ -223,32 +222,27 @@ export default function register(app: ApiInstance): void {
         },
         response: {
             200: t.Object({ assignment: t.Any() }, { description: "The newly created data type assignment." }),
-            401: t.String({ description: "Unauthenticated – missing or invalid session, API key, or bearer token." }),
-            403: t.String({ description: "Permission denied – the authenticated principal lacks the required functional permission." }),
-            404: t.String({ description: "Not found – no product type with this identifier exists." }),
-            409: t.String({ description: "Conflict – the data type is already assigned to this product type." }),
+            401: UnauthenticatedErrorResponseSchema,
+            403: ForbiddenErrorResponseSchema,
+            404: NotFoundErrorResponseSchema,
+            409: ConflictErrorResponseSchema,
         },
     });
 
     // DELETE /product_types/:producttypeid/datatypes/:datatypeassignmentid — Unassign a DataType
     app.delete("/product_types/:producttypeid/datatypes/:datatypeassignmentid", async (context) => {
         const claims = context.session?.idTokenClaims ?? context.tokenClaims ?? {};
-        const authz = await authorize(context.dbClient, claims, [FP_DO_CONFIGURATION, FP_MANAGE_PRODUCT_TYPES]);
-        if (!authz.some((perm) => perm.identifier === FP_DO_CONFIGURATION.identifier)) {
-            return status(403, `Permission denied. Required: ${FP_DO_CONFIGURATION.functionalPermissionName}`);
-        }
-        if (!authz.some((perm) => perm.identifier === FP_MANAGE_PRODUCT_TYPES.identifier)) {
-            return status(403, `Permission denied. Required: ${FP_MANAGE_PRODUCT_TYPES.functionalPermissionName}`);
-        }
+        const permissionCheck = await requirePermissions(context.dbClient, claims, [FP_DO_CONFIGURATION, FP_MANAGE_PRODUCT_TYPES]);
+        if (!permissionCheck.ok) return permissionCheck.denial;
 
         const productTypeIdentifier = context.params.producttypeid as string;
         const assignmentIdentifier = context.params.datatypeassignmentid as string;
 
         const existing = await ProductTypeRepo.getByIdentifier(context.dbClient, productTypeIdentifier, true);
-        if (!existing) return status(404, "Product type does not exist");
+        if (!existing) return status(404, { error: "Product type does not exist" });
 
         const result = await unassignDataType(context.dbClient, assignmentIdentifier);
-        if (result.length === 0) return status(404, "Data type assignment not found");
+        if (result.length === 0) return status(404, { error: "Data type assignment not found" });
         return status(200);
     }, {
         params: t.Object({
@@ -279,38 +273,33 @@ export default function register(app: ApiInstance): void {
         },
         response: {
             200: t.Any({ description: "Empty success response after removing the data type assignment." }),
-            401: t.String({ description: "Unauthenticated – missing or invalid session, API key, or bearer token." }),
-            403: t.String({ description: "Permission denied – the authenticated principal lacks the required functional permission." }),
-            404: t.String({ description: "Not found – the product type or data type assignment does not exist." }),
+            401: UnauthenticatedErrorResponseSchema,
+            403: ForbiddenErrorResponseSchema,
+            404: NotFoundErrorResponseSchema,
         },
     });
 
     // PATCH /product_types/:producttypeid/datatypes/:datatypeassignmentid — Update assignment fields
     app.patch("/product_types/:producttypeid/datatypes/:datatypeassignmentid", async (context) => {
         const claims = context.session?.idTokenClaims ?? context.tokenClaims ?? {};
-        const authz = await authorize(context.dbClient, claims, [FP_DO_CONFIGURATION, FP_MANAGE_PRODUCT_TYPES]);
-        if (!authz.some((perm) => perm.identifier === FP_DO_CONFIGURATION.identifier)) {
-            return status(403, `Permission denied. Required: ${FP_DO_CONFIGURATION.functionalPermissionName}`);
-        }
-        if (!authz.some((perm) => perm.identifier === FP_MANAGE_PRODUCT_TYPES.identifier)) {
-            return status(403, `Permission denied. Required: ${FP_MANAGE_PRODUCT_TYPES.functionalPermissionName}`);
-        }
+        const permissionCheck = await requirePermissions(context.dbClient, claims, [FP_DO_CONFIGURATION, FP_MANAGE_PRODUCT_TYPES]);
+        if (!permissionCheck.ok) return permissionCheck.denial;
 
         const productTypeIdentifier = context.params.producttypeid as string;
         const assignmentIdentifier = context.params.datatypeassignmentid as string;
 
         const existing = await ProductTypeRepo.getByIdentifier(context.dbClient, productTypeIdentifier, true);
-        if (!existing) return status(404, "Product type does not exist");
+        if (!existing) return status(404, { error: "Product type does not exist" });
 
         const assignment = await getDataTypeAssignment(context.dbClient, assignmentIdentifier);
-        if (!assignment) return status(404, "Data type assignment not found");
+        if (!assignment) return status(404, { error: "Data type assignment not found" });
 
         const updated = await runInTransaction(context.dbClient, async (tx) => {
             const user = (await getLoggedinUserObject(tx, claims)) ?? (await getSystemUser(tx));
             return updateDataTypeAssignment(tx, user, assignmentIdentifier, context.body as any);
         });
 
-        if (updated.length === 0) return status(500, "Failed to update data type assignment");
+        if (updated.length === 0) return status(500, { error: "Failed to update data type assignment" });
         return { assignment: updated[0] };
     }, {
         params: t.Object({
@@ -342,10 +331,10 @@ export default function register(app: ApiInstance): void {
         },
         response: {
             200: t.Object({ assignment: t.Any() }, { description: "The updated data type assignment." }),
-            401: t.String({ description: "Unauthenticated – missing or invalid session, API key, or bearer token." }),
-            403: t.String({ description: "Permission denied – the authenticated principal lacks the required functional permission." }),
-            404: t.String({ description: "Not found – the product type or data type assignment does not exist." }),
-            500: t.String({ description: "Internal server error." }),
+            401: UnauthenticatedErrorResponseSchema,
+            403: ForbiddenErrorResponseSchema,
+            404: NotFoundErrorResponseSchema,
+            500: InternalServerErrorResponseSchema,
         },
     });
 
@@ -356,21 +345,16 @@ export default function register(app: ApiInstance): void {
     // GET /product_types/:producttypeid/datatypes/:datatypeassignmentid/targetsystems
     app.get("/product_types/:producttypeid/datatypes/:datatypeassignmentid/targetsystems", async (context) => {
         const claims = context.session?.idTokenClaims ?? context.tokenClaims ?? {};
-        const authz = await authorize(context.dbClient, claims, [FP_DO_CONFIGURATION, FP_VIEW_PRODUCT_TYPES]);
-        if (!authz.some((perm) => perm.identifier === FP_DO_CONFIGURATION.identifier)) {
-            return status(403, `Permission denied. Required: ${FP_DO_CONFIGURATION.functionalPermissionName}`);
-        }
-        if (!authz.some((perm) => perm.identifier === FP_VIEW_PRODUCT_TYPES.identifier)) {
-            return status(403, `Permission denied. Required: ${FP_VIEW_PRODUCT_TYPES.functionalPermissionName}`);
-        }
+        const permissionCheck = await requirePermissions(context.dbClient, claims, [FP_DO_CONFIGURATION, FP_VIEW_PRODUCT_TYPES]);
+        if (!permissionCheck.ok) return permissionCheck.denial;
 
         const productTypeIdentifier = context.params.producttypeid as string;
 
         const existing = await ProductTypeRepo.getByIdentifier(context.dbClient, productTypeIdentifier, true);
-        if (!existing) return status(404, "Product type does not exist");
+        if (!existing) return status(404, { error: "Product type does not exist" });
 
         const assignment = await getDataTypeAssignment(context.dbClient, context.params.datatypeassignmentid as string);
-        if (!assignment) return status(404, "Data type assignment not found");
+        if (!assignment) return status(404, { error: "Data type assignment not found" });
 
         const availablePageSizes = await getUserListPageSizes(context.dbClient, typeof claims.oid === "string" ? claims.oid : undefined);
         const page = Math.max(0, Number(context.query.page ?? 0));
@@ -392,10 +376,7 @@ export default function register(app: ApiInstance): void {
             producttypeid: t.String({ format: "uuid" }),
             datatypeassignmentid: t.String({ format: "uuid" }),
         }),
-        query: t.Object({
-            page: t.Optional(t.Union([t.Number({ minimum: 0 }), t.String()])),
-            pageSize: t.Optional(t.Union([t.Number({ minimum: 1 }), t.String()])),
-        }),
+        query: PaginationQuerySchema,
         detail: {
             tags: ["Product type"],
             summary: "List assigned target systems for a product type data type assignment",
@@ -440,30 +421,25 @@ export default function register(app: ApiInstance): void {
                 availablePageSizes: t.Array(t.Number()),
                 targetSystems: t.Array(t.Any()),
             }, { description: "Paged target system assignments of the product type data type with pagination metadata." }),
-            401: t.String({ description: "Unauthenticated – missing or invalid session, API key, or bearer token." }),
-            403: t.String({ description: "Permission denied – the authenticated principal lacks the required functional permission." }),
-            404: t.String({ description: "Not found – the product type or data type assignment does not exist." }),
+            401: UnauthenticatedErrorResponseSchema,
+            403: ForbiddenErrorResponseSchema,
+            404: NotFoundErrorResponseSchema,
         },
     });
 
     // POST /product_types/:producttypeid/datatypes/:datatypeassignmentid/targetsystems
     app.post("/product_types/:producttypeid/datatypes/:datatypeassignmentid/targetsystems", async (context) => {
         const claims = context.session?.idTokenClaims ?? context.tokenClaims ?? {};
-        const authz = await authorize(context.dbClient, claims, [FP_DO_CONFIGURATION, FP_MANAGE_PRODUCT_TYPES]);
-        if (!authz.some((perm) => perm.identifier === FP_DO_CONFIGURATION.identifier)) {
-            return status(403, `Permission denied. Required: ${FP_DO_CONFIGURATION.functionalPermissionName}`);
-        }
-        if (!authz.some((perm) => perm.identifier === FP_MANAGE_PRODUCT_TYPES.identifier)) {
-            return status(403, `Permission denied. Required: ${FP_MANAGE_PRODUCT_TYPES.functionalPermissionName}`);
-        }
+        const permissionCheck = await requirePermissions(context.dbClient, claims, [FP_DO_CONFIGURATION, FP_MANAGE_PRODUCT_TYPES]);
+        if (!permissionCheck.ok) return permissionCheck.denial;
 
         const productTypeIdentifier = context.params.producttypeid as string;
 
         const existing = await ProductTypeRepo.getByIdentifier(context.dbClient, productTypeIdentifier, true);
-        if (!existing) return status(404, "Product type does not exist");
+        if (!existing) return status(404, { error: "Product type does not exist" });
 
         const assignment = await getDataTypeAssignment(context.dbClient, context.params.datatypeassignmentid as string);
-        if (!assignment) return status(404, "Data type assignment not found");
+        if (!assignment) return status(404, { error: "Data type assignment not found" });
 
         const result = await assignTargetSystem(
             context.dbClient,
@@ -472,7 +448,7 @@ export default function register(app: ApiInstance): void {
             context.body.targetSystemIdentifier,
         );
 
-        if (result.length === 0) return status(409, "Target system already assigned");
+        if (result.length === 0) return status(409, { error: "Target system already assigned" });
         return { targetSystem: result[0] };
     }, {
         params: t.Object({
@@ -506,31 +482,26 @@ export default function register(app: ApiInstance): void {
         },
         response: {
             200: t.Object({ targetSystem: t.Any() }, { description: "The newly created target system assignment." }),
-            401: t.String({ description: "Unauthenticated – missing or invalid session, API key, or bearer token." }),
-            403: t.String({ description: "Permission denied – the authenticated principal lacks the required functional permission." }),
-            404: t.String({ description: "Not found – the product type or data type assignment does not exist." }),
-            409: t.String({ description: "Conflict – the target system is already assigned." }),
+            401: UnauthenticatedErrorResponseSchema,
+            403: ForbiddenErrorResponseSchema,
+            404: NotFoundErrorResponseSchema,
+            409: ConflictErrorResponseSchema,
         },
     });
 
     // DELETE /product_types/:producttypeid/datatypes/:datatypeassignmentid/targetsystems/:targetsystemid
     app.delete("/product_types/:producttypeid/datatypes/:datatypeassignmentid/targetsystems/:targetsystemid", async (context) => {
         const claims = context.session?.idTokenClaims ?? context.tokenClaims ?? {};
-        const authz = await authorize(context.dbClient, claims, [FP_DO_CONFIGURATION, FP_MANAGE_PRODUCT_TYPES]);
-        if (!authz.some((perm) => perm.identifier === FP_DO_CONFIGURATION.identifier)) {
-            return status(403, `Permission denied. Required: ${FP_DO_CONFIGURATION.functionalPermissionName}`);
-        }
-        if (!authz.some((perm) => perm.identifier === FP_MANAGE_PRODUCT_TYPES.identifier)) {
-            return status(403, `Permission denied. Required: ${FP_MANAGE_PRODUCT_TYPES.functionalPermissionName}`);
-        }
+        const permissionCheck = await requirePermissions(context.dbClient, claims, [FP_DO_CONFIGURATION, FP_MANAGE_PRODUCT_TYPES]);
+        if (!permissionCheck.ok) return permissionCheck.denial;
 
         const productTypeIdentifier = context.params.producttypeid as string;
 
         const existing = await ProductTypeRepo.getByIdentifier(context.dbClient, productTypeIdentifier, true);
-        if (!existing) return status(404, "Product type does not exist");
+        if (!existing) return status(404, { error: "Product type does not exist" });
 
         const assignment = await getDataTypeAssignment(context.dbClient, context.params.datatypeassignmentid as string);
-        if (!assignment) return status(404, "Data type assignment not found");
+        if (!assignment) return status(404, { error: "Data type assignment not found" });
 
         const result = await unassignTargetSystem(
             context.dbClient,
@@ -539,7 +510,7 @@ export default function register(app: ApiInstance): void {
             context.params.targetsystemid as string,
         );
 
-        if (result.length === 0) return status(404, "Target system assignment not found");
+        if (result.length === 0) return status(404, { error: "Target system assignment not found" });
         return status(200);
     }, {
         params: t.Object({
@@ -578,30 +549,25 @@ export default function register(app: ApiInstance): void {
         },
         response: {
             200: t.Any({ description: "Empty success response after removing the target system assignment." }),
-            401: t.String({ description: "Unauthenticated – missing or invalid session, API key, or bearer token." }),
-            403: t.String({ description: "Permission denied – the authenticated principal lacks the required functional permission." }),
-            404: t.String({ description: "Not found – the product type, data type assignment, or target system assignment does not exist." }),
+            401: UnauthenticatedErrorResponseSchema,
+            403: ForbiddenErrorResponseSchema,
+            404: NotFoundErrorResponseSchema,
         },
     });
 
     // PATCH /product_types/:producttypeid/datatypes/:datatypeassignmentid/targetsystems/:targetsystemid
     app.patch("/product_types/:producttypeid/datatypes/:datatypeassignmentid/targetsystems/:targetsystemid", async (context) => {
         const claims = context.session?.idTokenClaims ?? context.tokenClaims ?? {};
-        const authz = await authorize(context.dbClient, claims, [FP_DO_CONFIGURATION, FP_MANAGE_PRODUCT_TYPES]);
-        if (!authz.some((perm) => perm.identifier === FP_DO_CONFIGURATION.identifier)) {
-            return status(403, `Permission denied. Required: ${FP_DO_CONFIGURATION.functionalPermissionName}`);
-        }
-        if (!authz.some((perm) => perm.identifier === FP_MANAGE_PRODUCT_TYPES.identifier)) {
-            return status(403, `Permission denied. Required: ${FP_MANAGE_PRODUCT_TYPES.functionalPermissionName}`);
-        }
+        const permissionCheck = await requirePermissions(context.dbClient, claims, [FP_DO_CONFIGURATION, FP_MANAGE_PRODUCT_TYPES]);
+        if (!permissionCheck.ok) return permissionCheck.denial;
 
         const productTypeIdentifier = context.params.producttypeid as string;
 
         const existing = await ProductTypeRepo.getByIdentifier(context.dbClient, productTypeIdentifier, true);
-        if (!existing) return status(404, "Product type does not exist");
+        if (!existing) return status(404, { error: "Product type does not exist" });
 
         const assignment = await getDataTypeAssignment(context.dbClient, context.params.datatypeassignmentid as string);
-        if (!assignment) return status(404, "Data type assignment not found");
+        if (!assignment) return status(404, { error: "Data type assignment not found" });
 
         const result = await updateTargetSystemAssignment(
             context.dbClient,
@@ -611,7 +577,7 @@ export default function register(app: ApiInstance): void {
             context.body as any,
         );
 
-        if (result.length === 0) return status(404, "Target system assignment not found");
+        if (result.length === 0) return status(404, { error: "Target system assignment not found" });
         return { targetSystem: result[0] };
     }, {
         params: t.Object({
@@ -651,9 +617,9 @@ export default function register(app: ApiInstance): void {
         },
         response: {
             200: t.Object({ targetSystem: t.Any() }, { description: "The updated target system assignment." }),
-            401: t.String({ description: "Unauthenticated – missing or invalid session, API key, or bearer token." }),
-            403: t.String({ description: "Permission denied – the authenticated principal lacks the required functional permission." }),
-            404: t.String({ description: "Not found – the product type, data type assignment, or target system assignment does not exist." }),
+            401: UnauthenticatedErrorResponseSchema,
+            403: ForbiddenErrorResponseSchema,
+            404: NotFoundErrorResponseSchema,
         },
     });
 
@@ -664,21 +630,16 @@ export default function register(app: ApiInstance): void {
     // GET /product_types/:producttypeid/datatypes/:datatypeassignmentid/permissions
     app.get("/product_types/:producttypeid/datatypes/:datatypeassignmentid/permissions", async (context) => {
         const claims = context.session?.idTokenClaims ?? context.tokenClaims ?? {};
-        const authz = await authorize(context.dbClient, claims, [FP_DO_CONFIGURATION, FP_VIEW_PRODUCT_TYPES]);
-        if (!authz.some((perm) => perm.identifier === FP_DO_CONFIGURATION.identifier)) {
-            return status(403, `Permission denied. Required: ${FP_DO_CONFIGURATION.functionalPermissionName}`);
-        }
-        if (!authz.some((perm) => perm.identifier === FP_VIEW_PRODUCT_TYPES.identifier)) {
-            return status(403, `Permission denied. Required: ${FP_VIEW_PRODUCT_TYPES.functionalPermissionName}`);
-        }
+        const permissionCheck = await requirePermissions(context.dbClient, claims, [FP_DO_CONFIGURATION, FP_VIEW_PRODUCT_TYPES]);
+        if (!permissionCheck.ok) return permissionCheck.denial;
 
         const productTypeIdentifier = context.params.producttypeid as string;
 
         const existing = await ProductTypeRepo.getByIdentifier(context.dbClient, productTypeIdentifier, true);
-        if (!existing) return status(404, "Product type does not exist");
+        if (!existing) return status(404, { error: "Product type does not exist" });
 
         const assignment = await getDataTypeAssignment(context.dbClient, context.params.datatypeassignmentid as string);
-        if (!assignment) return status(404, "Data type assignment not found");
+        if (!assignment) return status(404, { error: "Data type assignment not found" });
 
         const permissions = await getPermissions(context.dbClient, assignment.identifier);
         return { permissions };
@@ -711,22 +672,17 @@ export default function register(app: ApiInstance): void {
         },
         response: {
             200: t.Object({ permissions: t.Array(t.Any()) }, { description: "All group-role assignments for the product type data type assignment." }),
-            401: t.String({ description: "Unauthenticated – missing or invalid session, API key, or bearer token." }),
-            403: t.String({ description: "Permission denied – the authenticated principal lacks the required functional permission." }),
-            404: t.String({ description: "Not found – the product type or data type assignment does not exist." }),
+            401: UnauthenticatedErrorResponseSchema,
+            403: ForbiddenErrorResponseSchema,
+            404: NotFoundErrorResponseSchema,
         },
     });
 
     // POST /product_types/:producttypeid/datatypes/:datatypeassignmentid/permissions — Grant group+role
     app.post("/product_types/:producttypeid/datatypes/:datatypeassignmentid/permissions", async (context) => {
         const claims = context.session?.idTokenClaims ?? context.tokenClaims ?? {};
-        const authz = await authorize(context.dbClient, claims, [FP_DO_CONFIGURATION, FP_MANAGE_PRODUCT_TYPES]);
-        if (!authz.some((perm) => perm.identifier === FP_DO_CONFIGURATION.identifier)) {
-            return status(403, `Permission denied. Required: ${FP_DO_CONFIGURATION.functionalPermissionName}`);
-        }
-        if (!authz.some((perm) => perm.identifier === FP_MANAGE_PRODUCT_TYPES.identifier)) {
-            return status(403, `Permission denied. Required: ${FP_MANAGE_PRODUCT_TYPES.functionalPermissionName}`);
-        }
+        const permissionCheck = await requirePermissions(context.dbClient, claims, [FP_DO_CONFIGURATION, FP_MANAGE_PRODUCT_TYPES]);
+        if (!permissionCheck.ok) return permissionCheck.denial;
 
         const productTypeIdentifier = context.params.producttypeid as string;
         const body = context.body as any;
@@ -749,8 +705,8 @@ export default function register(app: ApiInstance): void {
             );
         });
 
-        if (created === null) return status(404, "Product type or data type assignment does not exist");
-        if (created.length === 0) return status(500, "Failed to grant permission");
+        if (created === null) return status(404, { error: "Product type or data type assignment does not exist" });
+        if (created.length === 0) return status(500, { error: "Failed to grant permission" });
 
         const groupName = await context.dbClient
             .select({ name: Group.groupName })
@@ -794,32 +750,27 @@ export default function register(app: ApiInstance): void {
         },
         response: {
             200: t.Object({ permission: t.Any() }, { description: "The newly created permission assignment including the group name." }),
-            401: t.String({ description: "Unauthenticated – missing or invalid session, API key, or bearer token." }),
-            403: t.String({ description: "Permission denied – the authenticated principal lacks the required functional permission." }),
-            404: t.String({ description: "Not found – the product type or data type assignment does not exist." }),
-            500: t.String({ description: "Internal server error." }),
+            401: UnauthenticatedErrorResponseSchema,
+            403: ForbiddenErrorResponseSchema,
+            404: NotFoundErrorResponseSchema,
+            500: InternalServerErrorResponseSchema,
         },
     });
 
     // DELETE /product_types/:producttypeid/datatypes/:datatypeassignmentid/permissions — Revoke group+role
     app.delete("/product_types/:producttypeid/datatypes/:datatypeassignmentid/permissions", async (context) => {
         const claims = context.session?.idTokenClaims ?? context.tokenClaims ?? {};
-        const authz = await authorize(context.dbClient, claims, [FP_DO_CONFIGURATION, FP_MANAGE_PRODUCT_TYPES]);
-        if (!authz.some((perm) => perm.identifier === FP_DO_CONFIGURATION.identifier)) {
-            return status(403, `Permission denied. Required: ${FP_DO_CONFIGURATION.functionalPermissionName}`);
-        }
-        if (!authz.some((perm) => perm.identifier === FP_MANAGE_PRODUCT_TYPES.identifier)) {
-            return status(403, `Permission denied. Required: ${FP_MANAGE_PRODUCT_TYPES.functionalPermissionName}`);
-        }
+        const permissionCheck = await requirePermissions(context.dbClient, claims, [FP_DO_CONFIGURATION, FP_MANAGE_PRODUCT_TYPES]);
+        if (!permissionCheck.ok) return permissionCheck.denial;
 
         const productTypeIdentifier = context.params.producttypeid as string;
         const body = context.body as any;
 
         const existing = await ProductTypeRepo.getByIdentifier(context.dbClient, productTypeIdentifier, true);
-        if (!existing) return status(404, "Product type does not exist");
+        if (!existing) return status(404, { error: "Product type does not exist" });
 
         const assignment = await getDataTypeAssignment(context.dbClient, context.params.datatypeassignmentid as string);
-        if (!assignment) return status(404, "Data type assignment not found");
+        if (!assignment) return status(404, { error: "Data type assignment not found" });
 
         const result = await revokePermission(
             context.dbClient,
@@ -828,7 +779,7 @@ export default function register(app: ApiInstance): void {
             body.role,
         );
 
-        if (result.length === 0) return status(404, "Permission assignment not found");
+        if (result.length === 0) return status(404, { error: "Permission assignment not found" });
         return status(200);
     }, {
         params: t.Object({
@@ -860,37 +811,32 @@ export default function register(app: ApiInstance): void {
         },
         response: {
             200: t.Any({ description: "Empty success response after revoking the permission assignment." }),
-            401: t.String({ description: "Unauthenticated – missing or invalid session, API key, or bearer token." }),
-            403: t.String({ description: "Permission denied – the authenticated principal lacks the required functional permission." }),
-            404: t.String({ description: "Not found – the product type, data type assignment, or permission assignment does not exist." }),
+            401: UnauthenticatedErrorResponseSchema,
+            403: ForbiddenErrorResponseSchema,
+            404: NotFoundErrorResponseSchema,
         },
     });
 
     // PATCH /product_types/:producttypeid/datatypes/:datatypeassignmentid/permissions/:permid — Update showByDefault
     app.patch("/product_types/:producttypeid/datatypes/:datatypeassignmentid/permissions/:permid", async (context) => {
         const claims = context.session?.idTokenClaims ?? context.tokenClaims ?? {};
-        const authz = await authorize(context.dbClient, claims, [FP_DO_CONFIGURATION, FP_MANAGE_PRODUCT_TYPES]);
-        if (!authz.some((perm) => perm.identifier === FP_DO_CONFIGURATION.identifier)) {
-            return status(403, `Permission denied. Required: ${FP_DO_CONFIGURATION.functionalPermissionName}`);
-        }
-        if (!authz.some((perm) => perm.identifier === FP_MANAGE_PRODUCT_TYPES.identifier)) {
-            return status(403, `Permission denied. Required: ${FP_MANAGE_PRODUCT_TYPES.functionalPermissionName}`);
-        }
+        const permissionCheck = await requirePermissions(context.dbClient, claims, [FP_DO_CONFIGURATION, FP_MANAGE_PRODUCT_TYPES]);
+        if (!permissionCheck.ok) return permissionCheck.denial;
 
         const productTypeIdentifier = context.params.producttypeid as string;
         const permId = context.params.permid as string;
 
         const sepIndex = permId.indexOf("__");
-        if (sepIndex === -1) return status(400, "Invalid permission identifier format");
+        if (sepIndex === -1) return status(400, { error: "Invalid permission identifier format" });
 
         const groupIdentifier = permId.slice(0, sepIndex);
         const role = permId.slice(sepIndex + 2);
 
         const existing = await ProductTypeRepo.getByIdentifier(context.dbClient, productTypeIdentifier, true);
-        if (!existing) return status(404, "Product type does not exist");
+        if (!existing) return status(404, { error: "Product type does not exist" });
 
         const assignment = await getDataTypeAssignment(context.dbClient, context.params.datatypeassignmentid as string);
-        if (!assignment) return status(404, "Data type assignment not found");
+        if (!assignment) return status(404, { error: "Data type assignment not found" });
 
         const result = await updatePermission(
             context.dbClient,
@@ -900,7 +846,7 @@ export default function register(app: ApiInstance): void {
             context.body as any,
         );
 
-        if (result.length === 0) return status(409, "Permission assignment was modified or not found");
+        if (result.length === 0) return status(409, { error: "Permission assignment was modified or not found" });
         return { permission: result[0] };
     }, {
         params: t.Object({
@@ -940,11 +886,11 @@ export default function register(app: ApiInstance): void {
         },
         response: {
             200: t.Object({ permission: t.Any() }, { description: "The updated permission assignment." }),
-            400: t.String({ description: "Invalid request – the permission identifier format is invalid." }),
-            401: t.String({ description: "Unauthenticated – missing or invalid session, API key, or bearer token." }),
-            403: t.String({ description: "Permission denied – the authenticated principal lacks the required functional permission." }),
-            404: t.String({ description: "Not found – the product type or data type assignment does not exist." }),
-            409: t.String({ description: "Conflict – optimistic locking failed; the permission assignment was modified by another user." }),
+            400: BadRequestErrorResponseSchema,
+            401: UnauthenticatedErrorResponseSchema,
+            403: ForbiddenErrorResponseSchema,
+            404: NotFoundErrorResponseSchema,
+            409: ConflictErrorResponseSchema,
         },
     });
 
@@ -955,21 +901,16 @@ export default function register(app: ApiInstance): void {
     // GET /product_types/:producttypeid/datatypes/:datatypeassignmentid/previous-approvals
     app.get("/product_types/:producttypeid/datatypes/:datatypeassignmentid/previous-approvals", async (context) => {
         const claims = context.session?.idTokenClaims ?? context.tokenClaims ?? {};
-        const authz = await authorize(context.dbClient, claims, [FP_DO_CONFIGURATION, FP_VIEW_PRODUCT_TYPES]);
-        if (!authz.some((perm) => perm.identifier === FP_DO_CONFIGURATION.identifier)) {
-            return status(403, `Permission denied. Required: ${FP_DO_CONFIGURATION.functionalPermissionName}`);
-        }
-        if (!authz.some((perm) => perm.identifier === FP_VIEW_PRODUCT_TYPES.identifier)) {
-            return status(403, `Permission denied. Required: ${FP_VIEW_PRODUCT_TYPES.functionalPermissionName}`);
-        }
+        const permissionCheck = await requirePermissions(context.dbClient, claims, [FP_DO_CONFIGURATION, FP_VIEW_PRODUCT_TYPES]);
+        if (!permissionCheck.ok) return permissionCheck.denial;
 
         const productTypeIdentifier = context.params.producttypeid as string;
 
         const existing = await ProductTypeRepo.getByIdentifier(context.dbClient, productTypeIdentifier, true);
-        if (!existing) return status(404, "Product type does not exist");
+        if (!existing) return status(404, { error: "Product type does not exist" });
 
         const assignment = await getDataTypeAssignment(context.dbClient, context.params.datatypeassignmentid as string);
-        if (!assignment) return status(404, "Data type assignment not found");
+        if (!assignment) return status(404, { error: "Data type assignment not found" });
 
         const previousApprovals = await getPreviousApprovals(context.dbClient, productTypeIdentifier, assignment.dataType);
         return { previousApprovals };
@@ -1002,22 +943,17 @@ export default function register(app: ApiInstance): void {
         },
         response: {
             200: t.Object({ previousApprovals: t.Array(t.Any()) }, { description: "All previous-approval dependencies of the product type data type assignment." }),
-            401: t.String({ description: "Unauthenticated – missing or invalid session, API key, or bearer token." }),
-            403: t.String({ description: "Permission denied – the authenticated principal lacks the required functional permission." }),
-            404: t.String({ description: "Not found – the product type or data type assignment does not exist." }),
+            401: UnauthenticatedErrorResponseSchema,
+            403: ForbiddenErrorResponseSchema,
+            404: NotFoundErrorResponseSchema,
         },
     });
 
     // POST /product_types/:producttypeid/datatypes/:datatypeassignmentid/previous-approvals
     app.post("/product_types/:producttypeid/datatypes/:datatypeassignmentid/previous-approvals", async (context) => {
         const claims = context.session?.idTokenClaims ?? context.tokenClaims ?? {};
-        const authz = await authorize(context.dbClient, claims, [FP_DO_CONFIGURATION, FP_MANAGE_PRODUCT_TYPES]);
-        if (!authz.some((perm) => perm.identifier === FP_DO_CONFIGURATION.identifier)) {
-            return status(403, `Permission denied. Required: ${FP_DO_CONFIGURATION.functionalPermissionName}`);
-        }
-        if (!authz.some((perm) => perm.identifier === FP_MANAGE_PRODUCT_TYPES.identifier)) {
-            return status(403, `Permission denied. Required: ${FP_MANAGE_PRODUCT_TYPES.functionalPermissionName}`);
-        }
+        const permissionCheck = await requirePermissions(context.dbClient, claims, [FP_DO_CONFIGURATION, FP_MANAGE_PRODUCT_TYPES]);
+        if (!permissionCheck.ok) return permissionCheck.denial;
 
         const productTypeIdentifier = context.params.producttypeid as string;
         const body = context.body as any;
@@ -1032,8 +968,8 @@ export default function register(app: ApiInstance): void {
             return addPreviousApproval(tx, productTypeIdentifier, assignment.dataType, body.dependsOnDataType);
         });
 
-        if (created === null) return status(404, "Product type or data type assignment does not exist");
-        if (!created) return status(409, "Previous approval dependency already exists or would create a cycle");
+        if (created === null) return status(404, { error: "Product type or data type assignment does not exist" });
+        if (!created) return status(409, { error: "Previous approval dependency already exists or would create a cycle" });
 
         return { previousApproval: created };
     }, {
@@ -1066,31 +1002,26 @@ export default function register(app: ApiInstance): void {
         },
         response: {
             200: t.Object({ previousApproval: t.Any() }, { description: "The newly created previous-approval dependency." }),
-            401: t.String({ description: "Unauthenticated – missing or invalid session, API key, or bearer token." }),
-            403: t.String({ description: "Permission denied – the authenticated principal lacks the required functional permission." }),
-            404: t.String({ description: "Not found – the product type or data type assignment does not exist." }),
-            409: t.String({ description: "Conflict – the previous approval dependency already exists or would create a cycle." }),
+            401: UnauthenticatedErrorResponseSchema,
+            403: ForbiddenErrorResponseSchema,
+            404: NotFoundErrorResponseSchema,
+            409: ConflictErrorResponseSchema,
         },
     });
 
     // DELETE /product_types/:producttypeid/datatypes/:datatypeassignmentid/previous-approvals/:dependsonid
     app.delete("/product_types/:producttypeid/datatypes/:datatypeassignmentid/previous-approvals/:dependsonid", async (context) => {
         const claims = context.session?.idTokenClaims ?? context.tokenClaims ?? {};
-        const authz = await authorize(context.dbClient, claims, [FP_DO_CONFIGURATION, FP_MANAGE_PRODUCT_TYPES]);
-        if (!authz.some((perm) => perm.identifier === FP_DO_CONFIGURATION.identifier)) {
-            return status(403, `Permission denied. Required: ${FP_DO_CONFIGURATION.functionalPermissionName}`);
-        }
-        if (!authz.some((perm) => perm.identifier === FP_MANAGE_PRODUCT_TYPES.identifier)) {
-            return status(403, `Permission denied. Required: ${FP_MANAGE_PRODUCT_TYPES.functionalPermissionName}`);
-        }
+        const permissionCheck = await requirePermissions(context.dbClient, claims, [FP_DO_CONFIGURATION, FP_MANAGE_PRODUCT_TYPES]);
+        if (!permissionCheck.ok) return permissionCheck.denial;
 
         const productTypeIdentifier = context.params.producttypeid as string;
 
         const existing = await ProductTypeRepo.getByIdentifier(context.dbClient, productTypeIdentifier, true);
-        if (!existing) return status(404, "Product type does not exist");
+        if (!existing) return status(404, { error: "Product type does not exist" });
 
         const assignment = await getDataTypeAssignment(context.dbClient, context.params.datatypeassignmentid as string);
-        if (!assignment) return status(404, "Data type assignment not found");
+        if (!assignment) return status(404, { error: "Data type assignment not found" });
 
         await removePreviousApproval(context.dbClient, productTypeIdentifier, assignment.dataType, context.params.dependsonid as string);
         return status(200);
@@ -1131,9 +1062,9 @@ export default function register(app: ApiInstance): void {
         },
         response: {
             200: t.Any({ description: "Empty success response after removing the previous-approval dependency." }),
-            401: t.String({ description: "Unauthenticated – missing or invalid session, API key, or bearer token." }),
-            403: t.String({ description: "Permission denied – the authenticated principal lacks the required functional permission." }),
-            404: t.String({ description: "Not found – the product type or data type assignment does not exist." }),
+            401: UnauthenticatedErrorResponseSchema,
+            403: ForbiddenErrorResponseSchema,
+            404: NotFoundErrorResponseSchema,
         },
     });
 
@@ -1144,18 +1075,13 @@ export default function register(app: ApiInstance): void {
     // GET /product_types/:producttypeid/permissions — List product-type-level permissions
     app.get("/product_types/:producttypeid/permissions", async (context) => {
         const claims = context.session?.idTokenClaims ?? context.tokenClaims ?? {};
-        const authz = await authorize(context.dbClient, claims, [FP_DO_CONFIGURATION, FP_VIEW_PRODUCT_TYPES]);
-        if (!authz.some((perm) => perm.identifier === FP_DO_CONFIGURATION.identifier)) {
-            return status(403, `Permission denied. Required: ${FP_DO_CONFIGURATION.functionalPermissionName}`);
-        }
-        if (!authz.some((perm) => perm.identifier === FP_VIEW_PRODUCT_TYPES.identifier)) {
-            return status(403, `Permission denied. Required: ${FP_VIEW_PRODUCT_TYPES.functionalPermissionName}`);
-        }
+        const permissionCheck = await requirePermissions(context.dbClient, claims, [FP_DO_CONFIGURATION, FP_VIEW_PRODUCT_TYPES]);
+        if (!permissionCheck.ok) return permissionCheck.denial;
 
         const productTypeIdentifier = context.params.producttypeid as string;
 
         const existing = await ProductTypeRepo.getByIdentifier(context.dbClient, productTypeIdentifier, true);
-        if (!existing) return status(404, "Product type does not exist");
+        if (!existing) return status(404, { error: "Product type does not exist" });
 
         const permissions = await getProductTypePermissions(context.dbClient, productTypeIdentifier);
         return { permissions };
@@ -1180,22 +1106,17 @@ export default function register(app: ApiInstance): void {
         },
         response: {
             200: t.Object({ permissions: t.Array(t.Any()) }, { description: "All group-role assignments for the product type." }),
-            401: t.String({ description: "Unauthenticated – missing or invalid session, API key, or bearer token." }),
-            403: t.String({ description: "Permission denied – the authenticated principal lacks the required functional permission." }),
-            404: t.String({ description: "Not found – no product type with this identifier exists." }),
+            401: UnauthenticatedErrorResponseSchema,
+            403: ForbiddenErrorResponseSchema,
+            404: NotFoundErrorResponseSchema,
         },
     });
 
     // POST /product_types/:producttypeid/permissions — Grant product-type-level permission
     app.post("/product_types/:producttypeid/permissions", async (context) => {
         const claims = context.session?.idTokenClaims ?? context.tokenClaims ?? {};
-        const authz = await authorize(context.dbClient, claims, [FP_DO_CONFIGURATION, FP_MANAGE_PRODUCT_TYPES]);
-        if (!authz.some((perm) => perm.identifier === FP_DO_CONFIGURATION.identifier)) {
-            return status(403, `Permission denied. Required: ${FP_DO_CONFIGURATION.functionalPermissionName}`);
-        }
-        if (!authz.some((perm) => perm.identifier === FP_MANAGE_PRODUCT_TYPES.identifier)) {
-            return status(403, `Permission denied. Required: ${FP_MANAGE_PRODUCT_TYPES.functionalPermissionName}`);
-        }
+        const permissionCheck = await requirePermissions(context.dbClient, claims, [FP_DO_CONFIGURATION, FP_MANAGE_PRODUCT_TYPES]);
+        if (!permissionCheck.ok) return permissionCheck.denial;
 
         const productTypeIdentifier = context.params.producttypeid as string;
         const body = context.body as { groupIdentifier: string };
@@ -1208,7 +1129,7 @@ export default function register(app: ApiInstance): void {
             return grantProductTypePermission(tx, user, productTypeIdentifier, body.groupIdentifier);
         });
 
-        if (created === null) return status(404, "Product type does not exist");
+        if (created === null) return status(404, { error: "Product type does not exist" });
         if (created.length === 0) return status(200, { permission: null });
 
         const groupName = await context.dbClient
@@ -1247,28 +1168,23 @@ export default function register(app: ApiInstance): void {
         },
         response: {
             200: t.Object({ permission: t.Any() }, { description: "The newly created product-type permission assignment including the group name." }),
-            401: t.String({ description: "Unauthenticated – missing or invalid session, API key, or bearer token." }),
-            403: t.String({ description: "Permission denied – the authenticated principal lacks the required functional permission." }),
-            404: t.String({ description: "Not found – no product type with this identifier exists." }),
+            401: UnauthenticatedErrorResponseSchema,
+            403: ForbiddenErrorResponseSchema,
+            404: NotFoundErrorResponseSchema,
         },
     });
 
     // DELETE /product_types/:producttypeid/permissions — Revoke product-type-level permission
     app.delete("/product_types/:producttypeid/permissions", async (context) => {
         const claims = context.session?.idTokenClaims ?? context.tokenClaims ?? {};
-        const authz = await authorize(context.dbClient, claims, [FP_DO_CONFIGURATION, FP_MANAGE_PRODUCT_TYPES]);
-        if (!authz.some((perm) => perm.identifier === FP_DO_CONFIGURATION.identifier)) {
-            return status(403, `Permission denied. Required: ${FP_DO_CONFIGURATION.functionalPermissionName}`);
-        }
-        if (!authz.some((perm) => perm.identifier === FP_MANAGE_PRODUCT_TYPES.identifier)) {
-            return status(403, `Permission denied. Required: ${FP_MANAGE_PRODUCT_TYPES.functionalPermissionName}`);
-        }
+        const permissionCheck = await requirePermissions(context.dbClient, claims, [FP_DO_CONFIGURATION, FP_MANAGE_PRODUCT_TYPES]);
+        if (!permissionCheck.ok) return permissionCheck.denial;
 
         const productTypeIdentifier = context.params.producttypeid as string;
         const body = context.body as { groupIdentifier: string };
 
         const existing = await ProductTypeRepo.getByIdentifier(context.dbClient, productTypeIdentifier, true);
-        if (!existing) return status(404, "Product type does not exist");
+        if (!existing) return status(404, { error: "Product type does not exist" });
 
         const result = await revokeProductTypePermission(
             context.dbClient,
@@ -1276,7 +1192,7 @@ export default function register(app: ApiInstance): void {
             body.groupIdentifier,
         );
 
-        if (result.length === 0) return status(404, "Permission assignment not found");
+        if (result.length === 0) return status(404, { error: "Permission assignment not found" });
         return status(200);
     }, {
         params: t.Object({
@@ -1302,9 +1218,9 @@ export default function register(app: ApiInstance): void {
         },
         response: {
             200: t.Any({ description: "Empty success response after revoking the product-type permission assignment." }),
-            401: t.String({ description: "Unauthenticated – missing or invalid session, API key, or bearer token." }),
-            403: t.String({ description: "Permission denied – the authenticated principal lacks the required functional permission." }),
-            404: t.String({ description: "Not found – the product type or permission assignment does not exist." }),
+            401: UnauthenticatedErrorResponseSchema,
+            403: ForbiddenErrorResponseSchema,
+            404: NotFoundErrorResponseSchema,
         },
     });
 }

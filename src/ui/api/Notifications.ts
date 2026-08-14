@@ -10,6 +10,7 @@ export interface NotificationConfigEntry {
     inputFormat: string;
     outputFormat: string;
     userProfile: boolean;
+    updatedAt: string;
 }
 
 export interface SimulateResult {
@@ -29,11 +30,11 @@ export async function getNotificationConfig(): Promise<NotificationConfigEntry[]
 export async function updateNotificationConfig(
     key: string,
     value: unknown,
-    knownValue: unknown,
+    knownUpdatedAt: string,
 ): Promise<NotificationConfigEntry> {
     return apiPut<NotificationConfigEntry>(
         `/api/notifications/config/${encodeURIComponent(key)}`,
-        { value, knownValue },
+        { value, knownUpdatedAt },
     );
 }
 

@@ -190,7 +190,7 @@ export async function markValuesAsUsed(
     if (identifiers.length === 0) return;
     await db
         .update(ConsumablesValues)
-        .set({ isUsed: true })
+        .set({ isUsed: true, updatedAt: sql`now()` })
         .where(inArray(ConsumablesValues.identifier, identifiers));
 }
 
@@ -208,6 +208,6 @@ export async function markValuesAsUnused(
     if (identifiers.length === 0) return;
     await db
         .update(ConsumablesValues)
-        .set({ isUsed: false })
+        .set({ isUsed: false, updatedAt: sql`now()` })
         .where(inArray(ConsumablesValues.identifier, identifiers));
 }

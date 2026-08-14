@@ -1,18 +1,16 @@
 import type { ApiInstance } from "@/apps/api.ts";
-import { authorize } from "@/services/Auth.ts";
-import { FP_MANAGE_DATA_TYPES } from "@/services/auth/FunctionalPermissions.ts";
+import { requirePermissions } from "@/services/Auth.ts";
+import { FP_MANAGE_DATA_TYPES } from "@/services/auth/ApplicationDefinedFunctionalPermissions.ts";
 import { clearScriptLogs, getScriptLogs } from "@/repo/ScriptLogRepo.ts";
-import { status } from "elysia";
 import { Type } from "@sinclair/typebox";
+import { ForbiddenErrorResponseSchema, PaginationQuerySchema, UnauthenticatedErrorResponseSchema } from "@/types/ApiType.ts";
 
 // noinspection JSUnusedGlobalSymbols
 export default function register(app: ApiInstance) {
     app.get("/script-log", async (context) => {
         const claims = context.session?.idTokenClaims ?? context.tokenClaims ?? {};
-        const authz = await authorize(context.dbClient, claims, [FP_MANAGE_DATA_TYPES]);
-        if (!authz.some((p) => p.identifier === FP_MANAGE_DATA_TYPES.identifier)) {
-            return status(403, `Permission denied. Required: ${FP_MANAGE_DATA_TYPES.functionalPermissionName}`);
-        }
+        const permissionCheck = await requirePermissions(context.dbClient, claims, [FP_MANAGE_DATA_TYPES]);
+        if (!permissionCheck.ok) return permissionCheck.denial;
 
         const page = Math.max(0, Number(context.query.page ?? 0));
         const pageSize = Math.max(1, Number(context.query.pageSize ?? 50));
@@ -39,14 +37,15 @@ export default function register(app: ApiInstance) {
             pageSize: result.pageSize,
         };
     }, {
-        query: Type.Object({
-            page: Type.Optional(Type.Union([Type.Number({ minimum: 0 }), Type.String()])),
-            pageSize: Type.Optional(Type.Union([Type.Number({ minimum: 1 }), Type.String()])),
-            logLevel: Type.Optional(Type.String()),
-            scriptCategory: Type.Optional(Type.String()),
-            dataTypeIdentifier: Type.Optional(Type.String()),
-            productRequestIdentifier: Type.Optional(Type.String()),
-        }),
+        query: Type.Composite([
+            PaginationQuerySchema,
+            Type.Object({
+                logLevel: Type.Optional(Type.String()),
+                scriptCategory: Type.Optional(Type.String()),
+                dataTypeIdentifier: Type.Optional(Type.String()),
+                productRequestIdentifier: Type.Optional(Type.String()),
+            }),
+        ]),
         response: {
             200: Type.Object({
                 rows: Type.Array(Type.Any()),
@@ -54,8 +53,8 @@ export default function register(app: ApiInstance) {
                 page: Type.Number(),
                 pageSize: Type.Number(),
             }, { description: "Paginated script log entries with pagination metadata." }),
-            401: Type.String({ description: "Unauthenticated – missing or invalid session, API key, or bearer token." }),
-            403: Type.String({ description: "Permission denied – the authenticated principal lacks the required functional permission." }),
+            401: UnauthenticatedErrorResponseSchema,
+            403: ForbiddenErrorResponseSchema,
         },
         detail: {
             tags: ["Script Log"],
@@ -118,10 +117,8 @@ export default function register(app: ApiInstance) {
 
     app.delete("/script-log", async (context) => {
         const claims = context.session?.idTokenClaims ?? context.tokenClaims ?? {};
-        const authz = await authorize(context.dbClient, claims, [FP_MANAGE_DATA_TYPES]);
-        if (!authz.some((p) => p.identifier === FP_MANAGE_DATA_TYPES.identifier)) {
-            return status(403, `Permission denied. Required: ${FP_MANAGE_DATA_TYPES.functionalPermissionName}`);
-        }
+        const permissionCheck = await requirePermissions(context.dbClient, claims, [FP_MANAGE_DATA_TYPES]);
+        if (!permissionCheck.ok) return permissionCheck.denial;
         const deletedCount = await clearScriptLogs(context.dbClient);
         return { success: true, deletedCount };
     }, {
@@ -141,8 +138,8 @@ export default function register(app: ApiInstance) {
         },
         response: {
             200: Type.Object({ success: Type.Boolean(), deletedCount: Type.Number() }, { description: "Confirmation of the cleared script log with the number of deleted entries." }),
-            401: Type.String({ description: "Unauthenticated – missing or invalid session, API key, or bearer token." }),
-            403: Type.String({ description: "Permission denied – the authenticated principal lacks the required functional permission." }),
+            401: UnauthenticatedErrorResponseSchema,
+            403: ForbiddenErrorResponseSchema,
         },
     });
 }

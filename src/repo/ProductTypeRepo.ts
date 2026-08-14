@@ -248,7 +248,7 @@ export async function updateDataTypeAssignment(
 ): Promise<ProductTypesDataType[]> {
     const result = await db
         .update(ProductTypesDataTypes)
-        .set(fields as any)
+        .set({ ...fields, updatedAt: sql`now()` } as any)
         .where(eq(ProductTypesDataTypes.identifier, assignmentIdentifier))
         .returning();
 
@@ -343,7 +343,7 @@ export async function updateTargetSystemAssignment(
 ): Promise<ProductTypesDataTypesTargetSystem[]> {
     const result = await db
         .update(ProductTypesDataTypesTargetSystems)
-        .set(fields as any)
+        .set({ ...fields, updatedAt: sql`now()` } as any)
         .where(and(
             eq(ProductTypesDataTypesTargetSystems.productType, productTypeIdentifier),
             eq(ProductTypesDataTypesTargetSystems.dataType, dataTypeIdentifier),
@@ -448,7 +448,7 @@ export async function updatePermission(
 ): Promise<ProductTypesDataTypePermissionType[]> {
     const result = await db
         .update(ProductTypesDataTypePermission)
-        .set(fields as any)
+        .set({ ...fields, updatedAt: sql`now()` } as any)
         .where(and(
             eq(ProductTypesDataTypePermission.productTypeDataTypeIdentifier, assignmentIdentifier),
             eq(ProductTypesDataTypePermission.groupIdentifier, groupIdentifier),

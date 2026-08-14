@@ -1,4 +1,4 @@
-import { type DBClient, getDatabaseConnection, runInTransaction } from "@/services/DatabaseDriver.ts";
+import { type DBClient, runInTransaction } from "@/services/DatabaseDriver.ts";
 import { getConfigEntriesByKey, upsertConfigEntry } from "@/repo/ConfigRepo.ts";
 import { getUserProfileConfigEntry } from "@/repo/UserProfileConfigRepo.ts";
 import {
@@ -485,7 +485,7 @@ export async function init(db: DBClient) {
 
     try {
         new Cron(cronExpr, () => {
-            void sendDigest(getDatabaseConnection());
+            void sendDigest(db);
         }, { name: "Notification digest" });
         if (devMode) console.log(`[notifications] Started with schedule: ${cronExpr}`);
     } catch (e) {

@@ -4,8 +4,3 @@
  * application-module imports, so this re-export cannot create a circular dependency.
  */
 export { devMode, sqlLogging } from "@/services/Env.ts";
-
-export const sqlLogging: boolean = process.env.SQL_LOGGING === "1";
-
-/** Enables client-side debug console logging when set to "1". Exposed via /api/me/context. */
-export const debugFrontend: boolean = process.env.DEBUG_FRONTEND === "1";

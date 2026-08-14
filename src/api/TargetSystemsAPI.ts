@@ -1,5 +1,5 @@
 import type { ApiInstance } from "@/apps/api.ts";
-import { FP_DO_CONFIGURATION, FP_MANAGE_TARGET_SYSTEMS, FP_VIEW_TARGET_SYSTEMS } from "@/services/auth/FunctionalPermissions.ts";
+import { FP_DO_CONFIGURATION, FP_MANAGE_TARGET_SYSTEMS, FP_VIEW_TARGET_SYSTEMS } from "@/services/auth/ApplicationDefinedFunctionalPermissions.ts";
 import { count, create, disable, enable, get, getByIdentifier, update } from "@/repo/TargetSystemRepo.ts";
 import {
     message_CreateTargetSystem,

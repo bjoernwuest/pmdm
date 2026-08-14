@@ -1,6 +1,6 @@
 import type { ApiInstance } from "@/apps/api.ts";
 import { runInTransaction } from "@/services/DatabaseDriver.ts";
-import { authorize, getLoggedinUserObject } from "@/services/Auth.ts";
+import { getLoggedinUserObject, requirePermissions } from "@/services/Auth.ts";
 import {
     FP_VIEW_PRODUCTS,
     FP_CREATE_PRODUCT,
@@ -8,7 +8,7 @@ import {
     FP_DISABLE_PRODUCT,
     FP_REQUEST_PRODUCT_UPDATE,
     FP_CREATE_PRODUCT_COPY,
-} from "@/services/auth/FunctionalPermissions.ts";
+} from "@/services/auth/ApplicationDefinedFunctionalPermissions.ts";
 import {
     countProducts,
     getProducts,
@@ -30,6 +30,16 @@ import { getCell, getMaxRow, getMaxCol } from "@office-kit/xlsx/worksheet";
 import { loadWorkbook } from "@office-kit/xlsx/io";
 import type {ImportRow} from "@/types/ProductType.ts";
 import {getUserListPageSizes} from "@/services/ui_config.ts";
+import { Type } from "@sinclair/typebox";
+import {
+    BadRequestErrorResponseSchema,
+    ConflictErrorResponseSchema,
+    ForbiddenErrorResponseSchema,
+    InternalServerErrorResponseSchema,
+    NotFoundErrorResponseSchema,
+    PaginationQuerySchema,
+    UnauthenticatedErrorResponseSchema,
+} from "@/types/ApiType.ts";
 
 /**
  * Registers all Product API routes.
@@ -44,10 +54,8 @@ export default function register(app: ApiInstance): void {
     // -----------------------------------------------------------------------
     app.get("/products", async (context) => {
         const claims = context.session?.idTokenClaims ?? context.tokenClaims ?? {};
-        const authz = await authorize(context.dbClient, claims, [FP_VIEW_PRODUCTS]);
-        if (!authz.some((perm) => perm.identifier === FP_VIEW_PRODUCTS.identifier)) {
-            return status(403, `Permission denied. Required: ${FP_VIEW_PRODUCTS.functionalPermissionName}`);
-        }
+        const permissionCheck = await requirePermissions(context.dbClient, claims, [FP_VIEW_PRODUCTS]);
+        if (!permissionCheck.ok) return permissionCheck.denial;
 
         const availablePageSizes = await getUserListPageSizes(context.dbClient, typeof claims.oid === "string" ? claims.oid : undefined);
         const page = Math.max(0, Number(context.query.page ?? 0));
@@ -103,15 +111,16 @@ export default function register(app: ApiInstance): void {
             includeDisabled,
         };
     }, {
-        query: t.Object({
-            page: t.Optional(t.Union([t.Number({ minimum: 0 }), t.String()])),
-            pageSize: t.Optional(t.Union([t.Number({ minimum: 1 }), t.String()])),
-            includeDisabled: t.Optional(t.String()),
-            productNumberContains: t.Optional(t.String()),
-            productTypeIdentifier: t.Optional(t.String()),
-            disabled: t.Optional(t.String()),
-            filter: t.Optional(t.String()),
-        }),
+        query: Type.Composite([
+            PaginationQuerySchema,
+            Type.Object({
+                includeDisabled: Type.Optional(Type.String()),
+                productNumberContains: Type.Optional(Type.String()),
+                productTypeIdentifier: Type.Optional(Type.String()),
+                disabled: Type.Optional(Type.String()),
+                filter: Type.Optional(Type.String()),
+            }),
+        ]),
         detail: {
             tags: ["Products"],
             summary: "List products",
@@ -179,8 +188,8 @@ export default function register(app: ApiInstance): void {
                 availablePageSizes: t.Array(t.Number()),
                 includeDisabled: t.Boolean(),
             }, { description: "Paginated list of products with pagination metadata, effective viewer permissions, and disabled-inclusion flag." }),
-            401: t.String({ description: "Unauthenticated – missing or invalid session, API key, or bearer token." }),
-            403: t.String({ description: "Permission denied – the authenticated principal lacks the required functional permission." }),
+             401: UnauthenticatedErrorResponseSchema,
+             403: ForbiddenErrorResponseSchema,
         },
     });
 
@@ -190,10 +199,8 @@ export default function register(app: ApiInstance): void {
     // -----------------------------------------------------------------------
     app.get("/products/export-template/:productTypeIdentifier", async (context) => {
         const claims = context.session?.idTokenClaims ?? context.tokenClaims ?? {};
-        const authz = await authorize(context.dbClient, claims, [FP_VIEW_PRODUCTS]);
-        if (!authz.some((perm) => perm.identifier === FP_VIEW_PRODUCTS.identifier)) {
-            return status(403, `Permission denied. Required: ${FP_VIEW_PRODUCTS.functionalPermissionName}`);
-        }
+        const permissionCheck = await requirePermissions(context.dbClient, claims, [FP_VIEW_PRODUCTS]);
+        if (!permissionCheck.ok) return permissionCheck.denial;
 
         const productTypeIdentifier = context.params.productTypeIdentifier as string;
 
@@ -201,7 +208,7 @@ export default function register(app: ApiInstance): void {
         try {
             result = await generateProductTemplate(context.dbClient, productTypeIdentifier);
         } catch (e: any) {
-            return status(404, e.message);
+            return status(404, { error: e.message });
         }
 
         return new Response(new Uint8Array(result.bytes), {
@@ -211,7 +218,7 @@ export default function register(app: ApiInstance): void {
             },
         });
     }, {
-        params: t.Object({ productTypeIdentifier: t.String() }),
+        params: t.Object({ productTypeIdentifier: t.String({ format: "uuid" }) }),
         detail: {
             tags: ["Products"],
             summary: "Download product import template",
@@ -229,9 +236,9 @@ export default function register(app: ApiInstance): void {
         },
         response: {
             200: t.Any({ description: "XLSX import template file (application/vnd.openxmlformats-officedocument.spreadsheetml.sheet)." }),
-            401: t.String({ description: "Unauthenticated – missing or invalid session, API key, or bearer token." }),
-            403: t.String({ description: "Permission denied – the authenticated principal lacks the required functional permission." }),
-            404: t.String({ description: "Not found – the referenced product type does not exist." }),
+             401: UnauthenticatedErrorResponseSchema,
+             403: ForbiddenErrorResponseSchema,
+            404: NotFoundErrorResponseSchema,
         },
     });
 
@@ -241,16 +248,14 @@ export default function register(app: ApiInstance): void {
     // -----------------------------------------------------------------------
     app.post("/products/import", async (context) => {
         const claims = context.session?.idTokenClaims ?? context.tokenClaims ?? {};
-        const authz = await authorize(context.dbClient, claims, [FP_CREATE_PRODUCT]);
-        if (!authz.some((perm) => perm.identifier === FP_CREATE_PRODUCT.identifier)) {
-            return status(403, `Permission denied. Required: ${FP_CREATE_PRODUCT.functionalPermissionName}`);
-        }
+        const permissionCheck = await requirePermissions(context.dbClient, claims, [FP_CREATE_PRODUCT]);
+        if (!permissionCheck.ok) return permissionCheck.denial;
 
         // Use standard Web API FormData for reliable multipart file extraction
         const reqFormData = await context.request.formData();
         const file = reqFormData.get("file");
 
-        if (!file) return status(400, "No file provided");
+        if (!file) return status(400, { error: "No file provided" });
 
         // Parse workbook — productTypeIdentifier is in cell A1 (written by generateProductTemplate)
         // @office-kit/xlsx's loadWorkbook expects an XlsxSource: { toBytes(): Promise<Uint8Array> }
@@ -259,20 +264,20 @@ export default function register(app: ApiInstance): void {
             const buf = await (file as Blob).arrayBuffer();
             wb = await loadWorkbook({ toBytes: async () => new Uint8Array(buf) });
         } catch (e: any) {
-            return status(400, `Failed to parse XLSX file: ${e.message}`);
+            return status(400, { error: `Failed to parse XLSX file: ${e.message}` });
         }
 
         const names = sheetNames(wb);
-        if (names.length === 0) return status(400, "XLSX file has no sheets");
+        if (names.length === 0) return status(400, { error: "XLSX file has no sheets" });
         const ws = getSheet(wb, names[0]!);
-        if (!ws) return status(400, "XLSX file has no sheets");
+        if (!ws) return status(400, { error: "XLSX file has no sheets" });
 
         // Read productTypeIdentifier from cell A1
         const productTypeIdentifier = getCell(ws, 1, 1)?.value?.toString() ?? "";
-        if (!productTypeIdentifier) return status(400, "Cell A1 must contain the product type identifier (export the template first)");
+        if (!productTypeIdentifier) return status(400, { error: "Cell A1 must contain the product type identifier (export the template first)" });
 
         const pt = await ProductTypeRepo.getByIdentifier(context.dbClient, productTypeIdentifier, true);
-        if (!pt) return status(404, `Product type not found: ${productTypeIdentifier}`);
+        if (!pt) return status(404, { error: `Product type not found: ${productTypeIdentifier}` });
 
         // Read header row (row 2)
         const maxCol = getMaxCol(ws);
@@ -282,7 +287,7 @@ export default function register(app: ApiInstance): void {
         }
 
         if (headers[0] !== "productNumber") {
-            return status(400, "Column A in header row must be 'productNumber'");
+            return status(400, { error: "Column A in header row must be 'productNumber'" });
         }
 
         const dtNames = headers.slice(1);
@@ -313,10 +318,10 @@ export default function register(app: ApiInstance): void {
         },
         response: {
             200: t.Any({ description: "Import result summary with counts of created and updated products and per-row errors." }),
-            400: t.String({ description: "Invalid request – missing file, malformed XLSX, or invalid template structure." }),
-            401: t.String({ description: "Unauthenticated – missing or invalid session, API key, or bearer token." }),
-            403: t.String({ description: "Permission denied – the authenticated principal lacks the required functional permission." }),
-            404: t.String({ description: "Not found – the product type referenced in the XLSX does not exist." }),
+            400: BadRequestErrorResponseSchema,
+             401: UnauthenticatedErrorResponseSchema,
+             403: ForbiddenErrorResponseSchema,
+            404: NotFoundErrorResponseSchema,
         },
     });
 
@@ -325,15 +330,13 @@ export default function register(app: ApiInstance): void {
     // -----------------------------------------------------------------------
     app.get("/products/:productNumber", async (context) => {
         const claims = context.session?.idTokenClaims ?? context.tokenClaims ?? {};
-        const authz = await authorize(context.dbClient, claims, [FP_VIEW_PRODUCTS]);
-        if (!authz.some((perm) => perm.identifier === FP_VIEW_PRODUCTS.identifier)) {
-            return status(403, `Permission denied. Required: ${FP_VIEW_PRODUCTS.functionalPermissionName}`);
-        }
+        const permissionCheck = await requirePermissions(context.dbClient, claims, [FP_VIEW_PRODUCTS]);
+        if (!permissionCheck.ok) return permissionCheck.denial;
 
         const productNumber = context.params.productNumber as string;
         const product = await getProductByNumber(context.dbClient, claims, productNumber, true);
 
-        if (!product) return status(404, "Product not found");
+        if (!product) return status(404, { error: "Product not found" });
         return { product };
     }, {
         params: t.Object({ productNumber: t.String() }),
@@ -354,9 +357,9 @@ export default function register(app: ApiInstance): void {
         },
         response: {
             200: t.Object({ product: t.Any() }, { description: "A single product with viewer-filtered data type values." }),
-            401: t.String({ description: "Unauthenticated – missing or invalid session, API key, or bearer token." }),
-            403: t.String({ description: "Permission denied – the authenticated principal lacks the required functional permission." }),
-            404: t.String({ description: "Not found – no product with this product number exists." }),
+             401: UnauthenticatedErrorResponseSchema,
+             403: ForbiddenErrorResponseSchema,
+            404: NotFoundErrorResponseSchema,
         },
     });
 
@@ -365,21 +368,19 @@ export default function register(app: ApiInstance): void {
     // -----------------------------------------------------------------------
     app.post("/products", async (context) => {
         const claims = context.session?.idTokenClaims ?? context.tokenClaims ?? {};
-        const authz = await authorize(context.dbClient, claims, [FP_CREATE_PRODUCT]);
-        if (!authz.some((perm) => perm.identifier === FP_CREATE_PRODUCT.identifier)) {
-            return status(403, `Permission denied. Required: ${FP_CREATE_PRODUCT.functionalPermissionName}`);
-        }
+        const permissionCheck = await requirePermissions(context.dbClient, claims, [FP_CREATE_PRODUCT]);
+        if (!permissionCheck.ok) return permissionCheck.denial;
 
         const body = context.body as { productNumber: string; productTypeIdentifier: string; values?: Record<string, unknown> };
 
         const pt = await ProductTypeRepo.getByIdentifier(context.dbClient, body.productTypeIdentifier, true);
-        if (!pt) return status(404, "Product type does not exist");
+        if (!pt) return status(404, { error: "Product type does not exist" });
 
         const result = await runInTransaction(context.dbClient, async (tx) => {
             return createProduct(tx, claims, body.productNumber, body.productTypeIdentifier, body.values ?? {});
         });
 
-        if (result.length === 0) return status(500, "Failed to create product");
+        if (result.length === 0) return status(500, { error: "Failed to create product" });
 
         const product = await getProductByNumber(context.dbClient, claims, body.productNumber, true);
         return { product };
@@ -399,10 +400,10 @@ export default function register(app: ApiInstance): void {
         },
         response: {
             200: t.Object({ product: t.Any() }, { description: "The newly created product." }),
-            401: t.String({ description: "Unauthenticated – missing or invalid session, API key, or bearer token." }),
-            403: t.String({ description: "Permission denied – the authenticated principal lacks the required functional permission." }),
-            404: t.String({ description: "Not found – the referenced product type does not exist." }),
-            500: t.String({ description: "Internal server error." }),
+             401: UnauthenticatedErrorResponseSchema,
+             403: ForbiddenErrorResponseSchema,
+            404: NotFoundErrorResponseSchema,
+            500: InternalServerErrorResponseSchema,
         },
     });
 
@@ -411,10 +412,8 @@ export default function register(app: ApiInstance): void {
     // -----------------------------------------------------------------------
     app.put("/products/:productNumber", async (context) => {
         const claims = context.session?.idTokenClaims ?? context.tokenClaims ?? {};
-        const authz = await authorize(context.dbClient, claims, [FP_UPDATE_PRODUCT]);
-        if (!authz.some((perm) => perm.identifier === FP_UPDATE_PRODUCT.identifier)) {
-            return status(403, `Permission denied. Required: ${FP_UPDATE_PRODUCT.functionalPermissionName}`);
-        }
+        const permissionCheck = await requirePermissions(context.dbClient, claims, [FP_UPDATE_PRODUCT]);
+        if (!permissionCheck.ok) return permissionCheck.denial;
 
         const productNumber = context.params.productNumber as string;
         const body = context.body as { productTypeIdentifier?: string; values?: Record<string, unknown>; knownUpdatedAt: string };
@@ -423,7 +422,7 @@ export default function register(app: ApiInstance): void {
             return updateProduct(tx, claims, productNumber, { productTypeIdentifier: body.productTypeIdentifier }, body.values, body.knownUpdatedAt);
         });
 
-        if (result.length === 0) return status(409, "Product not found or timestamp conflict");
+        if (result.length === 0) return status(409, { error: "Product not found or timestamp conflict" });
 
         const product = await getProductByNumber(context.dbClient, claims, productNumber, true);
         return { product };
@@ -451,9 +450,9 @@ export default function register(app: ApiInstance): void {
         },
         response: {
             200: t.Object({ product: t.Any() }, { description: "The updated product." }),
-            401: t.String({ description: "Unauthenticated – missing or invalid session, API key, or bearer token." }),
-            403: t.String({ description: "Permission denied – the authenticated principal lacks the required functional permission." }),
-            409: t.String({ description: "Conflict – optimistic locking failed; the product was modified by another user." }),
+             401: UnauthenticatedErrorResponseSchema,
+             403: ForbiddenErrorResponseSchema,
+            409: ConflictErrorResponseSchema,
         },
     });
 
@@ -462,10 +461,8 @@ export default function register(app: ApiInstance): void {
     // -----------------------------------------------------------------------
     app.patch("/products/:productNumber/disabled", async (context) => {
         const claims = context.session?.idTokenClaims ?? context.tokenClaims ?? {};
-        const authz = await authorize(context.dbClient, claims, [FP_DISABLE_PRODUCT]);
-        if (!authz.some((perm) => perm.identifier === FP_DISABLE_PRODUCT.identifier)) {
-            return status(403, `Permission denied. Required: ${FP_DISABLE_PRODUCT.functionalPermissionName}`);
-        }
+        const permissionCheck = await requirePermissions(context.dbClient, claims, [FP_DISABLE_PRODUCT]);
+        if (!permissionCheck.ok) return permissionCheck.denial;
 
         const productNumber = context.params.productNumber as string;
         const body = context.body as { disabled: boolean; knownUpdatedAt: string };
@@ -475,7 +472,7 @@ export default function register(app: ApiInstance): void {
             return setProductDisabled(tx, user, productNumber, body.disabled, body.knownUpdatedAt);
         });
 
-        if (result.length === 0) return status(409, "Product not found or timestamp conflict");
+        if (result.length === 0) return status(409, { error: "Product not found or timestamp conflict" });
 
         const product = await getProductByNumber(context.dbClient, claims, productNumber, true);
         return { product };
@@ -499,9 +496,9 @@ export default function register(app: ApiInstance): void {
         },
         response: {
             200: t.Object({ product: t.Any() }, { description: "The product with updated disabled status." }),
-            401: t.String({ description: "Unauthenticated – missing or invalid session, API key, or bearer token." }),
-            403: t.String({ description: "Permission denied – the authenticated principal lacks the required functional permission." }),
-            409: t.String({ description: "Conflict – optimistic locking failed; the product was modified by another user." }),
+             401: UnauthenticatedErrorResponseSchema,
+             403: ForbiddenErrorResponseSchema,
+            409: ConflictErrorResponseSchema,
         },
     });
 
@@ -510,15 +507,13 @@ export default function register(app: ApiInstance): void {
     // -----------------------------------------------------------------------
     app.post("/products/:productNumber/request-update", async (context) => {
         const claims = context.session?.idTokenClaims ?? context.tokenClaims ?? {};
-        const authz = await authorize(context.dbClient, claims, [FP_REQUEST_PRODUCT_UPDATE]);
-        if (!authz.some((perm) => perm.identifier === FP_REQUEST_PRODUCT_UPDATE.identifier)) {
-            return status(403, `Permission denied. Required: ${FP_REQUEST_PRODUCT_UPDATE.functionalPermissionName}`);
-        }
+        const permissionCheck = await requirePermissions(context.dbClient, claims, [FP_REQUEST_PRODUCT_UPDATE]);
+        if (!permissionCheck.ok) return permissionCheck.denial;
 
         const productNumber = context.params.productNumber as string;
         const product = await getProductByNumber(context.dbClient, claims, productNumber);
 
-        if (!product) return status(404, "Product not found");
+        if (!product) return status(404, { error: "Product not found" });
 
         const result = await runInTransaction(context.dbClient, async (tx) => {
             return createProductRequest(tx, claims, {
@@ -548,9 +543,9 @@ export default function register(app: ApiInstance): void {
         },
         response: {
             200: t.Object({ productRequestId: t.String() }, { description: "Identifier of the created product update request for client-side redirect." }),
-            401: t.String({ description: "Unauthenticated – missing or invalid session, API key, or bearer token." }),
-            403: t.String({ description: "Permission denied – the authenticated principal lacks the required functional permission." }),
-            404: t.String({ description: "Not found – no product with this product number exists." }),
+             401: UnauthenticatedErrorResponseSchema,
+             403: ForbiddenErrorResponseSchema,
+            404: NotFoundErrorResponseSchema,
         },
     });
 
@@ -559,16 +554,14 @@ export default function register(app: ApiInstance): void {
     // -----------------------------------------------------------------------
     app.post("/products/:productNumber/copy", async (context) => {
         const claims = context.session?.idTokenClaims ?? context.tokenClaims ?? {};
-        const authz = await authorize(context.dbClient, claims, [FP_CREATE_PRODUCT_COPY]);
-        if (!authz.some((perm) => perm.identifier === FP_CREATE_PRODUCT_COPY.identifier)) {
-            return status(403, `Permission denied. Required: ${FP_CREATE_PRODUCT_COPY.functionalPermissionName}`);
-        }
+        const permissionCheck = await requirePermissions(context.dbClient, claims, [FP_CREATE_PRODUCT_COPY]);
+        if (!permissionCheck.ok) return permissionCheck.denial;
 
         const productNumber = context.params.productNumber as string;
         const body = context.body as { productNumber?: string };
 
         const product = await getProductByNumber(context.dbClient, claims, productNumber);
-        if (!product) return status(404, "Product not found");
+        if (!product) return status(404, { error: "Product not found" });
 
         const result = await runInTransaction(context.dbClient, async (tx) => {
             return createProductRequest(tx, claims, {
@@ -601,9 +594,9 @@ export default function register(app: ApiInstance): void {
         },
         response: {
             200: t.Object({ productRequestId: t.String() }, { description: "Identifier of the created product copy request for client-side redirect." }),
-            401: t.String({ description: "Unauthenticated – missing or invalid session, API key, or bearer token." }),
-            403: t.String({ description: "Permission denied – the authenticated principal lacks the required functional permission." }),
-            404: t.String({ description: "Not found – no product with this product number exists." }),
+             401: UnauthenticatedErrorResponseSchema,
+             403: ForbiddenErrorResponseSchema,
+            404: NotFoundErrorResponseSchema,
         },
     });
 }

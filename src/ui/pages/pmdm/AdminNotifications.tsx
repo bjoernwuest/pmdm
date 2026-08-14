@@ -60,7 +60,7 @@ function ConfigRow({ entry, onUpdate }: { entry: NotificationConfigEntry; onUpda
     const handleToggle = async (toggle: { getValue: () => boolean }) => {
         setSaving(true);
         try {
-            const updated = await updateNotificationConfig(entry.key, toggle.getValue(), entry.value);
+            const updated = await updateNotificationConfig(entry.key, toggle.getValue(), entry.updatedAt);
             onUpdate(updated);
         } catch (err) {
             if (err instanceof ApiError && err.status === 409) {
@@ -83,7 +83,7 @@ function ConfigRow({ entry, onUpdate }: { entry: NotificationConfigEntry; onUpda
         }
         setSaving(true);
         try {
-            const updated = await updateNotificationConfig(entry.key, value, entry.value);
+            const updated = await updateNotificationConfig(entry.key, value, entry.updatedAt);
             onUpdate(updated);
             setEditing(false);
         } catch (err) {

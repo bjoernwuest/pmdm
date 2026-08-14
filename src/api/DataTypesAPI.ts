@@ -1,6 +1,6 @@
 import type { ApiInstance } from "@/apps/api.ts";
-import { authorize, getLoggedinUserObject } from "@/services/Auth.ts";
-import { FP_DO_CONFIGURATION, FP_MANAGE_DATA_TYPES, FP_VIEW_DATA_TYPES } from "@/services/auth/FunctionalPermissions.ts";
+import { getLoggedinUserObject, requirePermissions } from "@/services/Auth.ts";
+import { FP_DO_CONFIGURATION, FP_MANAGE_DATA_TYPES, FP_VIEW_DATA_TYPES } from "@/services/auth/ApplicationDefinedFunctionalPermissions.ts";
 import {
     DataTypeRepo,
     getPermissions,
@@ -12,6 +12,14 @@ import { runInTransaction } from "@/services/DatabaseDriver.ts";
 import { getSystemUser } from "@/repo/UserRepo.ts";
 import { status, t } from "elysia";
 import { eq } from "drizzle-orm";
+import {
+    BadRequestErrorResponseSchema,
+    ConflictErrorResponseSchema,
+    ForbiddenErrorResponseSchema,
+    InternalServerErrorResponseSchema,
+    NotFoundErrorResponseSchema,
+    UnauthenticatedErrorResponseSchema,
+} from "@/types/ApiType.ts";
 import { registerConfigurationEntityRoutes } from "@/api/_crud_API.ts";
 import {Group} from "@/schema/UserSchema.ts";
 import {
@@ -89,17 +97,12 @@ export default function register(app: ApiInstance): void {
     // -----------------------------------------------------------------------
     app.get("/data_types/:datatypeid/permissions", async (context) => {
         const claims = context.session?.idTokenClaims ?? context.tokenClaims ?? {};
-        const authz = await authorize(context.dbClient, claims, [FP_DO_CONFIGURATION, FP_VIEW_DATA_TYPES]);
-        if (!authz.some((perm) => perm.identifier === FP_DO_CONFIGURATION.identifier)) {
-            return status(403, `Permission denied. Required: ${FP_DO_CONFIGURATION.functionalPermissionName}`);
-        }
-        if (!authz.some((perm) => perm.identifier === FP_VIEW_DATA_TYPES.identifier)) {
-            return status(403, `Permission denied. Required: ${FP_VIEW_DATA_TYPES.functionalPermissionName}`);
-        }
+        const permissionCheck = await requirePermissions(context.dbClient, claims, [FP_DO_CONFIGURATION, FP_VIEW_DATA_TYPES]);
+        if (!permissionCheck.ok) return permissionCheck.denial;
 
         const identifier = context.params.datatypeid as string;
         const existing = await DataTypeRepo.getByIdentifier(context.dbClient, identifier, true);
-        if (!existing) return status(404, "Data type does not exist");
+        if (!existing) return status(404, { error: "Data type does not exist" });
 
         const permissions = await getPermissions(context.dbClient, identifier);
         return { permissions };
@@ -122,9 +125,9 @@ export default function register(app: ApiInstance): void {
         },
         response: {
             200: t.Object({ permissions: t.Array(t.Any()) }, { description: "All group-role assignments for the data type." }),
-            401: t.String({ description: "Unauthenticated – missing or invalid session, API key, or bearer token." }),
-            403: t.String({ description: "Permission denied – the authenticated principal lacks the required functional permission." }),
-            404: t.String({ description: "Not found – no data type with this identifier exists." }),
+            401: UnauthenticatedErrorResponseSchema,
+            403: ForbiddenErrorResponseSchema,
+            404: NotFoundErrorResponseSchema,
         },
     });
 
@@ -133,13 +136,8 @@ export default function register(app: ApiInstance): void {
     // -----------------------------------------------------------------------
     app.post("/data_types/:datatypeid/permissions", async (context) => {
         const claims = context.session?.idTokenClaims ?? context.tokenClaims ?? {};
-        const authz = await authorize(context.dbClient, claims, [FP_DO_CONFIGURATION, FP_MANAGE_DATA_TYPES]);
-        if (!authz.some((perm) => perm.identifier === FP_DO_CONFIGURATION.identifier)) {
-            return status(403, `Permission denied. Required: ${FP_DO_CONFIGURATION.functionalPermissionName}`);
-        }
-        if (!authz.some((perm) => perm.identifier === FP_MANAGE_DATA_TYPES.identifier)) {
-            return status(403, `Permission denied. Required: ${FP_MANAGE_DATA_TYPES.functionalPermissionName}`);
-        }
+        const permissionCheck = await requirePermissions(context.dbClient, claims, [FP_DO_CONFIGURATION, FP_MANAGE_DATA_TYPES]);
+        if (!permissionCheck.ok) return permissionCheck.denial;
 
         const identifier = context.params.datatypeid as string;
         const created = await runInTransaction(context.dbClient, async (tx) => {
@@ -149,8 +147,8 @@ export default function register(app: ApiInstance): void {
             return grantPermission(tx, user, identifier, context.body.groupIdentifier, context.body.role as DataTypeGroupRoles, context.body.showByDefault ?? true);
         });
 
-        if (created === null) return status(404, "Data type does not exist");
-        if (created.length === 0) return status(500, "Failed to grant permission");
+        if (created === null) return status(404, { error: "Data type does not exist" });
+        if (created.length === 0) return status(500, { error: "Failed to grant permission" });
 
         // Join group name
         const groupName = await context.dbClient
@@ -189,10 +187,10 @@ export default function register(app: ApiInstance): void {
         },
         response: {
             200: t.Object({ permission: t.Any() }, { description: "The newly created permission assignment including the group name." }),
-            401: t.String({ description: "Unauthenticated – missing or invalid session, API key, or bearer token." }),
-            403: t.String({ description: "Permission denied – the authenticated principal lacks the required functional permission." }),
-            404: t.String({ description: "Not found – no data type with this identifier exists." }),
-            500: t.String({ description: "Internal server error." }),
+             401: UnauthenticatedErrorResponseSchema,
+             403: ForbiddenErrorResponseSchema,
+             404: NotFoundErrorResponseSchema,
+             500: InternalServerErrorResponseSchema,
         },
     });
 
@@ -201,17 +199,12 @@ export default function register(app: ApiInstance): void {
     // -----------------------------------------------------------------------
     app.delete("/data_types/:datatypeid/permissions", async (context) => {
         const claims = context.session?.idTokenClaims ?? context.tokenClaims ?? {};
-        const authz = await authorize(context.dbClient, claims, [FP_DO_CONFIGURATION, FP_MANAGE_DATA_TYPES]);
-        if (!authz.some((perm) => perm.identifier === FP_DO_CONFIGURATION.identifier)) {
-            return status(403, `Permission denied. Required: ${FP_DO_CONFIGURATION.functionalPermissionName}`);
-        }
-        if (!authz.some((perm) => perm.identifier === FP_MANAGE_DATA_TYPES.identifier)) {
-            return status(403, `Permission denied. Required: ${FP_MANAGE_DATA_TYPES.functionalPermissionName}`);
-        }
+        const permissionCheck = await requirePermissions(context.dbClient, claims, [FP_DO_CONFIGURATION, FP_MANAGE_DATA_TYPES]);
+        if (!permissionCheck.ok) return permissionCheck.denial;
 
         const identifier = context.params.datatypeid as string;
         const existing = await DataTypeRepo.getByIdentifier(context.dbClient, identifier, true);
-        if (!existing) return status(404, "Data type does not exist");
+        if (!existing) return status(404, { error: "Data type does not exist" });
 
         const result = await revokePermission(
             context.dbClient,
@@ -220,7 +213,7 @@ export default function register(app: ApiInstance): void {
             context.body.role,
         );
 
-        if (result.length === 0) return status(404, "Permission assignment not found");
+        if (result.length === 0) return status(404, { error: "Permission assignment not found" });
         return status(200);
 
 
@@ -247,9 +240,9 @@ export default function register(app: ApiInstance): void {
         },
         response: {
             200: t.Any({ description: "Empty success response after revoking the permission assignment." }),
-            401: t.String({ description: "Unauthenticated – missing or invalid session, API key, or bearer token." }),
-            403: t.String({ description: "Permission denied – the authenticated principal lacks the required functional permission." }),
-            404: t.String({ description: "Not found – the data type or permission assignment does not exist." }),
+             401: UnauthenticatedErrorResponseSchema,
+             403: ForbiddenErrorResponseSchema,
+             404: NotFoundErrorResponseSchema,
         },
     });
 
@@ -258,26 +251,21 @@ export default function register(app: ApiInstance): void {
     // -----------------------------------------------------------------------
     app.patch("/data_types/:datatypeid/permissions/:permid", async (context) => {
         const claims = context.session?.idTokenClaims ?? context.tokenClaims ?? {};
-        const authz = await authorize(context.dbClient, claims, [FP_DO_CONFIGURATION, FP_MANAGE_DATA_TYPES]);
-        if (!authz.some((perm) => perm.identifier === FP_DO_CONFIGURATION.identifier)) {
-            return status(403, `Permission denied. Required: ${FP_DO_CONFIGURATION.functionalPermissionName}`);
-        }
-        if (!authz.some((perm) => perm.identifier === FP_MANAGE_DATA_TYPES.identifier)) {
-            return status(403, `Permission denied. Required: ${FP_MANAGE_DATA_TYPES.functionalPermissionName}`);
-        }
+        const permissionCheck = await requirePermissions(context.dbClient, claims, [FP_DO_CONFIGURATION, FP_MANAGE_DATA_TYPES]);
+        if (!permissionCheck.ok) return permissionCheck.denial;
 
         const dataTypeIdentifier = context.params.datatypeid as string;
         const permId = context.params.permid as string;
 
         // permId encodes groupIdentifier+role: we split on the first "__" separator
         const sepIndex = permId.indexOf("__");
-        if (sepIndex === -1) return status(400, "Invalid permission identifier format");
+        if (sepIndex === -1) return status(400, { error: "Invalid permission identifier format" });
 
         const groupIdentifier = permId.slice(0, sepIndex);
         const role = permId.slice(sepIndex + 2);
 
         const existing = await DataTypeRepo.getByIdentifier(context.dbClient, dataTypeIdentifier, true);
-        if (!existing) return status(404, "Data type does not exist");
+        if (!existing) return status(404, { error: "Data type does not exist" });
 
         const result = await updatePermission(
             context.dbClient,
@@ -288,7 +276,7 @@ export default function register(app: ApiInstance): void {
             context.body.knownUpdatedAt,
         );
 
-        if (result.length === 0) return status(409, "Permission assignment was modified or not found");
+        if (result.length === 0) return status(409, { error: "Permission assignment was modified or not found" });
         return { permission: result[0] };
     }, {
         params: t.Object({
@@ -323,11 +311,11 @@ export default function register(app: ApiInstance): void {
         },
         response: {
             200: t.Object({ permission: t.Any() }, { description: "The updated permission assignment." }),
-            400: t.String({ description: "Invalid request – the permission identifier format is invalid." }),
-            401: t.String({ description: "Unauthenticated – missing or invalid session, API key, or bearer token." }),
-            403: t.String({ description: "Permission denied – the authenticated principal lacks the required functional permission." }),
-            404: t.String({ description: "Not found – no data type with this identifier exists." }),
-            409: t.String({ description: "Conflict – optimistic locking failed; the permission assignment was modified by another user." }),
+             400: BadRequestErrorResponseSchema,
+             401: UnauthenticatedErrorResponseSchema,
+             403: ForbiddenErrorResponseSchema,
+             404: NotFoundErrorResponseSchema,
+             409: ConflictErrorResponseSchema,
         },
     });
 }

@@ -1,11 +1,11 @@
 import type { ApiInstance } from "@/apps/api.ts";
-import { authorize } from "@/services/Auth.ts";
+import { requirePermissions } from "@/services/Auth.ts";
 import {
     FP_VIEW_PRODUCTS,
     FP_CREATE_PRODUCT,
     FP_REQUEST_PRODUCT_UPDATE,
     FP_CREATE_PRODUCT_COPY,
-} from "@/services/auth/FunctionalPermissions.ts";
+} from "@/services/auth/ApplicationDefinedFunctionalPermissions.ts";
 import {
     createProductRequest,
     getProductRequest,
@@ -23,6 +23,16 @@ import { runInTransaction } from "@/services/DatabaseDriver.ts";
 import { getUserListPageSizes } from "@/services/ui_config.ts";
 import { PermissionDeniedError, FilterScriptError } from "@/types/errors.ts";
 import { LookupsValuesSelectSchema } from "@/types/LookupsType.ts";
+import { Type } from "@sinclair/typebox";
+import {
+    BadRequestErrorResponseSchema,
+    ConflictErrorResponseSchema,
+    ForbiddenErrorResponseSchema,
+    InternalServerErrorResponseSchema,
+    NotFoundErrorResponseSchema,
+    PaginationQuerySchema,
+    UnauthenticatedErrorResponseSchema,
+} from "@/types/ApiType.ts";
 import { ConsumablesValuesSelectSchema } from "@/types/ConsumableType.ts";
 import { status, t } from "elysia";
 
@@ -52,29 +62,27 @@ export default function register(app: ApiInstance): void {
             case "new":
                 requiredPerm = FP_CREATE_PRODUCT;
                 if (!body.productTypeIdentifier) {
-                    return status(400, "productTypeIdentifier is required for 'new' mode");
+                    return status(400, { error: "productTypeIdentifier is required for 'new' mode" });
                 }
                 break;
             case "update":
                 requiredPerm = FP_REQUEST_PRODUCT_UPDATE;
                 if (!body.sourceProductNumber) {
-                    return status(400, "sourceProductNumber is required for 'update' mode");
+                    return status(400, { error: "sourceProductNumber is required for 'update' mode" });
                 }
                 break;
             case "copy":
                 requiredPerm = FP_CREATE_PRODUCT_COPY;
                 if (!body.sourceProductNumber) {
-                    return status(400, "sourceProductNumber is required for 'copy' mode");
+                    return status(400, { error: "sourceProductNumber is required for 'copy' mode" });
                 }
                 break;
             default:
-                return status(400, `Invalid mode: ${(body as any).mode}. Must be 'new', 'update', or 'copy'`);
+                return status(400, { error: `Invalid mode: ${(body as any).mode}. Must be 'new', 'update', or 'copy'` });
         }
 
-        const authz = await authorize(context.dbClient, claims, [requiredPerm]);
-        if (!authz.some((perm) => perm.identifier === requiredPerm.identifier)) {
-            return status(403, `Permission denied. Required: ${requiredPerm.functionalPermissionName}`);
-        }
+        const permissionCheck = await requirePermissions(context.dbClient, claims, [requiredPerm]);
+        if (!permissionCheck.ok) return permissionCheck.denial;
 
         // For "update" and "copy" modes, resolve product type from source product
         let productTypeIdentifier = body.productTypeIdentifier;
@@ -85,7 +93,7 @@ export default function register(app: ApiInstance): void {
                 context.dbClient, claims, body.sourceProductNumber!,
             );
             if (!sourceProduct) {
-                return status(404, `Source product not found: ${body.sourceProductNumber}`);
+                return status(404, { error: `Source product not found: ${body.sourceProductNumber}` });
             }
             productTypeIdentifier = sourceProduct.productTypeIdentifier;
 
@@ -149,12 +157,12 @@ export default function register(app: ApiInstance): void {
         },
         response: {
             200: t.Object({ productRequestId: t.String() }, { description: "Identifier of the created product request for client-side redirect." }),
-            400: t.String({ description: "Invalid request – invalid mode or missing mode-specific required field." }),
-            401: t.String({ description: "Unauthenticated – missing or invalid session, API key, or bearer token." }),
-            403: t.String({ description: "Permission denied – the authenticated principal lacks the required functional permission." }),
-            404: t.String({ description: "Not found – the source product does not exist." }),
+            400: BadRequestErrorResponseSchema,
+            401: UnauthenticatedErrorResponseSchema,
+            403: ForbiddenErrorResponseSchema,
+            404: NotFoundErrorResponseSchema,
             409: t.Object({ error: t.String(), conflict: t.Boolean(), existingProductNumber: t.Optional(t.String()) }, { description: "Conflict – a product with the requested product number already exists." }),
-            500: t.Object({ error: t.String() }, { description: "Internal server error." }),
+             500: InternalServerErrorResponseSchema,
         },
     });
 
@@ -163,10 +171,8 @@ export default function register(app: ApiInstance): void {
     // -----------------------------------------------------------------------
     app.get("/product-requests", async (context) => {
         const claims = context.session?.idTokenClaims ?? context.tokenClaims ?? {};
-        const authz = await authorize(context.dbClient, claims, [FP_VIEW_PRODUCTS]);
-        if (!authz.some((perm) => perm.identifier === FP_VIEW_PRODUCTS.identifier)) {
-            return status(403, `Permission denied. Required: ${FP_VIEW_PRODUCTS.functionalPermissionName}`);
-        }
+        const permissionCheck = await requirePermissions(context.dbClient, claims, [FP_VIEW_PRODUCTS]);
+        if (!permissionCheck.ok) return permissionCheck.denial;
 
         const availablePageSizes = await getUserListPageSizes(context.dbClient, typeof claims.oid === "string" ? claims.oid : undefined);
         const page = Math.max(0, Number(context.query.page ?? 0));
@@ -199,14 +205,15 @@ export default function register(app: ApiInstance): void {
             availablePageSizes,
         };
     }, {
-        query: t.Object({
-            page: t.Optional(t.Union([t.Number({ minimum: 0 }), t.String()])),
-            pageSize: t.Optional(t.Union([t.Number({ minimum: 1 }), t.String()])),
-            status: t.Optional(t.String()),
-            productTypeIdentifier: t.Optional(t.String()),
-            productNumberContains: t.Optional(t.String()),
-            actionFilter: t.Optional(t.String()),
-        }),
+        query: Type.Composite([
+            PaginationQuerySchema,
+            Type.Object({
+                status: Type.Optional(Type.String()),
+                productTypeIdentifier: Type.Optional(Type.String()),
+                productNumberContains: Type.Optional(Type.String()),
+                actionFilter: Type.Optional(Type.String()),
+            }),
+        ]),
         detail: {
             tags: ["Product Requests"],
             summary: "List product requests",
@@ -266,8 +273,8 @@ export default function register(app: ApiInstance): void {
                 total: t.Number(),
                 availablePageSizes: t.Array(t.Number()),
             }, { description: "Paginated list of product requests with pagination metadata." }),
-            401: t.String({ description: "Unauthenticated – missing or invalid session, API key, or bearer token." }),
-            403: t.String({ description: "Permission denied – the authenticated principal lacks the required functional permission." }),
+            401: UnauthenticatedErrorResponseSchema,
+            403: ForbiddenErrorResponseSchema,
         },
     });
 
@@ -315,8 +322,8 @@ export default function register(app: ApiInstance): void {
                 skippedDataTypeIdentifiers: t.Array(t.String()),
                 allApproved: t.Boolean(),
             }, { description: "Approval result with the count of approved values, skipped data type identifiers, and whether the request progressed to importing." }),
-            400: t.Object({ error: t.String() }, { description: "Invalid request – malformed payload or approval failure." }),
-            401: t.String({ description: "Unauthenticated – missing or invalid session, API key, or bearer token." }),
+            400: BadRequestErrorResponseSchema,
+            401: UnauthenticatedErrorResponseSchema,
         },
     });
 
@@ -325,16 +332,14 @@ export default function register(app: ApiInstance): void {
     // -----------------------------------------------------------------------
     app.get("/product-requests/:id", async (context) => {
         const claims = context.session?.idTokenClaims ?? context.tokenClaims ?? {};
-        const authz = await authorize(context.dbClient, claims, [FP_VIEW_PRODUCTS]);
-        if (!authz.some((perm) => perm.identifier === FP_VIEW_PRODUCTS.identifier)) {
-            return status(403, `Permission denied. Required: ${FP_VIEW_PRODUCTS.functionalPermissionName}`);
-        }
+        const permissionCheck = await requirePermissions(context.dbClient, claims, [FP_VIEW_PRODUCTS]);
+        if (!permissionCheck.ok) return permissionCheck.denial;
 
         const requestId = context.params.id as string;
         const request = await getProductRequest(context.dbClient, claims, requestId);
 
         if (!request) {
-            return status(404, "Product request not found");
+            return status(404, { error: "Product request not found" });
         }
 
         const availablePageSizes = await getUserListPageSizes(context.dbClient, typeof claims.oid === "string" ? claims.oid : undefined);
@@ -359,9 +364,9 @@ export default function register(app: ApiInstance): void {
         },
         response: {
             200: t.Any({ description: "The product request with enriched, viewer-filtered data type values and available page sizes." }),
-            401: t.String({ description: "Unauthenticated – missing or invalid session, API key, or bearer token." }),
-            403: t.String({ description: "Permission denied – the authenticated principal lacks the required functional permission." }),
-            404: t.String({ description: "Not found – no product request with this identifier exists." }),
+            401: UnauthenticatedErrorResponseSchema,
+            403: ForbiddenErrorResponseSchema,
+            404: NotFoundErrorResponseSchema,
         },
     });
 
@@ -370,10 +375,8 @@ export default function register(app: ApiInstance): void {
     // -----------------------------------------------------------------------
     app.get("/product-requests/:id/lookup-values/:dataTypeIdentifier", async (context) => {
         const claims = context.session?.idTokenClaims ?? context.tokenClaims ?? {};
-        const authz = await authorize(context.dbClient, claims, [FP_VIEW_PRODUCTS]);
-        if (!authz.some((perm) => perm.identifier === FP_VIEW_PRODUCTS.identifier)) {
-            return status(403, { error: `Permission denied. Required: ${FP_VIEW_PRODUCTS.functionalPermissionName}` });
-        }
+        const permissionCheck = await requirePermissions(context.dbClient, claims, [FP_VIEW_PRODUCTS]);
+        if (!permissionCheck.ok) return permissionCheck.denial;
 
         const requestId = context.params.id as string;
         const dataTypeIdentifier = context.params.dataTypeIdentifier as string;
@@ -397,10 +400,10 @@ export default function register(app: ApiInstance): void {
         }),
         response: {
             200: t.Object({ values: t.Array(LookupsValuesSelectSchema) }, { description: "All lookup values backing the lookup-kind data type." }),
-            400: t.Object({ error: t.String() }, { description: "Invalid request – malformed parameters or processing failure." }),
-            401: t.Object({ error: t.String() }, { description: "Unauthenticated – missing or invalid session, API key, or bearer token." }),
-            403: t.Object({ error: t.String() }, { description: "Permission denied – the authenticated principal lacks the required functional permission or data-type role." }),
-            500: t.Object({ error: t.String() }, { description: "Internal server error." }),
+            400: BadRequestErrorResponseSchema,
+            401: UnauthenticatedErrorResponseSchema,
+            403: ForbiddenErrorResponseSchema,
+             500: InternalServerErrorResponseSchema,
         },
         detail: {
             tags: ["Product Requests"],
@@ -432,10 +435,8 @@ export default function register(app: ApiInstance): void {
     // -----------------------------------------------------------------------
     app.get("/product-requests/:id/consumable-values/:dataTypeIdentifier", async (context) => {
         const claims = context.session?.idTokenClaims ?? context.tokenClaims ?? {};
-        const authz = await authorize(context.dbClient, claims, [FP_VIEW_PRODUCTS]);
-        if (!authz.some((perm) => perm.identifier === FP_VIEW_PRODUCTS.identifier)) {
-            return status(403, { error: `Permission denied. Required: ${FP_VIEW_PRODUCTS.functionalPermissionName}` });
-        }
+        const permissionCheck = await requirePermissions(context.dbClient, claims, [FP_VIEW_PRODUCTS]);
+        if (!permissionCheck.ok) return permissionCheck.denial;
 
         const requestId = context.params.id as string;
         const dataTypeIdentifier = context.params.dataTypeIdentifier as string;
@@ -459,10 +460,10 @@ export default function register(app: ApiInstance): void {
         }),
         response: {
             200: t.Object({ values: t.Array(ConsumablesValuesSelectSchema) }, { description: "All consumable values backing the consumable-kind data type." }),
-            400: t.Object({ error: t.String() }, { description: "Invalid request – malformed parameters or processing failure." }),
-            401: t.Object({ error: t.String() }, { description: "Unauthenticated – missing or invalid session, API key, or bearer token." }),
-            403: t.Object({ error: t.String() }, { description: "Permission denied – the authenticated principal lacks the required functional permission or data-type role." }),
-            500: t.Object({ error: t.String() }, { description: "Internal server error." }),
+            400: BadRequestErrorResponseSchema,
+            401: UnauthenticatedErrorResponseSchema,
+            403: ForbiddenErrorResponseSchema,
+             500: InternalServerErrorResponseSchema,
         },
         detail: {
             tags: ["Product Requests"],
@@ -494,10 +495,8 @@ export default function register(app: ApiInstance): void {
     // -----------------------------------------------------------------------
     app.get("/product-requests/:id/product-values/:dataTypeIdentifier", async (context) => {
         const claims = context.session?.idTokenClaims ?? context.tokenClaims ?? {};
-        const authz = await authorize(context.dbClient, claims, [FP_VIEW_PRODUCTS]);
-        if (!authz.some((perm) => perm.identifier === FP_VIEW_PRODUCTS.identifier)) {
-            return status(403, { error: `Permission denied. Required: ${FP_VIEW_PRODUCTS.functionalPermissionName}` });
-        }
+        const permissionCheck = await requirePermissions(context.dbClient, claims, [FP_VIEW_PRODUCTS]);
+        if (!permissionCheck.ok) return permissionCheck.denial;
 
         const requestId = context.params.id as string;
         const dataTypeIdentifier = context.params.dataTypeIdentifier as string;
@@ -527,10 +526,10 @@ export default function register(app: ApiInstance): void {
                     disabled: t.Boolean(),
                 })),
             }, { description: "Candidate products for the product-kind data type with the data type's filter script applied." }),
-            400: t.Object({ error: t.String() }, { description: "Invalid request – malformed parameters or processing failure." }),
-            401: t.Object({ error: t.String() }, { description: "Unauthenticated – missing or invalid session, API key, or bearer token." }),
-            403: t.Object({ error: t.String() }, { description: "Permission denied – the authenticated principal lacks the required functional permission or data-type role." }),
-            500: t.Object({ error: t.String() }, { description: "Internal server error." }),
+            400: BadRequestErrorResponseSchema,
+            401: UnauthenticatedErrorResponseSchema,
+            403: ForbiddenErrorResponseSchema,
+             500: InternalServerErrorResponseSchema,
         },
         detail: {
             tags: ["Product Requests"],
@@ -623,10 +622,10 @@ export default function register(app: ApiInstance): void {
                 mandatory: t.Optional(t.Any()),
                 requestorCanEdit: t.Optional(t.Any()),
             }, { description: "The updated value with recalculated data, mandatory flag, and requestorCanEdit flag." }),
-            400: t.Object({ error: t.String() }, { description: "Invalid request – malformed payload or processing failure." }),
-            401: t.Object({ error: t.String() }, { description: "Unauthenticated – missing or invalid session, API key, or bearer token." }),
-            403: t.Object({ error: t.String() }, { description: "Permission denied – the authenticated principal lacks the required data-type role." }),
-            409: t.Object({ error: t.String() }, { description: "Conflict – optimistic locking failed; the value was modified by another user." }),
+            400: BadRequestErrorResponseSchema,
+            401: UnauthenticatedErrorResponseSchema,
+            403: ForbiddenErrorResponseSchema,
+            409: ConflictErrorResponseSchema,
         },
     });
 
@@ -685,10 +684,10 @@ export default function register(app: ApiInstance): void {
         },
         response: {
             200: t.Any({ description: "The approved data type value including whether the request progressed to importing." }),
-            400: t.Object({ error: t.String() }, { description: "Invalid request – malformed payload or approval failure." }),
-            401: t.Object({ error: t.String() }, { description: "Unauthenticated – missing or invalid session, API key, or bearer token." }),
-            403: t.Object({ error: t.String() }, { description: "Permission denied – the authenticated principal lacks the required Approver role." }),
-            409: t.Object({ error: t.String() }, { description: "Conflict – optimistic locking failed; the value was modified by another user." }),
+            400: BadRequestErrorResponseSchema,
+            401: UnauthenticatedErrorResponseSchema,
+            403: ForbiddenErrorResponseSchema,
+            409: ConflictErrorResponseSchema,
         },
     });
 
@@ -731,9 +730,9 @@ export default function register(app: ApiInstance): void {
         },
         response: {
             200: t.Any({ description: "The cancelled product request." }),
-            400: t.Object({ error: t.String() }, { description: "Invalid request – malformed payload or cancellation failure." }),
-            401: t.Object({ error: t.String() }, { description: "Unauthenticated – missing or invalid session, API key, or bearer token." }),
-            403: t.Object({ error: t.String() }, { description: "Permission denied – the authenticated principal lacks the required cancel role permission." }),
+            400: BadRequestErrorResponseSchema,
+            401: UnauthenticatedErrorResponseSchema,
+            403: ForbiddenErrorResponseSchema,
         },
     });
 }

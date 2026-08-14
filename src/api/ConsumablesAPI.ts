@@ -1,7 +1,17 @@
 import type { ApiInstance } from "@/apps/api.ts";
 import { status, t } from "elysia";
-import { authorize, getLoggedinUserObject } from "@/services/Auth.ts";
-import { FP_DO_CONFIGURATION, FP_MANAGE_CONSUMABLES, FP_VIEW_CONSUMABLES, FP_READ_PRODUCT_FILTER } from "@/services/auth/FunctionalPermissions.ts";
+import { Type } from "@sinclair/typebox";
+import {
+    BadRequestErrorResponseSchema,
+    ConflictErrorResponseSchema,
+    ForbiddenErrorResponseSchema,
+    IncludeDisabledQuerySchema,
+    NotFoundErrorResponseSchema,
+    PaginationQuerySchema,
+    UnauthenticatedErrorResponseSchema,
+} from "@/types/ApiType.ts";
+import { getLoggedinUserObject, requirePermissions } from "@/services/Auth.ts";
+import { FP_DO_CONFIGURATION, FP_MANAGE_CONSUMABLES, FP_VIEW_CONSUMABLES, FP_READ_PRODUCT_FILTER } from "@/services/auth/ApplicationDefinedFunctionalPermissions.ts";
 import { runInTransaction } from "@/services/DatabaseDriver.ts";
 import { getUserListPageSizes } from "@/services/ui_config.ts";
 import {
@@ -26,10 +36,7 @@ import { addWorksheet, createWorkbook } from "@office-kit/xlsx/workbook";
 import { getCell, getMaxCol, getMaxRow, writeRange } from "@office-kit/xlsx/worksheet";
 import { loadWorkbook, workbookToBytes } from "@office-kit/xlsx/io";
 import { getSheet, sheetNames } from "@office-kit/xlsx/workbook";
-
-function parseBooleanQuery(value: unknown): boolean {
-    return value === true || value === "true" || value === "1";
-}
+import { parseBooleanQuery } from "@/utils/parseBooleanQuery.ts";
 
 type ConsumableImportRow = {
     rowNumber: number;
@@ -239,14 +246,11 @@ export default function register(app: ApiInstance) {
 
     app.get("/consumables/:consumableid/export", async (context) => {
         const claims = context.session?.idTokenClaims ?? context.tokenClaims ?? {};
-        const authz = await authorize(context.dbClient, claims, [FP_DO_CONFIGURATION, FP_VIEW_CONSUMABLES]);
-        if (!authz.some((perm) => perm.identifier === FP_DO_CONFIGURATION.identifier)) {
-            return status(403, `Permission denied. Required: ${FP_DO_CONFIGURATION.functionalPermissionName}`);
-        }
-        if (!authz.some((perm) => perm.identifier === FP_VIEW_CONSUMABLES.identifier)) return status(403, `Permission denied. Required: ${FP_VIEW_CONSUMABLES.functionalPermissionName}`);
+        const permissionCheck = await requirePermissions(context.dbClient, claims, [FP_DO_CONFIGURATION, FP_VIEW_CONSUMABLES]);
+        if (!permissionCheck.ok) return permissionCheck.denial;
 
         const consumable = await ConsumableRepo.getByIdentifier(context.dbClient, context.params.consumableid, true);
-        if (!consumable) return status(404, "Consumable does not exist");
+        if (!consumable) return status(404, { error: "Consumable does not exist" });
 
         const values = await getValue(context.dbClient, consumable, true, false);
         const result = await createConsumableWorkbook(consumable, values.map((value) => ({
@@ -275,19 +279,19 @@ export default function register(app: ApiInstance) {
         },
         response: {
             200: t.Any({ description: "XLSX spreadsheet with all consumable values (application/vnd.openxmlformats-officedocument.spreadsheetml.sheet)." }),
-            401: t.String({ description: "Unauthenticated – missing or invalid session, API key, or bearer token." }),
-            403: t.String({ description: "Permission denied – the authenticated principal lacks the required functional permission." }),
-            404: t.String({ description: "Not found – no consumable with this identifier exists." }),
+            401: UnauthenticatedErrorResponseSchema,
+            403: ForbiddenErrorResponseSchema,
+            404: NotFoundErrorResponseSchema,
         },
     });
 
     app.get("/consumables/:consumableid/export-template", async (context) => {
         const claims = context.session?.idTokenClaims ?? context.tokenClaims ?? {};
-        const authz = await authorize(context.dbClient, claims, [FP_VIEW_CONSUMABLES]);
-        if (!authz.some((perm) => perm.identifier === FP_VIEW_CONSUMABLES.identifier)) return status(403, `Permission denied. Required: ${FP_VIEW_CONSUMABLES.functionalPermissionName}`);
+        const permissionCheck = await requirePermissions(context.dbClient, claims, [FP_VIEW_CONSUMABLES]);
+        if (!permissionCheck.ok) return permissionCheck.denial;
 
         const consumable = await ConsumableRepo.getByIdentifier(context.dbClient, context.params.consumableid, true);
-        if (!consumable) return status(404, "Consumable does not exist");
+        if (!consumable) return status(404, { error: "Consumable does not exist" });
 
         const result = await createConsumableWorkbook(consumable, [], true);
         return buildXlsxResponse(result.bytes, result.filename);
@@ -310,39 +314,36 @@ export default function register(app: ApiInstance) {
         },
         response: {
             200: t.Any({ description: "XLSX import template file (application/vnd.openxmlformats-officedocument.spreadsheetml.sheet)." }),
-            401: t.String({ description: "Unauthenticated – missing or invalid session, API key, or bearer token." }),
-            403: t.String({ description: "Permission denied – the authenticated principal lacks the required functional permission." }),
-            404: t.String({ description: "Not found – no consumable with this identifier exists." }),
+            401: UnauthenticatedErrorResponseSchema,
+            403: ForbiddenErrorResponseSchema,
+            404: NotFoundErrorResponseSchema,
         },
     });
 
     app.post("/consumables/:consumableid/import", async (context) => {
         const claims = context.session?.idTokenClaims ?? context.tokenClaims ?? {};
-        const authz = await authorize(context.dbClient, claims, [FP_DO_CONFIGURATION, FP_MANAGE_CONSUMABLES]);
-        if (!authz.some((perm) => perm.identifier === FP_DO_CONFIGURATION.identifier)) {
-            return status(403, `Permission denied. Required: ${FP_DO_CONFIGURATION.functionalPermissionName}`);
-        }
-        if (!authz.some((perm) => perm.identifier === FP_MANAGE_CONSUMABLES.identifier)) return status(403, `Permission denied. Required: ${FP_MANAGE_CONSUMABLES.functionalPermissionName}`);
+        const permissionCheck = await requirePermissions(context.dbClient, claims, [FP_DO_CONFIGURATION, FP_MANAGE_CONSUMABLES]);
+        if (!permissionCheck.ok) return permissionCheck.denial;
 
         const consumable = await ConsumableRepo.getByIdentifier(context.dbClient, context.params.consumableid, true);
-        if (!consumable) return status(404, "Consumable does not exist");
+        if (!consumable) return status(404, { error: "Consumable does not exist" });
 
         const reqFormData = await context.request.formData();
         const file = reqFormData.get("file");
-        if (!(file instanceof Blob)) return status(400, "No file provided");
+        if (!(file instanceof Blob)) return status(400, { error: "No file provided" });
 
         let workbook;
         try {
             const buf = await file.arrayBuffer();
             workbook = await loadWorkbook({ toBytes: async () => new Uint8Array(buf) });
         } catch (e: any) {
-            return status(400, `Failed to parse XLSX file: ${e.message}`);
+            return status(400, { error: `Failed to parse XLSX file: ${e.message}` });
         }
 
         const names = sheetNames(workbook);
-        if (names.length === 0) return status(400, "XLSX file has no sheets");
+        if (names.length === 0) return status(400, { error: "XLSX file has no sheets" });
         const ws = getSheet(workbook, names[0]!);
-        if (!ws) return status(400, "XLSX file has no sheets");
+        if (!ws) return status(400, { error: "XLSX file has no sheets" });
 
         let rows: ConsumableImportRow[];
         try {
@@ -447,9 +448,9 @@ export default function register(app: ApiInstance) {
         response: {
             200: t.Object({ created: t.Number(), updated: t.Number() }, { description: "Import result with the number of created and updated consumable values." }),
             400: t.Any({ description: "Invalid request – missing file, malformed XLSX, or a validation error report workbook (XLSX) describing per-row errors." }),
-            401: t.String({ description: "Unauthenticated – missing or invalid session, API key, or bearer token." }),
-            403: t.String({ description: "Permission denied – the authenticated principal lacks the required functional permission." }),
-            404: t.String({ description: "Not found – no consumable with this identifier exists." }),
+            401: UnauthenticatedErrorResponseSchema,
+            403: ForbiddenErrorResponseSchema,
+            404: NotFoundErrorResponseSchema,
         },
     });
 
@@ -459,11 +460,11 @@ export default function register(app: ApiInstance) {
 
     app.get("/consumables/:consumableid/values", async (context) => {
         const claims = context.session?.idTokenClaims ?? context.tokenClaims ?? {};
-        const authz = await authorize(context.dbClient, claims, [FP_VIEW_CONSUMABLES, FP_READ_PRODUCT_FILTER]);
-        if (!authz.some((perm) => perm.identifier === FP_VIEW_CONSUMABLES.identifier || perm.identifier === FP_READ_PRODUCT_FILTER.identifier)) return status(403, `Permission denied. Required: ${FP_VIEW_CONSUMABLES.functionalPermissionName}`);
+        const permissionCheck = await requirePermissions(context.dbClient, claims, [], [FP_VIEW_CONSUMABLES, FP_READ_PRODUCT_FILTER]);
+        if (!permissionCheck.authz.some((perm) => perm.identifier === FP_VIEW_CONSUMABLES.identifier || perm.identifier === FP_READ_PRODUCT_FILTER.identifier)) return status(403, { error: `Permission denied. Required: ${FP_VIEW_CONSUMABLES.functionalPermissionName}` });
 
         const consumable = await ConsumableRepo.getByIdentifier(context.dbClient, context.params.consumableid);
-        if (!consumable) return status(404, "Consumable does not exist");
+        if (!consumable) return status(404, { error: "Consumable does not exist" });
 
         const availablePageSizes = await getUserListPageSizes(context.dbClient, typeof claims.oid === "string" ? claims.oid : undefined);
         const page = Math.max(0, Number(context.query.page ?? 0));
@@ -482,12 +483,11 @@ export default function register(app: ApiInstance) {
         };
     }, {
         params: t.Object({ consumableid: t.String({ format: "uuid" }) }),
-        query: t.Object({
-            page: t.Optional(t.Union([t.Number({ minimum: 0 }), t.String()])),
-            pageSize: t.Optional(t.Union([t.Number({ minimum: 1 }), t.String()])),
-            includeDisabled: t.Optional(t.Union([t.Boolean(), t.String()])),
-            showUsed: t.Optional(t.Union([t.Boolean(), t.String()])),
-        }),
+        query: Type.Composite([
+            PaginationQuerySchema,
+            IncludeDisabledQuerySchema,
+            Type.Object({ showUsed: Type.Optional(Type.Union([Type.Boolean(), Type.String()])) }),
+        ]),
         response: {
             200: t.Object({
                 values: t.Array(ConsumablesValuesSelectSchema),
@@ -497,9 +497,9 @@ export default function register(app: ApiInstance) {
                 includeDisabled: t.Boolean(),
                 showUsed: t.Boolean(),
             }, { description: "Paged consumable values with pagination metadata, disabled-inclusion flag, and used-inclusion flag." }),
-            401: t.String({ description: "Unauthenticated – missing or invalid session, API key, or bearer token." }),
-            403: t.String({ description: "Permission denied – the authenticated principal lacks the required functional permission." }),
-            404: t.String({ description: "Not found – no consumable with this identifier exists." }),
+            401: UnauthenticatedErrorResponseSchema,
+            403: ForbiddenErrorResponseSchema,
+            404: NotFoundErrorResponseSchema,
         },
         detail: {
             tags: ["Consumable"],
@@ -548,35 +548,32 @@ export default function register(app: ApiInstance) {
 
     app.post("/consumables/:consumableid/values", async (context) => {
         const claims = context.session?.idTokenClaims ?? context.tokenClaims ?? {};
-        const authz = await authorize(context.dbClient, claims, [FP_DO_CONFIGURATION, FP_MANAGE_CONSUMABLES]);
-        if (!authz.some((perm) => perm.identifier === FP_DO_CONFIGURATION.identifier)) {
-            return status(403, `Permission denied. Required: ${FP_DO_CONFIGURATION.functionalPermissionName}`);
-        }
-        if (!authz.some((perm) => perm.identifier === FP_MANAGE_CONSUMABLES.identifier)) return status(403, `Permission denied. Required: ${FP_MANAGE_CONSUMABLES.functionalPermissionName}`);
+        const permissionCheck = await requirePermissions(context.dbClient, claims, [FP_DO_CONFIGURATION, FP_MANAGE_CONSUMABLES]);
+        if (!permissionCheck.ok) return permissionCheck.denial;
 
         const consumable = await ConsumableRepo.getByIdentifier(context.dbClient, context.params.consumableid);
-        if (!consumable) return status(404, "Consumable does not exist");
+        if (!consumable) return status(404, { error: "Consumable does not exist" });
 
         const name = context.body.name.trim();
-        if (name.length === 0) return status(400, "Name must not be empty");
+        if (name.length === 0) return status(400, { error: "Name must not be empty" });
 
         const created = await runInTransaction(context.dbClient, async (tx) => {
             const user = await getLoggedinUserObject(tx, claims) ?? await getSystemUser(tx);
             return await createValue(tx, user, { consumableIdentifier: consumable.identifier, name: name, isUsed: false, disabled: false });
         });
 
-        if (created.length === 0) return status(409, "A consumable value with this name already exists");
+        if (created.length === 0) return status(409, { error: "A consumable value with this name already exists" });
         return created[0]!;
     }, {
         params: t.Object({ consumableid: t.String({ format: "uuid" }) }),
         body: t.Object({ name: t.String({ minLength: 1, maxLength: 255 }) }),
         response: {
             200: {...ConsumablesValuesSelectSchema, description: "The newly created consumable value."},
-            400: t.String({ description: "Invalid request – the name must not be empty." }),
-            401: t.String({ description: "Unauthenticated – missing or invalid session, API key, or bearer token." }),
-            403: t.String({ description: "Permission denied – the authenticated principal lacks the required functional permission." }),
-            404: t.String({ description: "Not found – no consumable with this identifier exists." }),
-            409: t.String({ description: "Conflict – a consumable value with this name already exists." }),
+            400: BadRequestErrorResponseSchema,
+            401: UnauthenticatedErrorResponseSchema,
+            403: ForbiddenErrorResponseSchema,
+            404: NotFoundErrorResponseSchema,
+            409: ConflictErrorResponseSchema,
         },
         detail: {
             tags: ["Consumable"],
@@ -597,14 +594,11 @@ export default function register(app: ApiInstance) {
 
     app.put("/consumables/:consumableid/values/:valueid", async (context) => {
         const claims = context.session?.idTokenClaims ?? context.tokenClaims ?? {};
-        const authz = await authorize(context.dbClient, claims, [FP_DO_CONFIGURATION, FP_MANAGE_CONSUMABLES]);
-        if (!authz.some((perm) => perm.identifier === FP_DO_CONFIGURATION.identifier)) {
-            return status(403, `Permission denied. Required: ${FP_DO_CONFIGURATION.functionalPermissionName}`);
-        }
-        if (!authz.some((perm) => perm.identifier === FP_MANAGE_CONSUMABLES.identifier)) return status(403, `Permission denied. Required: ${FP_MANAGE_CONSUMABLES.functionalPermissionName}`);
+        const permissionCheck = await requirePermissions(context.dbClient, claims, [FP_DO_CONFIGURATION, FP_MANAGE_CONSUMABLES]);
+        if (!permissionCheck.ok) return permissionCheck.denial;
 
         const name = context.body.name.trim();
-        if (name.length === 0) return status(400, "Name must not be empty");
+        if (name.length === 0) return status(400, { error: "Name must not be empty" });
 
         const updated = await runInTransaction(context.dbClient, async (tx) => {
             const user = await getLoggedinUserObject(tx, claims) ?? await getSystemUser(tx);
@@ -616,19 +610,19 @@ export default function register(app: ApiInstance) {
             return rows[0] ?? false;
         });
 
-        if (updated === null) return status(404, "Consumable value does not exist");
-        if (updated === false) return status(409, "Consumable value was modified by another user");
+        if (updated === null) return status(404, { error: "Consumable value does not exist" });
+        if (updated === false) return status(409, { error: "Consumable value was modified by another user" });
         return updated;
     }, {
         params: t.Object({ consumableid: t.String({ format: "uuid" }), valueid: t.String({ format: "uuid" }) }),
         body: t.Object({ name: t.String({ minLength: 1, maxLength: 255 }), knownUpdatedAt: t.String() }),
         response: {
             200: {...ConsumablesValuesSelectSchema, description: "The renamed consumable value."},
-            400: t.String({ description: "Invalid request – the name must not be empty." }),
-            401: t.String({ description: "Unauthenticated – missing or invalid session, API key, or bearer token." }),
-            403: t.String({ description: "Permission denied – the authenticated principal lacks the required functional permission." }),
-            404: t.String({ description: "Not found – the consumable value does not exist." }),
-            409: t.String({ description: "Conflict – optimistic locking failed; the consumable value was modified by another user." }),
+            400: BadRequestErrorResponseSchema,
+            401: UnauthenticatedErrorResponseSchema,
+            403: ForbiddenErrorResponseSchema,
+            404: NotFoundErrorResponseSchema,
+            409: ConflictErrorResponseSchema,
         },
         detail: {
             tags: ["Consumable"],
@@ -656,14 +650,11 @@ export default function register(app: ApiInstance) {
 
     app.patch("/consumables/:consumableid/values/:valueid", async (context) => {
         const claims = context.session?.idTokenClaims ?? context.tokenClaims ?? {};
-        const authz = await authorize(context.dbClient, claims, [FP_DO_CONFIGURATION, FP_MANAGE_CONSUMABLES]);
-        if (!authz.some((perm) => perm.identifier === FP_DO_CONFIGURATION.identifier)) {
-            return status(403, `Permission denied. Required: ${FP_DO_CONFIGURATION.functionalPermissionName}`);
-        }
-        if (!authz.some((perm) => perm.identifier === FP_MANAGE_CONSUMABLES.identifier)) return status(403, `Permission denied. Required: ${FP_MANAGE_CONSUMABLES.functionalPermissionName}`);
+        const permissionCheck = await requirePermissions(context.dbClient, claims, [FP_DO_CONFIGURATION, FP_MANAGE_CONSUMABLES]);
+        if (!permissionCheck.ok) return permissionCheck.denial;
 
         const body = context.body as Record<string, unknown>;
-        if (body.disabled === undefined && body.isUsed === undefined) return status(400, "At least one of 'disabled' or 'isUsed' must be provided");
+        if (body.disabled === undefined && body.isUsed === undefined) return status(400, { error: "At least one of 'disabled' or 'isUsed' must be provided" });
 
         const updated = await runInTransaction(context.dbClient, async (tx) => {
             const user = await getLoggedinUserObject(tx, claims) ?? await getSystemUser(tx);
@@ -683,19 +674,19 @@ export default function register(app: ApiInstance) {
             return rows[0] ?? false;
         });
 
-        if (updated === null) return status(404, "Consumable value does not exist");
-        if (updated === false) return status(409, "Consumable value was modified by another user");
+        if (updated === null) return status(404, { error: "Consumable value does not exist" });
+        if (updated === false) return status(409, { error: "Consumable value was modified by another user" });
         return updated;
     }, {
         params: t.Object({ consumableid: t.String({ format: "uuid" }), valueid: t.String({ format: "uuid" }) }),
         body: t.Object({ disabled: t.Optional(t.Boolean()), isUsed: t.Optional(t.Boolean()), knownUpdatedAt: t.String() }),
         response: {
             200: {...ConsumablesValuesSelectSchema, description: "The consumable value with updated disabled/isUsed flags."},
-            400: t.String({ description: "Invalid request – at least one of 'disabled' or 'isUsed' must be provided." }),
-            401: t.String({ description: "Unauthenticated – missing or invalid session, API key, or bearer token." }),
-            403: t.String({ description: "Permission denied – the authenticated principal lacks the required functional permission." }),
-            404: t.String({ description: "Not found – the consumable value does not exist." }),
-            409: t.String({ description: "Conflict – optimistic locking failed; the consumable value was modified by another user." }),
+            400: BadRequestErrorResponseSchema,
+            401: UnauthenticatedErrorResponseSchema,
+            403: ForbiddenErrorResponseSchema,
+            404: NotFoundErrorResponseSchema,
+            409: ConflictErrorResponseSchema,
         },
         detail: {
             tags: ["Consumable"],

@@ -42,5 +42,5 @@ export const timestampColumnType = (name: string) => timestamp(name, { mode: "st
  */
 export const timestamps = {
     createdAt: timestampColumnType("created_at").notNull().defaultNow(),
-    updatedAt: timestampColumnType("updated_at").notNull().defaultNow().$onUpdate(() => sql`now()`),
+    updatedAt: timestampColumnType("updated_at").notNull().defaultNow(),
 }

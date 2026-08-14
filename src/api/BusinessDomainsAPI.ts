@@ -1,5 +1,5 @@
 import type { ApiInstance } from "@/apps/api.ts";
-import { FP_DO_CONFIGURATION, FP_MANAGE_BUSINESS_DOMAINS, FP_VIEW_BUSINESS_DOMAINS } from "@/services/auth/FunctionalPermissions.ts";
+import { FP_DO_CONFIGURATION, FP_MANAGE_BUSINESS_DOMAINS, FP_VIEW_BUSINESS_DOMAINS } from "@/services/auth/ApplicationDefinedFunctionalPermissions.ts";
 import { count, create, disable, enable, get, getByIdentifier, update } from "@/repo/BusinessDomainRepo.ts";
 import { BusinessDomainsSelectSchema, message_CreateBusinessDomain, message_DisableBusinessDomain, message_UpdateBusinessDomain } from "@/types/BusinessDomainType.ts";
 import { registerConfigurationEntityRoutes } from "@/api/_crud_API.ts";

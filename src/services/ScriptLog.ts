@@ -1,7 +1,6 @@
 import { Cron } from "croner";
 import { getConfigEntriesByKey, upsertConfigEntry } from "@/repo/ConfigRepo.ts";
 import { deleteScriptLogsOlderThan } from "@/repo/ScriptLogRepo.ts";
-import { getDatabaseConnection } from "@/services/DatabaseDriver.ts";
 import { ConfigValueTypes } from "@/types/ConfigType.ts";
 import { devMode } from "@/devmode.ts";
 
@@ -37,9 +36,7 @@ export const config = {
     },
 } satisfies Record<string, ConfigEntrySelectType>;
 
-export async function init(client?: DBClient): Promise<void> {
-    const db = client ?? await getDatabaseConnection();
-
+export async function init(db: DBClient): Promise<void> {
     for (const entry of Object.values(config)) {
         const existing = await getConfigEntriesByKey(db, entry.domain, entry.key, { limit: 1 });
         if (existing.length < 1) await upsertConfigEntry(db, entry);

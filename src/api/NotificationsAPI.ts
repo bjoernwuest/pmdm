@@ -1,13 +1,19 @@
 import { status, t } from "elysia";
 import { Type } from "@sinclair/typebox";
 import type { ApiInstance } from "@/apps/api.ts";
-import { getConfigEntriesByKey, upsertConfigEntry } from "@/repo/ConfigRepo.ts";
+import { getConfigEntriesByKey, updateConfigEntry } from "@/repo/ConfigRepo.ts";
 import { sendToUser, simulateEmail } from "@/services/Notifications.ts";
-import { authorize } from "@/services/Auth.ts";
-import { FP_NOTIFICATIONS } from "@/services/auth/FunctionalPermissions.ts";
+import { requirePermissions } from "@/services/Auth.ts";
+import { FP_NOTIFICATIONS } from "@/services/auth/ApplicationDefinedFunctionalPermissions.ts";
 import { getUsers } from "@/repo/UserRepo.ts";
 import { getGroups } from "@/repo/UserRepo.ts";
 import type { ConfigEntrySelectType } from "@/types/ConfigType.ts";
+import {
+    ForbiddenErrorResponseSchema,
+    NotFoundErrorResponseSchema,
+    OptimisticLockConflictResponseSchema,
+    UnauthenticatedErrorResponseSchema,
+} from "@/types/ApiType.ts";
 
 const configDomain = "Notifications";
 
@@ -20,6 +26,7 @@ const ConfigEntryUiSchema = Type.Object({
     inputFormat: Type.Optional(Type.Union([Type.String(), Type.Null()])),
     outputFormat: Type.Optional(Type.Union([Type.String(), Type.Null()])),
     userProfile: Type.Boolean(),
+    updatedAt: Type.String(),
 });
 
 // noinspection JSUnusedGlobalSymbols
@@ -28,10 +35,8 @@ export default function register(app: ApiInstance) {
         "/notifications/config",
         async ({ dbClient, session, tokenClaims }) => {
             const claims = session?.idTokenClaims ?? tokenClaims ?? {};
-            const authz = await authorize(dbClient, claims, [FP_NOTIFICATIONS]);
-            if (!authz.some((p) => p.identifier === FP_NOTIFICATIONS.identifier)) {
-                return status(403, "Permission denied");
-            }
+            const permissionCheck = await requirePermissions(dbClient, claims, [FP_NOTIFICATIONS]);
+            if (!permissionCheck.ok) return permissionCheck.denial;
 
             const entries: ConfigEntrySelectType[] = [];
             const keys = [
@@ -52,6 +57,7 @@ export default function register(app: ApiInstance) {
                 inputFormat: e.inputFormat,
                 outputFormat: e.outputFormat,
                 userProfile: e.userProfile,
+                updatedAt: e.updatedAt,
             }));
         },
         {
@@ -65,8 +71,8 @@ export default function register(app: ApiInstance) {
             },
             response: {
                 200: Type.Array(ConfigEntryUiSchema, { description: "All notification configuration entries in their UI representation." }),
-                401: Type.String({ description: "Unauthenticated – missing or invalid session, API key, or bearer token." }),
-                403: Type.String({ description: "Permission denied – the authenticated principal lacks the required functional permission." }),
+                 401: UnauthenticatedErrorResponseSchema,
+                 403: ForbiddenErrorResponseSchema,
             },
         },
     );
@@ -75,26 +81,20 @@ export default function register(app: ApiInstance) {
         "/notifications/config/:key",
         async ({ dbClient, params, body, session, tokenClaims }) => {
             const claims = session?.idTokenClaims ?? tokenClaims ?? {};
-            const authz = await authorize(dbClient, claims, [FP_NOTIFICATIONS]);
-            if (!authz.some((p) => p.identifier === FP_NOTIFICATIONS.identifier)) {
-                return status(403, "Permission denied");
-            }
+            const permissionCheck = await requirePermissions(dbClient, claims, [FP_NOTIFICATIONS]);
+            if (!permissionCheck.ok) return permissionCheck.denial;
 
             const key = decodeURIComponent(params.key);
             const rows = await getConfigEntriesByKey(dbClient, configDomain, key, { limit: 1 });
-            if (rows.length === 0) return status(404, "Not found");
+            if (rows.length === 0) return status(404, { error: "Not found" });
 
-            const entry = rows[0]!;
-            const { value, knownValue } = body as { value: unknown; knownValue: unknown };
+            const { value, knownUpdatedAt } = body as { value: unknown; knownUpdatedAt: string };
 
-            if (JSON.stringify(entry.value) !== JSON.stringify(knownValue)) {
-                return status(409, { error: "Conflict: entry was modified by another session", currentValue: entry.value });
+            const updated = await updateConfigEntry(dbClient, configDomain, key, value, knownUpdatedAt);
+            if (updated.length === 0) {
+                const [current] = await getConfigEntriesByKey(dbClient, configDomain, key, { limit: 1 });
+                return status(409, { error: "Conflict: entry was modified by another session", currentValue: current?.value ?? null });
             }
-
-            const updated = await upsertConfigEntry(dbClient, {
-                ...entry,
-                value,
-            } as any);
 
             const result = updated[0]!;
             return {
@@ -106,6 +106,7 @@ export default function register(app: ApiInstance) {
                 inputFormat: result.inputFormat,
                 outputFormat: result.outputFormat,
                 userProfile: result.userProfile,
+                updatedAt: result.updatedAt,
             };
         },
         {
@@ -129,14 +130,14 @@ export default function register(app: ApiInstance) {
             }),
             body: t.Object({
                 value: t.Any(),
-                knownValue: t.Any(),
+                knownUpdatedAt: t.String(),
             }),
             response: {
                 200: {...ConfigEntryUiSchema, description: "The updated notification configuration entry."},
-                401: Type.String({ description: "Unauthenticated – missing or invalid session, API key, or bearer token." }),
-                403: Type.String({ description: "Permission denied – the authenticated principal lacks the required functional permission." }),
-                404: Type.String({ description: "Not found – no notification configuration entry with this key exists." }),
-                409: Type.Object({ error: Type.String(), currentValue: Type.Any() }, { description: "Conflict – the entry was modified by another session; currentValue contains the latest value." }),
+                 401: UnauthenticatedErrorResponseSchema,
+                 403: ForbiddenErrorResponseSchema,
+                 404: NotFoundErrorResponseSchema,
+                 409: OptimisticLockConflictResponseSchema,
             },
         },
     );
@@ -145,10 +146,8 @@ export default function register(app: ApiInstance) {
         "/notifications/send",
         async ({ dbClient, body, session, tokenClaims }) => {
             const claims = session?.idTokenClaims ?? tokenClaims ?? {};
-            const authz = await authorize(dbClient, claims, [FP_NOTIFICATIONS]);
-            if (!authz.some((p) => p.identifier === FP_NOTIFICATIONS.identifier)) {
-                return status(403, "Permission denied");
-            }
+            const permissionCheck = await requirePermissions(dbClient, claims, [FP_NOTIFICATIONS]);
+            if (!permissionCheck.ok) return permissionCheck.denial;
 
             const { userIds, groupIds } = body as { userIds?: string[]; groupIds?: string[] };
             const sentTo = await sendToUser(dbClient, "", userIds, groupIds);
@@ -169,8 +168,8 @@ export default function register(app: ApiInstance) {
             }),
             response: {
                 200: Type.Object({ sentTo: Type.Any() }, { description: "The list of recipients the notification digest was sent to." }),
-                401: Type.String({ description: "Unauthenticated – missing or invalid session, API key, or bearer token." }),
-                403: Type.String({ description: "Permission denied – the authenticated principal lacks the required functional permission." }),
+                 401: UnauthenticatedErrorResponseSchema,
+                 403: ForbiddenErrorResponseSchema,
             },
         },
     );
@@ -179,10 +178,8 @@ export default function register(app: ApiInstance) {
         "/notifications/simulate",
         async ({ dbClient, body, session, tokenClaims }) => {
             const claims = session?.idTokenClaims ?? tokenClaims ?? {};
-            const authz = await authorize(dbClient, claims, [FP_NOTIFICATIONS]);
-            if (!authz.some((p) => p.identifier === FP_NOTIFICATIONS.identifier)) {
-                return status(403, "Permission denied");
-            }
+            const permissionCheck = await requirePermissions(dbClient, claims, [FP_NOTIFICATIONS]);
+            if (!permissionCheck.ok) return permissionCheck.denial;
 
             const { userId, groupId } = body as { userId?: string; groupId?: string };
             return await simulateEmail(dbClient, userId, groupId);
@@ -202,8 +199,8 @@ export default function register(app: ApiInstance) {
             }),
             response: {
                 200: Type.Any({ description: "The simulated notification digest email preview." }),
-                401: Type.String({ description: "Unauthenticated – missing or invalid session, API key, or bearer token." }),
-                403: Type.String({ description: "Permission denied – the authenticated principal lacks the required functional permission." }),
+                 401: UnauthenticatedErrorResponseSchema,
+                 403: ForbiddenErrorResponseSchema,
             },
         },
     );
@@ -212,10 +209,8 @@ export default function register(app: ApiInstance) {
         "/notifications/users",
         async ({ dbClient, session, tokenClaims }) => {
             const claims = session?.idTokenClaims ?? tokenClaims ?? {};
-            const authz = await authorize(dbClient, claims, [FP_NOTIFICATIONS]);
-            if (!authz.some((p) => p.identifier === FP_NOTIFICATIONS.identifier)) {
-                return status(403, "Permission denied");
-            }
+            const permissionCheck = await requirePermissions(dbClient, claims, [FP_NOTIFICATIONS]);
+            if (!permissionCheck.ok) return permissionCheck.denial;
 
             const users = await getUsers(dbClient, undefined, undefined, false);
             return users.map((u) => ({
@@ -241,8 +236,8 @@ export default function register(app: ApiInstance) {
                     lastName: Type.String(),
                     email: Type.String(),
                 }), { description: "All active users with identifier, first name, last name, and email." }),
-                401: Type.String({ description: "Unauthenticated – missing or invalid session, API key, or bearer token." }),
-                403: Type.String({ description: "Permission denied – the authenticated principal lacks the required functional permission." }),
+                 401: UnauthenticatedErrorResponseSchema,
+                 403: ForbiddenErrorResponseSchema,
             },
         },
     );
@@ -251,10 +246,8 @@ export default function register(app: ApiInstance) {
         "/notifications/groups",
         async ({ dbClient, session, tokenClaims }) => {
             const claims = session?.idTokenClaims ?? tokenClaims ?? {};
-            const authz = await authorize(dbClient, claims, [FP_NOTIFICATIONS]);
-            if (!authz.some((p) => p.identifier === FP_NOTIFICATIONS.identifier)) {
-                return status(403, "Permission denied");
-            }
+            const permissionCheck = await requirePermissions(dbClient, claims, [FP_NOTIFICATIONS]);
+            if (!permissionCheck.ok) return permissionCheck.denial;
 
             const groups = await getGroups(dbClient, undefined, undefined, false);
             return groups.map((g) => ({
@@ -276,8 +269,8 @@ export default function register(app: ApiInstance) {
                     identifier: Type.String({ format: "uuid" }),
                     groupName: Type.String(),
                 }), { description: "All active groups with identifier and group name." }),
-                401: Type.String({ description: "Unauthenticated – missing or invalid session, API key, or bearer token." }),
-                403: Type.String({ description: "Permission denied – the authenticated principal lacks the required functional permission." }),
+                 401: UnauthenticatedErrorResponseSchema,
+                 403: ForbiddenErrorResponseSchema,
             },
         },
     );
