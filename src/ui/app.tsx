@@ -9,6 +9,10 @@ import type {
     GroupFunctionalPermissionResponseType,
     UserDetailsResponse
 } from "../types/ApiType.ts";
+import { getViewerContext } from "@/ui/api/session.ts";
+
+/** Product name shown in the sidebar logo (derived projects override this string). */
+const PRODUCT_NAME = "PMDM";
 
 type ViewerContext = {
     user?: {
@@ -20,29 +24,14 @@ type ViewerContext = {
 };
 
 function Loading() {
-    const [progress, setProgress] = useState(12);
-
-    useEffect(() => {
-        const interval = setInterval(() => {
-            setProgress((prev) => {
-                if (prev >= 92) return prev;
-                const next = prev + Math.max(1.2, (100 - prev) * 0.06);
-                return Math.min(92, next);
-            });
-        }, 160);
-
-        return () => clearInterval(interval);
-    }, []);
-
+    // Indeterminate indicator: no fake percentage disconnected from real loading.
     return (
         <div className="app-loading-screen" role="status" aria-live="polite" aria-label="Loading application">
             <div className="app-loading-panel">
                 <h1 className="app-loading-title">Loading application...</h1>
-                <div className="app-loading-progress-track" aria-hidden="true">
-                    <div className="app-loading-progress-fill" style={{ width: `${Math.round(progress)}%` }} />
+                <div className="app-loading-indeterminate-track" aria-hidden="true">
+                    <div className="app-loading-indeterminate-fill" />
                 </div>
-                <div className="app-loading-progress-text">{Math.round(progress)}%</div>
-                <p className="app-loading-hint">if application hangs, press F5 to retry</p>
             </div>
         </div>
     );
@@ -177,37 +166,21 @@ function AppShell({
         let cancelled = false;
         setDetailBreadcrumbLabel(undefined);
 
-        const userMatch = matchPath("/admin/users/:userid", location.pathname);
-        if (userMatch?.params.userid) {
-            void apiGet<UserDetailsResponse>(`/api/users/${encodeURIComponent(userMatch.params.userid)}`).then((payload) => {
-                if (!cancelled) setDetailBreadcrumbLabel(payload.user.email);
-            }).catch(() => undefined);
-            return () => {
-                cancelled = true;
-            };
-        }
+        // Generic resolution: the matched page declares its detail-label fetch via
+        // `meta.detailBreadcrumb`; failures silently fall back to the static menu label.
+        const resolver = currentPage?.meta.detailBreadcrumb?.resolveLabel;
+        if (!resolver) return;
 
-        const groupMatch = matchPath("/admin/groups/:groupid", location.pathname);
-        if (groupMatch?.params.groupid) {
-            void apiGet<GroupFunctionalPermissionResponseType>(`/api/groups/${encodeURIComponent(groupMatch.params.groupid)}`).then((payload) => {
-                if (!cancelled) setDetailBreadcrumbLabel(payload.group.groupName);
-            }).catch(() => undefined);
-            return () => {
-                cancelled = true;
-            };
-        }
-
-        const fpMatch = matchPath("/admin/functional-permissions/:functionalpermissionid", location.pathname);
-        if (fpMatch?.params.functionalpermissionid) {
-            void apiGet<FunctionalPermissionDetailResponseType>(`/api/functionalpermissions/${encodeURIComponent(fpMatch.params.functionalpermissionid)}`).then((payload) => {
-                if (!cancelled) setDetailBreadcrumbLabel(payload.functionalPermission.functionalPermissionName);
-            }).catch(() => undefined);
-        }
+        const match = matchPath({ path: currentPage.meta.path, end: false }, location.pathname);
+        const params = (match?.params ?? {}) as Record<string, string | undefined>;
+        void resolver(params).then((label) => {
+            if (!cancelled) setDetailBreadcrumbLabel(label);
+        }).catch(() => undefined);
 
         return () => {
             cancelled = true;
         };
-    }, [location.pathname]);
+    }, [location.pathname, currentPage]);
 
     const breadcrumb = useMemo(() => {
         if (!currentPage) return [{ label: "General" }];
@@ -241,7 +214,7 @@ function AppShell({
                     <div className="sidebar-logo">
                         <span className="sidebar-logo-icon">B</span>
                         <span className="sidebar-logo-text-wrap">
-                            <span className="sidebar-logo-text">PMDM</span> {/* FIXME: move "bun-starter" into parameter */}
+                            <span className="sidebar-logo-text">{PRODUCT_NAME}</span>
                         </span>
                     </div>
                 </div>
@@ -249,7 +222,6 @@ function AppShell({
                 <SidebarNav pages={navPages} />
 
                 <div className="sidebar-footer">
-                    <button type="button" className="sidebar-upgrade-btn">View docs</button>
                     <div className="sidebar-user-info">
                         <div className="sidebar-user-meta">
                             <button
@@ -289,11 +261,7 @@ function AppShell({
                         </div>
                         <h1 className="app-topbar-title">{currentPage?.meta.title ?? "Page"}</h1>
                     </div>
-                    <div className="app-topbar-actions">
-                        <button type="button" className="app-topbar-icon-btn" aria-label="Notifications">
-                            🔔
-                        </button>
-                    </div>
+                    <div className="app-topbar-actions" />
                 </header>
 
                 <main className="app-main-content">
@@ -313,7 +281,7 @@ export default function AppLayout() {
 
         const loadContext = async () => {
             try {
-                const payload = await apiGet<ViewerContext>("/api/me/context");
+                const payload = await getViewerContext();
                 setDebugFrontend(payload.debugFrontend ?? false);
                 if (!cancelled) setContext({
                     user: payload.user,

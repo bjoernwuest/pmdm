@@ -1,5 +1,7 @@
 # AI Agent Guidelines: Schema & Types Folder
 
+**Precedence:** sub-directory AGENTS.md take precedence over parent AGENTS.md files; this file is the authoritative layer doc for its folder.
+
 This folder is strictly reserved for **Drizzle ORM schema definitions and their associated type constants**. All agents and automated tools must adhere to the following isolation rules.
 
 ## 🛑 Critical Restrictions

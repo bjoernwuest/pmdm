@@ -28,11 +28,11 @@ Main columns (database column names in parentheses where they differ from the TS
 
 Primary key constraint: `config_domain_key_pk` on `(domain, key)`.
 
-**Important:** The `type` column is stored as `text` in the database — there is no PostgreSQL enum type backing it. The set of allowed values is enforced purely in TypeScript through the [`ConfigValueTypes`](src/schema/Config.ts:15) const object (duplicated in the generated file [`src/types/_Config.ts`](src/types/_Config.ts:4)).
+**Important:** The `type` column is stored as `text` in the database — there is no PostgreSQL enum type backing it. The set of allowed values is enforced purely in TypeScript through the [`ConfigValueTypes`](src/schema/ConfigSchema.ts:15) const object, which is the single hand-maintained definition. The typegen script (`scripts/generate_types.ts`) copies it into the generated file [`src/types/_ConfigType.ts`](src/types/_ConfigType.ts:4) — that copy is a build artifact, never edited by hand.
 
 ## Supported Value Types
 
-The [`ConfigValueTypes`](src/schema/Config.ts:15) const object (and its generated duplicate in [`src/types/_Config.ts`](src/types/_Config.ts:4)) defines the following allowed types:
+The [`ConfigValueTypes`](src/schema/ConfigSchema.ts:15) const object (with its generated copy in [`src/types/_ConfigType.ts`](src/types/_ConfigType.ts:4)) defines the following allowed types:
 
 - `string`
 - `number`

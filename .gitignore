@@ -17,3 +17,4 @@
 
 # Remove once tests are working
 /tests/
+/.playwright-mcp/

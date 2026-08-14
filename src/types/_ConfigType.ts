@@ -38,6 +38,8 @@ export const ConfigEntrySelectSchema = Type.Object({
   outputFormat: Type.String(),
   mandatoryForStart: Type.Boolean(),
   userProfile: Type.Boolean(),
+  createdAt: Type.String(),
+  updatedAt: Type.String(),
 });
 export type ConfigEntrySelectType = Static<typeof ConfigEntrySelectSchema>;
 
@@ -53,5 +55,7 @@ export const ConfigEntryInsertSchema = Type.Object({
   outputFormat: Type.Optional(Type.String()),
   mandatoryForStart: Type.Optional(Type.Boolean()),
   userProfile: Type.Optional(Type.Boolean()),
+  createdAt: Type.Optional(Type.String()),
+  updatedAt: Type.Optional(Type.String()),
 });
 export type ConfigEntryInsertType = Static<typeof ConfigEntryInsertSchema>;

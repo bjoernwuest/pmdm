@@ -6,6 +6,26 @@ import { expressionMatches } from "../services/PubSub";
 type Subscriber = (message: PubSubMessage) => void;
 type Token = string;
 
+/**
+ * Canonical serialization of a TagExpression for structural comparison: object
+ * keys are sorted before stringification so two semantically identical
+ * expressions compare equal regardless of property order.
+ */
+function canonicalizeExpression(expression: TagExpression): string {
+    const canonicalize = (value: unknown): unknown => {
+        if (Array.isArray(value)) return value.map(canonicalize);
+        if (value && typeof value === "object") {
+            const obj = value as Record<string, unknown>;
+            return Object.keys(obj).sort().reduce<Record<string, unknown>>((acc, key) => {
+                acc[key] = canonicalize(obj[key]);
+                return acc;
+            }, {});
+        }
+        return value;
+    };
+    return JSON.stringify(canonicalize(expression));
+}
+
 interface SubscriptionEntry {
     expression: TagExpression;
     token: Token;
@@ -42,12 +62,12 @@ class ClientPubSubImpl {
         return this.subscribe(this.ALL_SUBSCRIBING_MSG, func);
     }
 
-    subscribeOnce(expression: TagExpression, func: Subscriber): this {
+    subscribeOnce(expression: TagExpression, func: Subscriber): Token | false {
         const token = this.subscribe(expression, (msg: PubSubMessage) => {
-            this.unsubscribe(token as Token);
+            if (typeof token === "string") this.unsubscribe(token);
             func(msg);
         });
-        return this;
+        return token;
     }
 
     unsubscribe(value: Token | Subscriber | TagExpression): boolean | void {
@@ -83,22 +103,10 @@ class ClientPubSubImpl {
     }
 
     clearSubscriptions(expression: TagExpression): void {
-        const exprStr = JSON.stringify(expression);
+        const exprStr = canonicalizeExpression(expression);
         this.subscriptions = this.subscriptions.filter(
-            (s) => JSON.stringify(s.expression) !== exprStr,
+            (s) => canonicalizeExpression(s.expression) !== exprStr,
         );
-    }
-
-    countSubscriptions(expression: TagExpression): number {
-        const exprStr = JSON.stringify(expression);
-        return this.subscriptions.filter((s) => JSON.stringify(s.expression) === exprStr).length;
-    }
-
-    getSubscriptions(expression: TagExpression): TagExpression[] {
-        const exprStr = JSON.stringify(expression);
-        return this.subscriptions
-            .filter((s) => JSON.stringify(s.expression) === exprStr)
-            .map((s) => s.expression);
     }
 
     getServerExpressions(): (TagExpression | string)[] {
@@ -111,7 +119,7 @@ class ClientPubSubImpl {
         const seen = new Set<string>();
         const result: TagExpression[] = [];
         for (const sub of this.subscriptions) {
-            const key = JSON.stringify(sub.expression);
+            const key = canonicalizeExpression(sub.expression);
             if (!seen.has(key) && sub.expression !== this.ALL_SUBSCRIBING_MSG) {
                 seen.add(key);
                 result.push(sub.expression);
@@ -204,8 +212,8 @@ export function subscribeAll(func: Subscriber): Token | false {
     return ClientPubSub.subscribeAll(func);
 }
 
-export function subscribeOnce(expression: TagExpression, func: Subscriber): void {
-    ClientPubSub.subscribeOnce(expression, func);
+export function subscribeOnce(expression: TagExpression, func: Subscriber): Token | false {
+    return ClientPubSub.subscribeOnce(expression, func);
 }
 
 export function unsubscribe(value: Token | Subscriber | TagExpression): boolean | void {
@@ -216,6 +224,6 @@ export function clearAllSubscriptions(): void {
     ClientPubSub.clearAllSubscriptions();
 }
 
-export function getActiveServerTopics(): (TagExpression | string)[] {
+export function getActiveServerExpressions(): (TagExpression | string)[] {
     return ClientPubSub.getActiveServerExpressions();
 }

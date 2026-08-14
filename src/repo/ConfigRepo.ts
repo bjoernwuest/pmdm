@@ -13,7 +13,7 @@ import {TAG_CONFIG, TAG_CONFIGENTRY, TAG_UPSERT, TAG_AFTER} from "@/types/PubSub
  * @param {string} In - The input string that may contain special characters.
  * @return {string} The processed string with special characters escaped.
  */
-export function regExFriendly(In: string): string { return In.replace(/[.*+?^${}()|[\]\\]/g, '\\$&'); }
+export function regExFriendly(input: string): string { return input.replace(/[.*+?^${}()|[\]\\]/g, '\\$&'); }
 
 /**
  * Retrieves configuration entries from the database matching the specified pattern.
@@ -81,6 +81,7 @@ export async function upsertConfigEntry(
         target: [ConfigEntry.domain, ConfigEntry.key],
         set: {
             value: entry.value ?? null,
+            updatedAt: sql`now()`,
         }
     }).returning();
 
@@ -97,11 +98,57 @@ export async function upsertConfigEntry(
             domain: updated.domain,
             key: updated.key,
             value: updated.value,
-            updatedAt: new Date().toISOString(),
+            updatedAt: updated.updatedAt,
         });
     }
 
-    return rows as unknown as ConfigEntrySelectType[];
+    return rows;
+}
+
+/**
+ * Updates a configuration entry with optimistic locking (compare-and-swap on `updatedAt`).
+ *
+ * @param {DBClient} db - The database client used to perform the operation.
+ * @param {string} domain - The configuration domain of the entry.
+ * @param {string} key - The configuration key of the entry.
+ * @param {unknown} value - The new value for the entry.
+ * @param {string} knownUpdatedAt - The `updatedAt` the caller last saw; the update becomes a no-op if it no longer matches.
+ * @return {Promise<ConfigEntrySelectType[]>} The updated entry, or an empty array on lock mismatch.
+ */
+export async function updateConfigEntry(
+    db: DBClient,
+    domain: string,
+    key: string,
+    value: unknown,
+    knownUpdatedAt: string,
+): Promise<ConfigEntrySelectType[]> {
+    const rows = await db.update(ConfigEntry).set({
+        value: value as ConfigEntrySelectType["value"],
+        updatedAt: sql`now()`,
+    }).where(and(
+        eq(ConfigEntry.domain, domain),
+        eq(ConfigEntry.key, key),
+        sql`${ConfigEntry.updatedAt} = ${knownUpdatedAt}`,
+    )).returning();
+
+    const updated = rows[0];
+    if (updated) {
+        PubSub.publish([
+            TAG_CONFIGENTRY,
+            TAG_CONFIG,
+            updated.domain,
+            updated.key,
+            TAG_UPSERT,
+            TAG_AFTER,
+        ], {
+            domain: updated.domain,
+            key: updated.key,
+            value: updated.value,
+            updatedAt: updated.updatedAt,
+        });
+    }
+
+    return rows;
 }
 
 /**

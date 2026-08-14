@@ -1,20 +1,23 @@
 import { useEffect, useRef, useState } from "react";
 import { Link, useLocation, useParams } from "react-router-dom";
-import { InputSwitch } from "primereact/inputswitch";
 import { Chip } from "primereact/chip";
 import Label, { type LabelHandle } from "@/ui/components/Label";
+import Toggle from "@/ui/components/Toggle";
 import { PageTemplate, PageSection } from "@/ui/PageTemplate.tsx";
 import type { PageMeta } from "@/types/PageType.ts";
-import { apiGet } from "@/ui/api/index.ts";
+import { getUserDetail } from "@/ui/api/Users.ts";
 import type { UserDetailsResponse } from "@/types/ApiType.ts";
 import { FP_READ_USERS } from "@/ui/auth/functional_permissions.ts";
-import { subscribe } from "@/ui/pubsub";
+import { subscribe, unsubscribe } from "@/ui/pubsub";
 import { TAG_USER, TAG_UPDATE, TAG_DISABLE } from "@/types/PubSubType";
 
 export const meta: PageMeta = {
     id: "admin-user-detail",
     urn: "urn:bun-starter:ui:page:admin-user-detail",
     path: "/admin/users/:userid",
+    detailBreadcrumb: {
+        resolveLabel: async (params) => (await getUserDetail(params.userid ?? "", false)).user.email,
+    },
     title: "User details",
     description: "Read-only user details.",
     menu: {
@@ -31,6 +34,7 @@ export function Component() {
     const { userid } = useParams();
     const location = useLocation();
     const [isLoading, setIsLoading] = useState(true);
+    const [error, setError] = useState<string | null>(null);
     const [showInactive, setShowInactive] = useState(false);
     const [payload, setPayload] = useState<UserDetailsResponse | null>(null);
 
@@ -46,7 +50,7 @@ export function Component() {
         if (!userid) return;
 
         setIsLoading(true);
-        void apiGet<UserDetailsResponse>(`/api/users/${encodeURIComponent(userid)}?includeInactive=true`)
+        void getUserDetail(userid, true)
             .then((response) => {
                 if (!cancelled) {
                     setPayload(response);
@@ -58,6 +62,9 @@ export function Component() {
                     statusRef.current?.setText(u.disabled ? "Disabled" : "Enabled", { userId: u.identifier, field: "status" });
                     updatedRef.current?.setText(new Date(u.updatedAt).toLocaleString(), { userId: u.identifier, field: "updated" });
                 }
+            })
+            .catch((err: unknown) => {
+                if (!cancelled) setError(err instanceof Error ? err.message : "Could not load user");
             })
             .finally(() => {
                 if (!cancelled) setIsLoading(false);
@@ -84,7 +91,7 @@ export function Component() {
                     if (data?.updatedAt !== undefined) updatedRef.current?.setText(new Date(String(data.updatedAt)).toLocaleString(), { userId: userid, field: "updated" });
                     // If group membership changed, re-fetch
                     if (data?.groupIdentifiers !== undefined) {
-                        apiGet<UserDetailsResponse>(`/api/users/${encodeURIComponent(userid)}?includeInactive=true`)
+                        getUserDetail(userid, true)
                             .then((response) => {
                                 setPayload(response);
                                 firstNameRef.current?.setText(response.user.firstName, { userId: response.user.identifier, field: "firstName" });
@@ -104,7 +111,7 @@ export function Component() {
         );
         return () => {
             if (typeof token === "string") {
-                import("@/ui/pubsub").then((m) => m.unsubscribe(token));
+                unsubscribe(token);
             }
         };
     }, [userid]);
@@ -114,6 +121,7 @@ export function Component() {
     return (
         <PageTemplate urn={meta.urn} title={meta.title} description={meta.description}>
             <PageSection title="User details">
+                {error ? <p className="admin-config-error">{error}</p> : null}
                 {isLoading || !user ? (
                     <p>Loading user details...</p>
                 ) : (
@@ -130,7 +138,12 @@ export function Component() {
 
                         <div className="admin-toggle-row admin-top-gap">
                             <span>Show inactive groups and permissions</span>
-                            <InputSwitch checked={showInactive} onChange={(event) => setShowInactive(Boolean(event.value))} />
+                            <Toggle<boolean>
+                                variant="toggle"
+                                value={showInactive}
+                                options={[{ value: true, label: "Show inactive groups and permissions" }, { value: false, label: "Hide inactive groups and permissions" }]}
+                                onChange={(t) => setShowInactive(t.getValue())}
+                            />
                         </div>
 
                         <h3>Assigned groups</h3>

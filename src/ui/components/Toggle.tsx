@@ -2,6 +2,7 @@ import {
   forwardRef,
   useCallback,
   useImperativeHandle,
+  useMemo,
   useRef,
   useState,
 } from 'react';
@@ -112,7 +113,7 @@ function processOptions<T>(
 
   // Auto-append negation for single-option convenience
   if (effective.length === 1) {
-    const original = effective[0]!;
+    const original = optionAt(effective, 0);
     const notLabel = `Not ${original.label}`;
 
     if (typeof original.value === 'boolean') {
@@ -139,6 +140,14 @@ function processOptions<T>(
   // Pill: no truncation (unlimited)
 
   return effective;
+}
+
+/** Return the option at the given index, failing with a descriptive error when
+ *  the options array is empty or the index is out of bounds. */
+function optionAt<T>(options: ToggleOption<T>[], index: number): ToggleOption<T> {
+    const option = options[index];
+    if (!option) throw new Error("Toggle: option index out of bounds or empty options array");
+    return option;
 }
 
 /** Find the index of a value within the effective options array.
@@ -184,9 +193,9 @@ function ToggleInner<T>(
       const opts = effectiveOptionsRef.current;
       if (initialValueProp !== undefined) {
         const idx = findOptionIndex(opts, initialValueProp);
-        return opts[idx]!.value;
+        return optionAt(opts, idx).value;
       }
-      return opts[0]!.value;
+      return optionAt(opts, 0).value;
     })(),
   );
 
@@ -218,14 +227,17 @@ function ToggleInner<T>(
   const containerRef = useRef<HTMLDivElement>(null);
 
   // --- dirty transition helper ---------------------------------------------
+  // Returns true when the dirty state actually changed; the onDirty callback is
+  // invoked by the handle (which has access to `handle`) to avoid a declaration cycle.
 
-  const updateDirty = useCallback((newDirty: boolean) => {
+  const applyDirty = useCallback((newDirty: boolean): boolean => {
     const prev = dirtyRef.current;
     if (prev !== newDirty) {
       dirtyRef.current = newDirty;
       setDirtyState(newDirty);
-      onDirtyRef.current?.(handleRef.current as ToggleHandle<T>);
+      return true;
     }
+    return false;
   }, []);
 
   // --- derive active option ------------------------------------------------
@@ -236,7 +248,7 @@ function ToggleInner<T>(
 
   const getActiveLabel = useCallback((): string => {
     const idx = getActiveIndex();
-    return effectiveOptionsRef.current[idx]!.label;
+    return optionAt(effectiveOptionsRef.current, idx).label;
   }, [getActiveIndex]);
 
   // --- cycle to next option ------------------------------------------------
@@ -245,17 +257,17 @@ function ToggleInner<T>(
     const opts = effectiveOptionsRef.current;
     const currentIdx = getActiveIndex();
     const nextIdx = (currentIdx + 1) % opts.length;
-    const nextValue = opts[nextIdx]!.value;
+    const nextValue = optionAt(opts, nextIdx).value;
     currentValueRef.current = nextValue;
     setCurrentValue(nextValue);
-    onChangeRef.current?.(handleRef.current as ToggleHandle<T>);
+    onChangeRef.current?.(handle);
   }, [getActiveIndex]);
 
   // --- imperative API handle -----------------------------------------------
+  // Built once (memoized) and exposed via useImperativeHandle — no render-phase
+  // ref mutation, so the component is render-pure under StrictMode.
 
-  const handleRef = useRef<ToggleHandle<T>>(null!);
-
-  handleRef.current = {
+  const handle = useMemo<ToggleHandle<T>>(() => ({
     setValue(value: T, context: Record<string, unknown> = {}) {
       confirmedValueRef.current = value;
       contextRef.current = context;
@@ -263,7 +275,7 @@ function ToggleInner<T>(
       // If current displayed value differs from new confirmed value,
       // set dirty = true (concurrent modification detected).
       if (currentValueRef.current !== value) {
-        updateDirty(true);
+        if (applyDirty(true)) onDirtyRef.current?.(handle);
       }
 
       currentValueRef.current = value;
@@ -281,7 +293,7 @@ function ToggleInner<T>(
     revertValue() {
       currentValueRef.current = confirmedValueRef.current;
       setCurrentValue(confirmedValueRef.current);
-      updateDirty(false);
+      if (applyDirty(false)) onDirtyRef.current?.(handle);
       hintTextRef.current = '';
       setHintTextState('');
       disabledRef.current = false;
@@ -302,7 +314,7 @@ function ToggleInner<T>(
     },
 
     setDirty(status: boolean) {
-      updateDirty(status);
+      if (applyDirty(status)) onDirtyRef.current?.(handle);
     },
 
     setHintText(text: string) {
@@ -317,18 +329,18 @@ function ToggleInner<T>(
       // If the current displayed value is not in the new options set,
       // reset to the first option's value.
       const idx = findOptionIndex(processed, currentValueRef.current);
-      if (processed[idx]!.value !== currentValueRef.current) {
-        currentValueRef.current = processed[0]!.value;
-        setCurrentValue(processed[0]!.value);
+      if (optionAt(processed, idx).value !== currentValueRef.current) {
+        currentValueRef.current = optionAt(processed, 0).value;
+        setCurrentValue(optionAt(processed, 0).value);
       }
     },
 
     getOptions() {
       return [...effectiveOptionsRef.current];
     },
-  };
+  }), [applyDirty]);
 
-  useImperativeHandle(ref, () => handleRef.current, []);
+  useImperativeHandle(ref, () => handle, [handle]);
 
   // --- event handlers ------------------------------------------------------
 
@@ -338,10 +350,10 @@ function ToggleInner<T>(
       // InputSwitch always has 2 options; map boolean to index
       const opts = effectiveOptionsRef.current;
       const targetIdx = e.value ? 0 : 1;
-      const nextValue = opts[targetIdx]!.value;
+      const nextValue = optionAt(opts, targetIdx).value;
       currentValueRef.current = nextValue;
       setCurrentValue(nextValue);
-      onChangeRef.current?.(handleRef.current as ToggleHandle<T>);
+      onChangeRef.current?.(handle);
     },
     [],
   );
@@ -352,10 +364,10 @@ function ToggleInner<T>(
       // Bi-state checkbox: checked=true → index 0, checked=false → index 1
       const opts = effectiveOptionsRef.current;
       const targetIdx = e.checked ? 0 : 1;
-      const nextValue = opts[targetIdx]!.value;
+      const nextValue = optionAt(opts, targetIdx).value;
       currentValueRef.current = nextValue;
       setCurrentValue(nextValue);
-      onChangeRef.current?.(handleRef.current as ToggleHandle<T>);
+      onChangeRef.current?.(handle);
     },
     [],
   );
@@ -374,10 +386,10 @@ function ToggleInner<T>(
         targetIdx = 2; // null/undefined → indeterminate/third state
       }
 
-      const nextValue = opts[targetIdx]!.value;
+      const nextValue = optionAt(opts, targetIdx).value;
       currentValueRef.current = nextValue;
       setCurrentValue(nextValue);
-      onChangeRef.current?.(handleRef.current as ToggleHandle<T>);
+      onChangeRef.current?.(handle);
     },
     [],
   );
@@ -389,11 +401,11 @@ function ToggleInner<T>(
     const opts = effectiveOptionsRef.current;
     const currentIdx = findOptionIndex(opts, currentValueRef.current);
     const nextIdx = (currentIdx + 1) % opts.length;
-    const nextValue = opts[nextIdx]!.value;
+    const nextValue = optionAt(opts, nextIdx).value;
     currentValueRef.current = nextValue;
     setCurrentValue(nextValue);
 
-    onChangeRef.current?.(handleRef.current as ToggleHandle<T>);
+    onChangeRef.current?.(handle);
   }, []);
 
   // --- derived values for PrimeReact bindings ------------------------------
@@ -402,7 +414,7 @@ function ToggleInner<T>(
 
   // --- tooltip -------------------------------------------------------------
 
-  const tooltipText = onTooltipRef.current?.(handleRef.current as ToggleHandle<T>);
+  const tooltipText = onTooltipRef.current?.(handle);
 
   // --- render --------------------------------------------------------------
 

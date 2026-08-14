@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import { Dialog } from "primereact/dialog";
-import { InputText } from "primereact/inputtext";
+import { ArrayEditorDialog, formatArraySummary, isArrayType, isInlineType, openArrayEditor, type ArrayEditorModalState } from "@/ui/components/ArrayEditor";
 import Toggle from "@/ui/components/Toggle";
 import InputField, { type InputFieldHandle } from "@/ui/components/InputField";
 import { PageSection, PageTemplate } from "@/ui/PageTemplate.tsx";
@@ -11,23 +11,8 @@ import { ApiError } from "@/ui/api/errors.ts";
 import { subscribe, unsubscribe } from "@/ui/pubsub.ts";
 import { TAG_UPDATE, TAG_USER_PROFILE_CONFIG } from "@/types/PubSubType";
 
-type InlineType = "string" | "number" | "boolean";
-type ArrayType = "string[]" | "number[]";
-
 type InlineEditState = {
     entry: UserProfileConfigEntry;
-};
-
-type ArrayModalState = {
-    entry: UserProfileConfigEntry;
-    items: Array<string | number>;
-    originalItems: Array<string | number>;
-    draftInput: string;
-    inputValidation: { ok: true } | { ok: false; error: string };
-    editingIndex: number | null;
-    editDraft: string;
-    editValidation: { ok: true } | { ok: false; error: string };
-    isSaving: boolean;
 };
 
 export const meta: PageMeta = {
@@ -43,14 +28,6 @@ export const meta: PageMeta = {
         hidden: true,
     },
 };
-
-function isInlineType(type: string): type is InlineType {
-    return type === "string" || type === "number" || type === "boolean";
-}
-
-function isArrayType(type: string): type is ArrayType {
-    return type === "string[]" || type === "number[]";
-}
 
 function effectiveValue(entry: UserProfileConfigEntry): unknown {
     return entry.userValue !== null && entry.userValue !== undefined ? entry.userValue : entry.value;
@@ -79,48 +56,8 @@ function formatScalarValue(entry: UserProfileConfigEntry): string {
     return String(val ?? "");
 }
 
-function formatArraySummary(entry: UserProfileConfigEntry): string {
-    const val = effectiveValue(entry);
-    if (!Array.isArray(val)) return "[]";
-    return JSON.stringify(val);
-}
-
 function isOverridden(entry: UserProfileConfigEntry): boolean {
     return entry.userValue !== null && entry.userValue !== undefined;
-}
-
-function normalizeArrayValues(entry: UserProfileConfigEntry): Array<string | number> {
-    const val = effectiveValue(entry);
-    if (!Array.isArray(val)) return [];
-    if (entry.type === "number[]") {
-        return val
-            .map((item) => (typeof item === "number" ? item : Number(item)))
-            .filter((item) => Number.isFinite(item));
-    }
-    return val.map((item) => String(item));
-}
-
-function validateArrayItem(entry: UserProfileConfigEntry, raw: string): { ok: true; parsedValue: string | number } | { ok: false; error: string } {
-    if (!isArrayType(entry.type)) return { ok: false, error: "Unsupported array type" };
-    const trimmed = raw.trim();
-    if (trimmed.length === 0) return { ok: false, error: "Value cannot be empty" };
-
-    if (entry.inputFormat && entry.inputFormat.trim().length > 0) {
-        try {
-            const regex = new RegExp(entry.inputFormat);
-            if (!regex.test(trimmed)) return { ok: false, error: "Value does not match required format" };
-        } catch {
-            return { ok: false, error: "Invalid input format definition" };
-        }
-    }
-
-    if (entry.type === "number[]") {
-        const parsed = Number(trimmed);
-        if (!Number.isFinite(parsed)) return { ok: false, error: "Invalid number" };
-        return { ok: true, parsedValue: parsed };
-    }
-
-    return { ok: true, parsedValue: trimmed };
 }
 
 export function Component() {
@@ -128,7 +65,8 @@ export function Component() {
     const [isLoading, setIsLoading] = useState(true);
     const [error, setError] = useState<string | null>(null);
     const [inlineEdit, setInlineEdit] = useState<InlineEditState | null>(null);
-    const [arrayModal, setArrayModal] = useState<ArrayModalState | null>(null);
+    const [arrayModal, setArrayModal] = useState<ArrayEditorModalState | null>(null);
+    const [arrayEditorEntry, setArrayEditorEntry] = useState<UserProfileConfigEntry | null>(null);
     const [savingKey, setSavingKey] = useState<string | null>(null);
 
     const inputEntryRef = useRef<InputFieldHandle | null>(null);
@@ -167,18 +105,8 @@ export function Component() {
 
     const startArrayModal = (entry: UserProfileConfigEntry) => {
         if (!isArrayType(entry.type)) return;
-        const items = normalizeArrayValues(entry);
-        setArrayModal({
-            entry,
-            items,
-            originalItems: [...items],
-            draftInput: "",
-            inputValidation: { ok: true },
-            editingIndex: null,
-            editDraft: "",
-            editValidation: { ok: true },
-            isSaving: false,
-        });
+        setArrayEditorEntry(entry);
+        setArrayModal(openArrayEditor({ type: entry.type, inputFormat: entry.inputFormat, value: effectiveValue(entry), key: entry.key }));
         setInlineEdit(null);
         setError(null);
     };
@@ -202,12 +130,11 @@ export function Component() {
         const id = `${entry.domain}::${entry.key}`;
         setSavingKey(id);
         try {
-            const prevUserValue = entry.userValue;
             const updated = await updateUserProfileConfigEntry(entry.domain, entry.key, {
                 value: nextValue,
-                knownValue: prevUserValue,
+                knownUpdatedAt: entry.updatedAt ?? undefined,
             });
-            setEntries((current) => current.map((e) => (e.domain === entry.domain && e.key === entry.key ? { ...e, userValue: updated.userValue } : e)));
+            setEntries((current) => current.map((e) => (e.domain === entry.domain && e.key === entry.key ? { ...e, userValue: updated.userValue, updatedAt: updated.updatedAt } : e)));
         } catch (err) {
             if (err instanceof ApiError && err.status === 409) {
                 setError("Profile entry was modified in another tab. Reloading...");
@@ -224,12 +151,11 @@ export function Component() {
         const id = `${entry.domain}::${entry.key}`;
         setSavingKey(id);
         try {
-            const prevUserValue = entry.userValue;
             await updateUserProfileConfigEntry(entry.domain, entry.key, {
                 value: null,
-                knownValue: prevUserValue,
+                knownUpdatedAt: entry.updatedAt ?? undefined,
             });
-            setEntries((current) => current.map((e) => (e.domain === entry.domain && e.key === entry.key ? { ...e, userValue: null } : e)));
+            setEntries((current) => current.map((e) => (e.domain === entry.domain && e.key === entry.key ? { ...e, userValue: null, updatedAt: null } : e)));
         } catch (err) {
             if (err instanceof ApiError && err.status === 409) {
                 setError("Profile entry was modified in another tab. Reloading...");
@@ -251,19 +177,20 @@ export function Component() {
         const rawValue = component.getCurrentValue();
         let value: unknown = rawValue;
         if (entry.type === "number") {
-            const parsed = parseFloat(rawValue);
-            if (isNaN(parsed)) {
+            // Strict validation: the raw string must be a complete valid number
+            // (full-match), so partial input like "1abc" never persists as 1.
+            const trimmed = rawValue.trim();
+            if (trimmed.length === 0 || !/^[+-]?(\d+(\.\d*)?|\.\d+)$/.test(trimmed) || !Number.isFinite(Number(trimmed))) {
                 component.setHintText("Please enter a valid number");
                 return;
             }
-            value = parsed;
+            value = Number(trimmed);
         }
 
         try {
-            const prevUserValue = entry.userValue;
             await updateUserProfileConfigEntry(entry.domain, entry.key, {
                 value,
-                knownValue: prevUserValue,
+                knownUpdatedAt: entry.updatedAt ?? undefined,
             });
             const payload = await getUserProfileConfigEntries();
             setEntries(payload.entries);
@@ -278,14 +205,14 @@ export function Component() {
     };
 
     const saveArrayModal = async () => {
-        if (!arrayModal) return;
+        if (!arrayModal || !arrayEditorEntry) return;
         setArrayModal((current) => current ? { ...current, isSaving: true } : current);
         try {
-            const updated = await updateUserProfileConfigEntry(arrayModal.entry.domain, arrayModal.entry.key, {
+            const updated = await updateUserProfileConfigEntry(arrayEditorEntry.domain, arrayEditorEntry.key, {
                 value: arrayModal.items,
-                knownValue: arrayModal.entry.userValue,
+                knownUpdatedAt: arrayEditorEntry.updatedAt ?? undefined,
             });
-            setEntries((current) => current.map((e) => (e.domain === arrayModal.entry.domain && e.key === arrayModal.entry.key ? { ...e, userValue: updated.userValue } : e)));
+            setEntries((current) => current.map((e) => (e.domain === arrayEditorEntry.domain && e.key === arrayEditorEntry.key ? { ...e, userValue: updated.userValue, updatedAt: updated.updatedAt } : e)));
             setArrayModal(null);
         } catch (err) {
             if (err instanceof ApiError && err.status === 409) {
@@ -300,8 +227,9 @@ export function Component() {
     };
 
     const grouped = entries.reduce<Map<string, UserProfileConfigEntry[]>>((acc, entry) => {
-        if (!acc.has(entry.domain)) acc.set(entry.domain, []);
-        acc.get(entry.domain)!.push(entry);
+        const domainEntries = acc.get(entry.domain);
+        if (domainEntries) domainEntries.push(entry);
+        else acc.set(entry.domain, [entry]);
         return acc;
     }, new Map());
 
@@ -348,7 +276,7 @@ export function Component() {
                                 } else if (entry.type === "string") {
                                     defaultValueDisplay = String(entry.value ?? "");
                                 } else if (entry.type === "string[]" || entry.type === "number[]") {
-                                    defaultValueDisplay = <code>{formatArraySummary({ ...entry, userValue: null })}</code>;
+                                    defaultValueDisplay = <code>{formatArraySummary({ type: entry.type, value: entry.value })}</code>;
                                 } else {
                                     defaultValueDisplay = <code>{JSON.stringify(entry.value ?? null)}</code>;
                                 }
@@ -396,7 +324,7 @@ export function Component() {
                                                     className="admin-config-value-button"
                                                     onClick={() => startArrayModal(entry)}
                                                 >
-                                                    {formatArraySummary(entry)}
+                                                    {formatArraySummary({ type: entry.type, value: effectiveValue(entry) })}
                                                 </button>
                                             ) : (
                                                 <code>{JSON.stringify(entry.userValue ?? entry.value)}</code>
@@ -424,186 +352,14 @@ export function Component() {
                 </PageSection>
             ))}
 
-            <Dialog
-                header={arrayModal ? `Edit ${arrayModal.entry.key}` : "Edit array"}
-                visible={Boolean(arrayModal)}
-                style={{ width: "min(860px, 95vw)" }}
-                className="admin-config-dialog admin-config-dialog-array"
-                modal
-                onHide={() => setArrayModal(null)}
-            >
-                {arrayModal ? (
-                    <div className="admin-config-array-editor">
-                        <div className="admin-config-array-add-row">
-                            <InputText
-                                value={arrayModal.draftInput}
-                                onChange={(event) => {
-                                    const next = event.target.value;
-                                    const validation = validateArrayItem(arrayModal.entry, next);
-                                    setArrayModal((current) => {
-                                        if (!current) return null;
-                                        return {
-                                            ...current,
-                                            draftInput: next,
-                                            inputValidation: validation.ok ? { ok: true } : { ok: false, error: validation.error },
-                                        };
-                                    });
-                                }}
-                                placeholder={arrayModal.entry.type === "number[]" ? "Add number" : "Add value"}
-                            />
-                            <button
-                                type="button"
-                                onClick={() => {
-                                    const validation = validateArrayItem(arrayModal.entry, arrayModal.draftInput);
-                                    if (!validation.ok) {
-                                        setArrayModal((current) => current ? { ...current, inputValidation: { ok: false, error: validation.error } } : current);
-                                        return;
-                                    }
-                                    setArrayModal((current) => {
-                                        if (!current) return null;
-                                        return {
-                                            ...current,
-                                            items: [...current.items, validation.parsedValue],
-                                            draftInput: "",
-                                            inputValidation: { ok: true },
-                                        };
-                                    });
-                                }}
-                            >
-                                Add
-                            </button>
-                        </div>
-
-                        {!arrayModal.inputValidation.ok ? (
-                            <p className="admin-config-validation-error">{arrayModal.inputValidation.error}</p>
-                        ) : null}
-
-                        <ul className="admin-config-array-list">
-                            {arrayModal.items.map((item, index) => {
-                                const isEditing = arrayModal.editingIndex === index;
-                                return (
-                                    <li key={`${index}-${String(item)}`} className="admin-config-array-item">
-                                        {isEditing ? (
-                                            <div className="admin-config-array-item-edit">
-                                                <InputText
-                                                    value={arrayModal.editDraft}
-                                                    onChange={(event) => {
-                                                        const next = event.target.value;
-                                                        const validation = validateArrayItem(arrayModal.entry, next);
-                                                        setArrayModal((current) => {
-                                                            if (!current) return null;
-                                                            return {
-                                                                ...current,
-                                                                editDraft: next,
-                                                                editValidation: validation.ok ? { ok: true } : { ok: false, error: validation.error },
-                                                            };
-                                                        });
-                                                    }}
-                                                />
-                                                <button
-                                                    type="button"
-                                                    disabled={!arrayModal.editValidation.ok}
-                                                    onClick={() => {
-                                                        const validation = validateArrayItem(arrayModal.entry, arrayModal.editDraft);
-                                                        if (!validation.ok) {
-                                                            setArrayModal((current) => current ? { ...current, editValidation: { ok: false, error: validation.error } } : current);
-                                                            return;
-                                                        }
-                                                        setArrayModal((current) => {
-                                                            if (!current || current.editingIndex === null) return current;
-                                                            const items = [...current.items];
-                                                            items[current.editingIndex] = validation.parsedValue;
-                                                            return {
-                                                                ...current,
-                                                                items,
-                                                                editingIndex: null,
-                                                                editDraft: "",
-                                                                editValidation: { ok: true },
-                                                            };
-                                                        });
-                                                    }}
-                                                >
-                                                    Save
-                                                </button>
-                                                <button
-                                                    type="button"
-                                                    onClick={() => setArrayModal((current) => current ? {
-                                                        ...current,
-                                                        editingIndex: null,
-                                                        editDraft: "",
-                                                        editValidation: { ok: true },
-                                                    } : current)}
-                                                >
-                                                    Cancel
-                                                </button>
-                                            </div>
-                                        ) : (
-                                            <>
-                                                <button
-                                                    type="button"
-                                                    className="admin-config-array-item-value"
-                                                    onClick={() => setArrayModal((current) => current ? {
-                                                        ...current,
-                                                        editingIndex: index,
-                                                        editDraft: String(item),
-                                                        editValidation: { ok: true },
-                                                    } : current)}
-                                                >
-                                                    {String(item)}
-                                                </button>
-                                                <div className="admin-config-array-item-actions">
-                                                    <button
-                                                        type="button"
-                                                        onClick={() => setArrayModal((current) => current ? {
-                                                            ...current,
-                                                            items: current.items.filter((_, itemIndex) => itemIndex !== index),
-                                                            editingIndex: current.editingIndex === index ? null : current.editingIndex,
-                                                        } : current)}
-                                                    >
-                                                        Remove
-                                                    </button>
-                                                </div>
-                                            </>
-                                        )}
-                                    </li>
-                                );
-                            })}
-                        </ul>
-
-                        {!arrayModal.editValidation.ok ? (
-                            <p className="admin-config-validation-error">{arrayModal.editValidation.error}</p>
-                        ) : null}
-
-                        <div className="admin-config-actions admin-top-gap">
-                            <button
-                                type="button"
-                                disabled={arrayModal.isSaving}
-                                onClick={() => setArrayModal((current) => {
-                                    if (!current) return null;
-                                    return {
-                                        ...current,
-                                        items: [...current.originalItems],
-                                        draftInput: "",
-                                        inputValidation: { ok: true },
-                                        editingIndex: null,
-                                        editDraft: "",
-                                        editValidation: { ok: true },
-                                    };
-                                })}
-                            >
-                                Revert
-                            </button>
-                            <button
-                                type="button"
-                                disabled={arrayModal.isSaving}
-                                onClick={() => void saveArrayModal()}
-                            >
-                                Save
-                            </button>
-                        </div>
-                    </div>
-                ) : null}
-            </Dialog>
+            {arrayModal ? (
+                <ArrayEditorDialog
+                    state={arrayModal}
+                    onChange={(updater) => setArrayModal((current) => current ? updater(current) : null)}
+                    onClose={() => setArrayModal(null)}
+                    onSave={() => void saveArrayModal()}
+                />
+            ) : null}
         </PageTemplate>
     );
 }

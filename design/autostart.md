@@ -19,18 +19,20 @@ the same mechanism, keeping `main.ts` lean.
 ## How It Works
 
 [`src/main.ts`](src/main.ts) scans the directory [`src/autostart/`](src/autostart/)
-at startup using `fs.readdirSync`. Every `.ts` file is dynamically imported,
+at startup using `Bun.Glob("*.ts")`. Every `.ts` file is dynamically imported,
 and its exported `start()` function is called with the current database client.
 
 ```
 app startup
   └─ initDatabase()
-  └─ startEntraIDSync()            ← explicit, blocking (not yet migrated)
   └─ load apps (setup, login, api, ui)
   └─ getDatabaseConnection()
+  └─ register functional permissions
+  └─ run setup wizard (when mandatory config is missing)
   └─ scan src/autostart/*.ts       ← auto-discovery
   │   ├─ import -> start(dbClient)
   │   ├─ import -> start(dbClient)
+  │   │   └─ EntraID sync blocks here until the initial group sync is done
   │   └─ ...
   └─ mount apps, listen
 ```
@@ -82,6 +84,7 @@ the setup wizard during initial deployment.
 | File | Delegates to | Purpose |
 |---|---|---|
 | `audit-log.ts` | [`startAuditLog()`](src/services/AuditLog.ts:101) | Subscribes to PubSub audit events and starts periodic flush timer |
+| `entraid-sync.ts` | [`startScheduler()`](src/services/EntraIDSync.ts) | Starts the EntraID sync scheduler and blocks inside `start()` until the initial group sync completes |
 
 ## How to Use (for Derived Projects)
 
@@ -167,8 +170,8 @@ Common causes:
 
 | Startup element | Discovery method | Blocks startup? |
 |---|---|---|
-| EntraID sync | Explicit `import` in [`src/main.ts`](src/main.ts) | Yes (until groups are synced) |
-| Autostart tasks | Auto-scanned from `src/autostart/` | No (sequential, but each is awaited) |
+| EntraID sync | Auto-scanned from `src/autostart/` (`entraid-sync.ts`) | Yes (the task waits inside `start()` until groups are synced) |
+| Other autostart tasks | Auto-scanned from `src/autostart/` | No (sequential, but each is awaited) |
 | Setup wizard | Explicit `import` in [`src/main.ts`](src/main.ts) | Yes (blocks until config is complete) |
 
 ## Error Handling

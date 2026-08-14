@@ -5,10 +5,13 @@ import { pageModules as appPageModules } from "@/ui/app_PageRegistry.ts";
 /**
  * Registry of all available pages in the application.
  *
- * This is the single source of truth for all pages. Each entry includes both the page metadata
- * (for routing, permissions, menu configuration) and the React component to render.
+ * Role of this file in the three-file arrangement: the COMBINER — it merges the
+ * auto-generated page list (`_pageRegistry.generated.ts`) with the downstream escape-hatch
+ * registrations (`app_PageRegistry.ts`) and exposes navigation helpers. Do not list pages here.
  *
- * The order of pages affects default routing and navigation ordering.
+ * Each entry includes both the page metadata (for routing, permissions, menu configuration)
+ * and the React component to render. The order of pages affects default routing and
+ * navigation ordering.
  */
 export const pageModules: readonly PageModule[] = [
     ...autoPageModules,
@@ -85,8 +88,10 @@ export function getVisiblePages(permissionNames: readonly string[]): PageModule[
 
     const pageIdsThatActAsParent = new Set(
         pageModules
-            .filter((module) => module.meta.menu.parent && !module.meta.menu.hidden)
-            .map((module) => module.meta.menu.parent!),
+            .flatMap((module) => {
+                const parentId = module.meta.menu.parent;
+                return parentId && !module.meta.menu.hidden ? [parentId] : [];
+            }),
     );
 
     return visible.filter((pageModule) => {
@@ -159,9 +164,11 @@ export function getPageByUrn(urn: string): PageModule | undefined { return pageM
  * ```
  */
 export function getDefaultPath(permissionNames: readonly string[]): string {
-    // FIXME: change behaviour: instead of defining default on granted permissions, read from "user profile" [TO BE DONE] or fall back to /
+    // Current behavior: the default path is the first visible page by menu order; when no page is
+    // visible the app falls back to "/".
     const visiblePages = getVisiblePages(permissionNames);
-    if (visiblePages.length > 0) return visiblePages[0]!.meta.path;
+    const firstVisible = visiblePages[0];
+    if (firstVisible) return firstVisible.meta.path;
     return "/";
 }
 
@@ -194,8 +201,9 @@ export function buildNavTree(pages: readonly PageModule[]): NavSection[] {
 
     const bySection = sorted.reduce<Record<string, PageModule[]>>((acc, page) => {
         const s = page.meta.menu.section;
-        if (!acc[s]) acc[s] = [];
-        acc[s]!.push(page);
+        const sectionPages = acc[s];
+        if (sectionPages) sectionPages.push(page);
+        else acc[s] = [page];
         return acc;
     }, {});
 
@@ -207,11 +215,14 @@ export function buildNavTree(pages: readonly PageModule[]): NavSection[] {
 
         // Children indexed by parent ID.
         const childrenByParent = sectionPages
-            .filter((p) => p.meta.menu.parent && pageIds.has(p.meta.menu.parent))
-            .reduce<Record<string, PageModule[]>>((acc, p) => {
-                const key = p.meta.menu.parent!;
-                if (!acc[key]) acc[key] = [];
-                acc[key]!.push(p);
+            .flatMap((p) => {
+                const parent = p.meta.menu.parent;
+                return parent && pageIds.has(parent) ? [{ parent, page: p }] : [];
+            })
+            .reduce<Record<string, PageModule[]>>((acc, { parent, page: p }) => {
+                const childPages = acc[parent];
+                if (childPages) childPages.push(p);
+                else acc[parent] = [p];
                 return acc;
             }, {});
 

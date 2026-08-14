@@ -1,6 +1,6 @@
 # AGENTS.md – Repository Guidance for AI Coding Agents
 
-This root file provides repo-wide guidance and a map of the repository. Folder-local `AGENTS.md` files take precedence for detailed, layer-specific rules.
+This root file provides repo-wide guidance and a map of the repository. **Precedence:** sub-directory `AGENTS.md` files take precedence over parent `AGENTS.md` files (and over this root file) for the layers they govern. Where a folder restates a root rule, the folder's operational detail wins; the root file keeps the policy statement.
 
 ## Project-wide rules
 
@@ -20,13 +20,26 @@ This root file provides repo-wide guidance and a map of the repository. Folder-l
 
 ## Root files
 
-- `.env` — local runtime configuration such as `DATABASE_URL` and `ADVISORY_LOCK`; keep it out of version control.
+- `.env` — local runtime configuration; keep it out of version control. The complete environment-variable surface read by this project:
+
+| Variable | Meaning | Default | Where consumed |
+|---|---|---|---|
+| `DATABASE_URL` | PostgreSQL connection string | none — startup fails without it | `src/services/Env.ts` (throws at module load) |
+| `ADVISORY_LOCK` | Advisory-lock id for programmatic migrations | `-7482650123549836421` (single source: `defaultAdvisoryLockId` in `src/services/Env.ts`) | `src/services/DatabaseDriver.ts` `initDatabase()` |
+| `APP_BASE_URL` | Base URL used by the Playwright E2E test infrastructure | `http://localhost:8000` (test-side fallback) | E2E test setup per `design/playwright_testing.md`; not read by application code |
+| `PORT` | HTTP server port | `8000` | `src/services/Env.ts` (`port`); `src/main.ts`, `src/apps/setup.ts` |
+| `DEV_MODE` | Opt-in development mode (`"1"`) | unset ⇒ production behavior | `src/services/Env.ts` (`devMode`/`isProduction`) |
+| `SQL_LOGGING` | Drizzle SQL logging (`"1"`) | unset | `src/services/Env.ts` (`sqlLogging`) |
+| `INTERNAL_API_BASE_URL` | Base URL for request-bundling loopback calls | falls back to `http://localhost:<PORT>` | `src/api/RequestBundlingAPI.ts` |
+| `BUNDLING_DEBUG` | Extra request-bundling debug logging (`"1"`) | unset | `src/api/RequestBundlingAPI.ts` |
+| `TRUST_PROXY` | Trust `X-Forwarded-Proto`/`X-Forwarded-Host` (`"1"`) | unset ⇒ forwarded headers ignored | `src/services/Env.ts` (`trustProxy`); `src/utils/ProxyHeaders.ts`; configuration instructions in `README.md` |
+| `NODE_ENV` | Not load-bearing; exported raw only | unset | `src/services/Env.ts` (`nodeEnv`) |
 - `.gitignore` — ignore rules for generated output, local config, and template scratch files.
 - `LICENSE` — project license text.
 - `README.md` — template overview, setup instructions, and first-run guidance.
 - `package.json` — package metadata, dependencies, and Bun scripts.
 - `tsconfig.json` — TypeScript compiler configuration and the `@/*` path alias.
-- `TODO.md` — informal backlog / scratchpad for follow-up work.
+- `TODO.md` — git-ignored scratch file, not part of the project documentation; its content is void (the file instructs readers to ignore it).
 
 ## Root directories
 
@@ -38,7 +51,8 @@ This root file provides repo-wide guidance and a map of the repository. Folder-l
 
 ### Static asset subdirectories
 
-- `static/public/` — publicly served assets, mounted without authorization.
+- `static/public/` — publicly served assets, mounted without authorization at `/static/public/*`.
+- `./public/` (repo root) — mounted without authorization at `/public/*` (`src/main.ts`). The directory may not exist in the base template; it is available for derived projects, and `Bun.file` returns misses (404s) for absent files. Requests with dot-segment traversal (`/public/../…`, encoded variants) are normalized before routing or treated as literal filenames and cannot escape the `./public/` root.
 - `static/` other than `static/public/` — static assets that are generally served only when the user is authenticated or during setup flows.
 
 ## `src/` subdirectories

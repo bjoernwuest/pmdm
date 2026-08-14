@@ -25,6 +25,7 @@ export const UserProfileConfigEntrySchema = Type.Object({
     userValue: Type.Any({ description: "Current user's override value, or null when not overridden." }),
     inputFormat: Type.String({ description: "Input format used to render the editor for this entry." }),
     outputFormat: Type.String({ description: "Output format used to render the current value." }),
+    updatedAt: Type.Optional(Type.Union([Type.String(), Type.Null()], { description: "Last known updatedAt timestamp of the current user's override, or null when not overridden. Used for optimistic locking." })),
 }, { description: "One user-configurable entry with the global default and the current user's override value." });
 export type UserProfileConfigEntry = Static<typeof UserProfileConfigEntrySchema>;
 
@@ -35,7 +36,7 @@ export type UserProfileConfigResponse = Static<typeof UserProfileConfigResponseS
 
 export const UserProfileConfigUpdateSchema = Type.Object({
     value: Type.Any({ description: "New override value for the entry. null or undefined resets the entry to the global default." }),
-    knownValue: Type.Optional(Type.Any({ description: "Last known userValue of the entry for optimistic locking. Omit to skip the concurrency check." })),
+    knownUpdatedAt: Type.Optional(Type.String({ description: "Last known updatedAt timestamp of the current user's override for optimistic locking. Omit when creating a new override." })),
 });
 export type UserProfileConfigUpdate = Static<typeof UserProfileConfigUpdateSchema>;
 

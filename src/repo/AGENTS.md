@@ -2,6 +2,8 @@
 
 This folder is the dedicated **Data Access Layer** of the application. Its primary objective is to fully encapsulate all `drizzle-orm` queries and database logic, preventing direct database leaks into the business logic.
 
+**Precedence:** this file is the authoritative layer doc for `src/repo/` and takes precedence over parent `AGENTS.md` files (including the root file).
+
 ## 📁 Naming & Mapping Conventions
 
 * **1:1 Mapping:** For every schema file in the project, there must be exactly one corresponding repository file here.

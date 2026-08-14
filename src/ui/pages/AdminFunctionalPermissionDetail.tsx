@@ -1,10 +1,11 @@
 import { useEffect, useMemo, useState } from "react";
 import { Link, useLocation, useParams, useSearchParams } from "react-router-dom";
-import { InputSwitch } from "primereact/inputswitch";
 import Toggle from "@/ui/components/Toggle";
 import { PageTemplate, PageSection } from "@/ui/PageTemplate.tsx";
 import type { PageMeta } from "@/types/PageType.ts";
-import { apiDelete, apiGet, apiPost } from "@/ui/api/index.ts";
+import { assignGroupsToFunctionalPermission, getFunctionalPermissionDetail, removeGroupsFromFunctionalPermission } from "@/ui/api/FunctionalPermissions.ts";
+import { getGroups } from "@/ui/api/Groups.ts";
+import { getViewerContext } from "@/ui/api/session.ts";
 import type { FunctionalPermissionDetailResponseType, GroupsResponse } from "@/types/ApiType.ts";
 import {
     FP_EDIT_FUNCTIONAL_PERMISSION_ASSIGNMENTS,
@@ -17,6 +18,9 @@ export const meta: PageMeta = {
     id: "admin-functional-permission-detail",
     urn: "urn:bun-starter:ui:page:admin-functional-permission-detail",
     path: "/admin/functional-permissions/:functionalpermissionid",
+    detailBreadcrumb: {
+        resolveLabel: async (params) => (await getFunctionalPermissionDetail(params.functionalpermissionid ?? "")).functionalPermission.functionalPermissionName,
+    },
     title: "Functional permission details",
     description: "Read-only functional permission details.",
     menu: {
@@ -42,6 +46,7 @@ export function Component() {
     const [groupsAvailablePageSizes, setGroupsAvailablePageSizes] = useState<number[]>([10, 20, 50]);
     const [showDisabledGroups, setShowDisabledGroups] = useState(() => searchParams.get("showDisabledGroups") === "1");
     const [isLoading, setIsLoading] = useState(true);
+    const [error, setError] = useState<string | null>(null);
     const [isSaving, setIsSaving] = useState(false);
 
     const queryGroupsPage = Number(searchParams.get("groupsPage") ?? "1");
@@ -66,9 +71,9 @@ export function Component() {
 
         setIsLoading(true);
         void Promise.all([
-            apiGet<ViewerContext>("/api/me/context"),
-            apiGet<FunctionalPermissionDetailResponseType>(`/api/functionalpermissions/${encodeURIComponent(functionalpermissionid)}`),
-            apiGet<GroupsResponse>(`/api/groups?page=${groupsPage - 1}&pageSize=${groupsPageSize}&includeInactive=${showDisabledGroups}`),
+            getViewerContext(),
+            getFunctionalPermissionDetail(functionalpermissionid),
+            getGroups(groupsPage - 1, groupsPageSize, showDisabledGroups),
         ]).then(([context, details, groupsResp]) => {
             if (cancelled) return;
             setViewerContext(context);
@@ -78,8 +83,13 @@ export function Component() {
             setGroupsAvailablePageSizes(groupsResp.availablePageSizes);
             if (groupsResp.page !== groupsPage - 1) updateQuery({ groupsPage: groupsResp.page + 1 });
             if (!groupsResp.availablePageSizes.includes(groupsPageSize) && groupsResp.availablePageSizes.length > 0) {
-                updateQuery({ groupsPage: 1, groupsPageSize: groupsResp.availablePageSizes[0]! });
+                const [firstPageSize] = groupsResp.availablePageSizes;
+                if (typeof firstPageSize === "number") {
+                    updateQuery({ groupsPage: 1, groupsPageSize: firstPageSize });
+                }
             }
+        }).catch((err: unknown) => {
+            if (!cancelled) setError(err instanceof Error ? err.message : "Could not load functional permission");
         }).finally(() => {
             if (!cancelled) setIsLoading(false);
         });
@@ -99,15 +109,14 @@ export function Component() {
 
     const refreshDetail = async () => {
         if (!functionalpermissionid) return;
-        const refreshed = await apiGet<FunctionalPermissionDetailResponseType>(
-            `/api/functionalpermissions/${encodeURIComponent(functionalpermissionid)}`,
-        );
+        const refreshed = await getFunctionalPermissionDetail(functionalpermissionid);
         setDetailPayload(refreshed);
     };
 
     return (
         <PageTemplate urn={meta.urn} title={meta.title} description={meta.description}>
             <PageSection title="Functional permission details">
+                {error ? <p className="admin-config-error">{error}</p> : null}
                 {isLoading || !detailPayload ? (
                     <p>Loading functional permission details...</p>
                 ) : (
@@ -125,10 +134,12 @@ export function Component() {
                             <div className="admin-top-gap">
                                 <div className="admin-toggle-row">
                                     <span>Show disabled groups</span>
-                                    <InputSwitch
-                                        checked={showDisabledGroups}
-                                        onChange={(event) => {
-                                            const checked = Boolean(event.value);
+                                    <Toggle<boolean>
+                                        variant="toggle"
+                                        value={showDisabledGroups}
+                                        options={[{ value: true, label: "Show disabled groups" }, { value: false, label: "Hide disabled groups" }]}
+                                        onChange={(t) => {
+                                            const checked = t.getValue();
                                             setShowDisabledGroups(checked);
                                             updateQuery({ showDisabledGroups: checked, groupsPage: 1 });
                                         }}
@@ -162,17 +173,13 @@ export function Component() {
                                                                 setIsSaving(true);
                                                                 try {
                                                                     if (t.getValue()) {
-                                                                        await apiPost(
-                                                                            `/api/functionalpermissions/${encodeURIComponent(functionalpermissionid)}/groups`,
-                                                                            { groupIdentifiers: [group.identifier] },
-                                                                        );
+                                                                        await assignGroupsToFunctionalPermission(functionalpermissionid, [group.identifier]);
                                                                     } else {
-                                                                        await apiDelete(
-                                                                            `/api/functionalpermissions/${encodeURIComponent(functionalpermissionid)}/groups`,
-                                                                            { groupIdentifiers: [group.identifier] },
-                                                                        );
+                                                                        await removeGroupsFromFunctionalPermission(functionalpermissionid, [group.identifier]);
                                                                     }
                                                                     await refreshDetail();
+                                                                } catch (err) {
+                                                                    setError(err instanceof Error ? err.message : "Failed to update group assignment");
                                                                 } finally {
                                                                     setIsSaving(false);
                                                                 }

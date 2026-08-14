@@ -1,5 +1,7 @@
 # AI Agent Guidelines: Types & Typebox Schema Folder
 
+**Precedence:** sub-directory AGENTS.md take precedence over parent AGENTS.md files; this file is the authoritative layer doc for its folder.
+
 This folder serves as the central hub for **TypeScript type definitions, Typebox schemas, and shared constants** (e.g., PubSub topics).
 
 ## 🔄 File Structure & Conventions

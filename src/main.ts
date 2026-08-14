@@ -1,33 +1,28 @@
-import { readdirSync } from "node:fs";
-import { join } from "node:path";
-import {type DBClient, getDatabaseConnection, initDatabase} from "@/services/DatabaseDriver.ts";
-import { startScheduler as startEntraIDSync } from "@/services/EntraIDSync.ts";
-
+import {getDatabaseConnection, initDatabase} from "@/services/DatabaseDriver.ts";
 import { Elysia } from "elysia";
 import { devMode } from "@/devmode.ts";
+import { port as envPort } from "@/services/Env.ts";
 
 console.log("⚡ Start application...");
 
 console.log("...⚡ Initialize database...");
 await initDatabase();
 
-console.log("...⚡ Register functional permissions...");
-await import("@/services/auth/FunctionalPermissions.ts");
-
 console.log("...⚡ Load application modules...");
 const { default: setupApp } = await import("@/apps/setup.ts");
-const { app: loginApp } = await import("@/apps/login.ts");
-const { app: apiApp } = await import("@/apps/api.ts");
-const { app: uiApp } = await import("@/apps/ui.ts");
+const { createLoginApp } = await import("@/apps/login.ts");
+const { createApiApp } = await import("@/apps/api.ts");
+const { createUiApp } = await import("@/apps/ui.ts");
+
+console.log("...⚡ Get database connection...");
+const dbClient = await getDatabaseConnection();
+
+console.log("...⚡ Register functional permissions...");
+const { registerFunctionalPermissions } = await import("@/services/auth/FunctionalPermissions.ts");
+await registerFunctionalPermissions(dbClient);
 
 console.log("...⚡ Check if setup is required...");
 await setupApp();
-
-console.log("...⚡ Start EntraID sync...");
-try {
-  const syncState = await startEntraIDSync();
-  await syncState.groupsReady;
-} catch (e) { console.warn("EntraID sync could not start (continuing without it):", e); }
 
 
 // Start real app
@@ -40,24 +35,14 @@ if (devMode) console.log("...⚡ Mount /static/public endpoint...");
 app.get("/static/public/*", async ({ params }) => Bun.file(`./static/public/${params["*"]}`));
 
 // ====================================================================================================================
-// Inject database connection (not transaction - Drizzle transactions need to be scoped per operation)
+// Mount applications (each app factory receives the real DBClient — non-transactional
+// client; Drizzle transactions are scoped per operation via runInTransaction)
 // ====================================================================================================================
-const injectDb = (dbClient: DBClient) => new Elysia({ name: 'db-inject' }).derive({ as: 'global' }, async () => {
-    return { dbClient };
-});
-
-
-// ====================================================================================================================
-// Mount applications
-// ====================================================================================================================
-const dbClient = await getDatabaseConnection();
 
 // ── Auto-discovered autostart tasks ────────────────────────────────────────────
 console.log("...⚡ Start autostart tasks...");
-const autostartDir = join(import.meta.dir, "autostart");
 try {
-  for (const file of readdirSync(autostartDir)) {
-    if (!file.endsWith(".ts")) continue;
+  for (const file of new Bun.Glob("*.ts").scanSync({ cwd: `${import.meta.dir}/autostart` })) {
     try {
       const mod = await import(`@/autostart/${file}`);
       if (typeof mod.start === "function") {
@@ -72,15 +57,13 @@ try {
   if (e?.code !== "ENOENT") console.warn("Could not scan autostart directory:", e);
 }
 
-if (devMode) console.log("...💉 Injecting Drizzle database connection");
-app.use(injectDb(dbClient));
 if (devMode) console.log("...⚡ Mount login application...");
-app.use(loginApp);
+app.use(createLoginApp(dbClient));
 if (devMode) console.log("...⚡ Mount API backend...");
-app.use(apiApp);
+app.use(createApiApp(dbClient));
 if (devMode) console.log("...⚡ Mount client frontend...");
-app.use(uiApp);
+app.use(createUiApp(dbClient));
 
-const port = Number(process.env.PORT) || 8000;
+const port = envPort;
 app.listen(port);
 console.log(`🚀 Application running at http://localhost:${port}`);

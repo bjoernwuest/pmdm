@@ -2,6 +2,8 @@
 
 This folder contains **ElysiaJS route handlers** that define the REST API surface. Each file exports a default function that registers one or more endpoints on the `ApiInstance`.
 
+**Precedence:** this file is the authoritative layer doc for `src/api/` and takes precedence over parent `AGENTS.md` files (including the root file).
+
 ---
 
 ## Base Route & Registration
@@ -27,10 +29,10 @@ The `// noinspection JSUnusedGlobalSymbols` comment is **required** on every exp
 
 ## Context Extension (`.decorate` + `.derive`)
 
-The API app in `src/apps/api.ts` injects context properties available in every route handler. **Route files must never re-derive or re-decorate these properties** — they are already present on the context object.
+The API app in `src/apps/api.ts` is created by a factory — `createApiApp(dbClient: DBClient)` — that decorates the **real** database client on the instance and derives the auth context. `src/main.ts` calls the factory with its `DBClient` and mounts the result. **Route files must never re-derive or re-decorate these properties** — they are already present on the context object.
 
-### `.decorate("dbClient", …)`
-Injects `dbClient: DBClient` — the Drizzle database client. Use for all database access. **Never** call `getDatabaseConnection()` directly in a route; always use the injected `dbClient`. The `dbClient` is meant to forward to services and repos.
+### `.decorate("dbClient", dbClient)`
+Injects `dbClient: DBClient` — the real Drizzle database client supplied by the factory. Use for all database access. **Never** call `getDatabaseConnection()` directly in a route; always use the injected `dbClient`. The `dbClient` is meant to forward to services and repos. There is no `{} as DBClient` placeholder anywhere — the factory parameter guarantees the client exists.
 
 ### `.derive({ as: 'global' }, …)`
 Derives authentication context **once per request** and adds these properties to every handler:
@@ -64,34 +66,34 @@ const claims = context.session?.idTokenClaims ?? context.tokenClaims ?? {};
 ```
 
 ### Authorization check pattern
-Every protected route must check functional permissions with `authorize()`:
+Every protected route must check functional permissions via the shared `requirePermissions()` helper (in `@/services/Auth.ts`) — do not open-code the claims/authorize/403 sequence:
 
 ```typescript
-import { authorize } from "@/services/AuthType.ts";
+import { requirePermissions } from "@/services/Auth.ts";
 import { FP_READ_USERS } from "@/services/auth/FunctionalPermissions.ts";
 
-const authz = await authorize(context.dbClient, claims, [FP_READ_USERS]);
-if (!authz.some(p => p.identifier === FP_READ_USERS.identifier)) {
-    return status(403, `Permission denied. Required: ${FP_READ_USERS.functionalPermissionName}`);
-}
+const claims = context.session?.idTokenClaims ?? context.tokenClaims ?? {};
+const permissionCheck = await requirePermissions(context.dbClient, claims, [FP_READ_USERS]);
+if (!permissionCheck.ok) return permissionCheck.denial;
 ```
 
 **Always** import functional permission constants from `@/services/auth/FunctionalPermissions.ts`. **Never** hardcode permission identifiers or names in route files.
 
 ### Multi-permission checks
-When an endpoint requires multiple permissions:
+When an endpoint requires multiple permissions, pass all of them as `requiredPermissions` (all must be granted):
 
 ```typescript
-const required = [FP_READ_USERS, FP_READ_GROUPS, FP_READ_FUNCTIONAL_PERMISSIONS];
-const authz = await authorize(context.dbClient, claims, required);
+const requiredPermissions = [FP_READ_USERS, FP_READ_GROUPS, FP_READ_FUNCTIONAL_PERMISSIONS];
+const permissionCheck = await requirePermissions(context.dbClient, claims, requiredPermissions);
+if (!permissionCheck.ok) return permissionCheck.denial;
+```
 
-// Option A: Require ALL permissions
-if (!required.every(p => authz.some(ap => ap.identifier === p.identifier))) {
-    return status(403, `Permission denied. Required: ${required.map(p => p.functionalPermissionName).join(", ")}`);
-}
+For conditional response shaping, request additional permissions without requiring them — their granted subset is available via `permissionCheck.authz`:
 
-// Option B: Check individually for conditional response shaping
-if (authz.some(p => p.identifier === FP_READ_GROUPS.identifier)) {
+```typescript
+const permissionCheck = await requirePermissions(context.dbClient, claims, [FP_READ_USERS], [FP_READ_GROUPS]);
+if (!permissionCheck.ok) return permissionCheck.denial;
+if (permissionCheck.authz.some(p => p.identifier === FP_READ_GROUPS.identifier)) {
     // Include group data in response
 }
 ```
@@ -116,10 +118,10 @@ Members of `cfgRootUserGroup` have **all permissions** automatically — this is
 
 ### ❌ Forbidden in route handlers
 - **Direct Drizzle ORM queries** — use repo functions only
-- **Business logic** that belongs in services (e.g., config validation logic lives in `src/services/ConfigSchema.ts`, auth logic in `src/services/AuthType.ts`)
+- **Business logic** that belongs in services (e.g., config validation logic lives in `src/services/Config.ts`, auth logic in `src/services/Auth.ts`)
 - **Raw database access** via `getDatabaseConnection()`
 - **Direct Drizzle schema imports** for mutation — queries via `context.dbClient.select()` should be limited and only when no repo function exists; prefer adding the repo function instead
-- **Optimistic locking checks** (comparing `knownValue` or `knownUpdatedAt` with DB row)
+- **Optimistic locking checks** (comparing `knownUpdatedAt` with the stored row — the repo's guarded update performs the compare-and-swap)
 
 ---
 
@@ -148,27 +150,37 @@ Every route registration MUST include a `detail` object with full OpenAPI docume
 | `query` | 3rd arg | **Yes** when using query parameters — use `t.Object()` with `t.Optional()` for optional params. Use / define schema in corresponding type-definition file in `/src/types` for non-trivial schema (e.g. t.string() is trivial, t.Object(...) is non-trivial).                                                                          |
 
 ### Response schema pattern
-Always document error status codes:
+Always document error status codes. Error responses are **JSON objects**, never plain strings: the minimal form is `{ error: string }`, optionally extended with `message: string` or (for 409 optimistic-lock conflicts) `currentValue`. Use the canonical error schemas defined once in `src/types/ApiType.ts`:
 
 ```typescript
+import {
+    ConflictErrorResponseSchema,
+    ForbiddenErrorResponseSchema,
+    NotFoundErrorResponseSchema,
+    OptimisticLockConflictResponseSchema,
+    UnauthenticatedErrorResponseSchema,
+} from "@/types/ApiType.ts";
+
 response: {
     200: SuccessSchema,
-    401: t.String(),   // unauthenticated
-    403: t.String(),   // permission denied
-    404: t.String(),   // not found (when applicable)
-    409: t.Object({ error: t.String(), currentValue: t.Any() }),  // conflict (optimistic locking)
+    401: UnauthenticatedErrorResponseSchema,      // { error, message? }
+    403: ForbiddenErrorResponseSchema,            // { error }
+    404: NotFoundErrorResponseSchema,             // { error }
+    409: ConflictErrorResponseSchema,             // { error } or OptimisticLockConflictResponseSchema for { error, currentValue? }
 }
 ```
 
-Every response schema entry **must** set a TypeBox `description` option — it becomes the OpenAPI response description (payload-specific for `200`, canonical text for error codes). Authenticated endpoints **must** document `401` (the global `onBeforeHandle` hook can reject before the handler runs):
+Every response schema entry **must** set a TypeBox `description` option — it becomes the OpenAPI response description (payload-specific for `200`, canonical text for error codes). The canonical schemas in `src/types/ApiType.ts` already carry the canonical descriptions. Authenticated endpoints **must** document `401` (the global `onBeforeHandle` hook can reject before the handler runs):
 
 ```typescript
 response: {
     200: UsersResponseSchema,  // schema itself carries the description option
-    401: Type.String({ description: "Unauthenticated. No valid session, API key, or bearer token was provided." }),
-    403: Type.String({ description: "Forbidden. The authenticated principal lacks the required functional permission." }),
+    401: UnauthenticatedErrorResponseSchema,
+    403: ForbiddenErrorResponseSchema,
 }
 ```
+
+Error bodies in handlers use the same JSON shape: `status(403, { error: "Permission denied. Required: …" })` — plain-string bodies are not used.
 
 Canonical error descriptions:
 
@@ -201,18 +213,19 @@ Directly use trivial types (i.e. scalar types like `t.String()`, `t.Number()`, `
 
 ### ✅ Import from
 - `@/apps/api.ts` — `ApiInstance` type
-- `@/services/AuthType.ts` — `authorize`, `getLoggedinUserObject`
+- `@/services/Auth.ts` — `authorize`, `getLoggedinUserObject`, `requirePermissions`
 - `@/services/auth/FunctionalPermissions.ts` — permission constants (`FP_*`)
 - `@/repo/*` — repository functions for data access
 - `@/services/DatabaseDriver.ts` — `runInTransaction`
 - `@/types/ApiType.ts` — response schemas and types
-- `@/types/ConfigSchema.ts` — PubSub topic constants, config types
-- `@/types/ApiKeySchema.ts` — API key schemas
-- `@/types/Database.ts` — `DBClient` type
+- `@/types/PubSubType.ts` — PubSub topic constants
+- `@/types/ConfigType.ts` — config types
+- `@/types/ApiKeyType.ts` — API key schemas
+- `@/services/DatabaseDriver.ts` — `DBClient` type
 - `@/types/*` — other domain types
-- `@/services/ConfigSchema.ts` — config value parsing/validation
+- `@/services/Config.ts` — config value parsing/validation
 - `@/services/PubSub.ts` — `PubSub`
-- `@/services/ServerSentEventsType.ts` — SSE service functions
+- `@/services/ServerSentEvents.ts` — SSE service functions
 - `elysia` — `t`, `status`
 - Other route files in this folder — for shared helpers (e.g., `parsePageSizes` from `UserAPI.ts`)
 
@@ -237,6 +250,21 @@ await runInTransaction(context.dbClient, async (tx) => {
 });
 ```
 
+**Rule: transactions return domain outcomes, routes map outcomes to HTTP.** A `runInTransaction` callback must never construct or return Elysia `status()`/Response objects, and route code must never duck-type the result (`"status" in result`). Instead, the callback returns a typed outcome (e.g. `{ ok: true } | { ok: false, reason: string }`), and the handler maps it to the HTTP response after the transaction resolves:
+
+```typescript
+const outcome = await runInTransaction(context.dbClient, async (tx) => {
+    try {
+        await grantFunctionalPermissionToGroup(tx, user, group, permissionIds);
+        return { ok: true } as const;
+    } catch (err) {
+        return { ok: false, reason: String(err) } as const;
+    }
+});
+if (!outcome.ok) return status(404, { error: "Could not grant", message: outcome.reason });
+return { success: true };
+```
+
 ---
 
 ## Request Bundling Endpoint Notes
@@ -245,9 +273,11 @@ await runInTransaction(context.dbClient, async (tx) => {
 
 - **`GET /api/request_bundling/config`** — returns client-side configuration parameters
 - **`POST /api/request_bundling`** — accepts an array of sub-requests, dispatches each as an internal `fetch()`, streams results as NDJSON
+- **Execution is strictly sequential** — sub-requests run in request order (each awaited before the next starts); per-request results are still streamed as they complete
 - This endpoint uses **internal fetch** (network loopback) to re-invoke other API endpoints — it does not call repo functions directly
 - **Nested bundling is rejected** (sub-requests to `/api/request_bundling` return 400)
 - Auth headers (`Authorization`, `X-API-Key`, `Cookie`) are forwarded to sub-requests so they run with the same credentials
+- **Sub-response headers (including `Set-Cookie`) are not forwarded** to the bundling client; endpoints that rely on cookie-setting must not be bundled
 - Timeout ≠ rollback: sub-requests that time out report `mayHaveExecuted: true`
 
 ---
@@ -256,9 +286,9 @@ await runInTransaction(context.dbClient, async (tx) => {
 
 `ServerSentEventAPI.ts` provides real-time PubSub event delivery:
 
-- **`GET /api/server_sent_events/stream`** — opens an SSE stream; session key derived from auth context (not client-supplied); topic filter preserved across reconnections
-- **`PATCH /api/server_sent_events/topics`** — updates the topic filter for the current session
-- **`GET /api/server_sent_events/topics`** — lists all known PubSub topics since process start
+- **`GET /api/server_sent_events/stream`** — opens an SSE stream; session key derived from auth context (not client-supplied); expression filter preserved across reconnections
+- **`PATCH /api/server_sent_events/expressions`** — replaces the expression filter for the current session
+- **`GET /api/server_sent_events/tags`** — lists all known PubSub tags seen since process start
 - Authentication is enforced via `deriveSseKey()` — no token claims → no session key → 401
 
 ---
@@ -283,11 +313,13 @@ const includeInactive = parseBooleanQuery(context.query.includeInactive);
 ```
 
 ### Error handling for repo operations
+Failures signal via thrown `Error` (the repo idiom). At the route boundary, caught errors are converted to strings before entering a response body — never pass the raw `Error` object into `message`:
+
 ```typescript
 try {
     await someRepoFunction(context.dbClient, ...);
 } catch (_err) {
-    return status(404, { error: "Operation failed", message: _err });
+    return status(404, { error: "Operation failed", message: String(_err) });
 }
 ```
 

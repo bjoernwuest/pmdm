@@ -1,13 +1,15 @@
 import { useEffect, useRef, useState } from "react";
-import { useLocation, useNavigate, useSearchParams } from "react-router-dom";
+import { useLocation, useNavigate } from "react-router-dom";
 import Toggle from "@/ui/components/Toggle";
 import Label, { type LabelHandle } from "@/ui/components/Label";
 import { PageTemplate, PageSection } from "@/ui/PageTemplate.tsx";
 import type { PageMeta } from "@/types/PageType.ts";
-import { apiGet } from "@/ui/api/index.ts";
+import { getUsers } from "@/ui/api/Users.ts";
 import type { UsersResponse } from "@/types/ApiType.ts";
 import { FP_READ_USERS } from "@/ui/auth/functional_permissions.ts";
-import { subscribe } from "@/ui/pubsub";
+import { subscribe, unsubscribe } from "@/ui/pubsub";
+import { useAdminListQuery } from "@/ui/useAdminListQuery.ts";
+import { AdminPager } from "@/ui/AdminPager.tsx";
 import { TAG_USER, TAG_UPDATE, TAG_DISABLE } from "@/types/PubSubType";
 
 export const meta: PageMeta = {
@@ -28,28 +30,20 @@ export const meta: PageMeta = {
 export function Component() {
     const navigate = useNavigate();
     const location = useLocation();
-    const [searchParams, setSearchParams] = useSearchParams();
     const [users, setUsers] = useState<UsersResponse["users"]>([]);
     const [isLoading, setIsLoading] = useState(true);
+    const [error, setError] = useState<string | null>(null);
     const [isPageLoading, setIsPageLoading] = useState(false);
-    const queryPage = Number(searchParams.get("page") ?? "1");
-    const queryPageSize = Number(searchParams.get("pageSize") ?? "10");
-    const showDisabledUsers = searchParams.get("showDisabled") === "1";
-    const page = Number.isInteger(queryPage) && queryPage > 0 ? queryPage : 1;
-    const pageSize = Number.isInteger(queryPageSize) && queryPageSize > 0 ? queryPageSize : 10;
-    const [availablePageSizes, setAvailablePageSizes] = useState<number[]>([10, 20, 50]);
-    const [total, setTotal] = useState(0);
-
-    const updateQuery = (patch: { page?: number; pageSize?: number; showDisabled?: boolean }) => {
-        const next = new URLSearchParams(searchParams);
-        if (patch.page !== undefined) next.set("page", String(patch.page));
-        if (patch.pageSize !== undefined) next.set("pageSize", String(patch.pageSize));
-        if (patch.showDisabled !== undefined) {
-            if (patch.showDisabled) next.set("showDisabled", "1");
-            else next.delete("showDisabled");
-        }
-        setSearchParams(next);
-    };
+    const {
+        page,
+        pageSize,
+        showDisabled: showDisabledUsers,
+        availablePageSizes,
+        total,
+        setAvailablePageSizes,
+        setTotal,
+        updateQuery,
+    } = useAdminListQuery();
 
     // --- Label refs for pubsub-driven updates ---
     interface UserLabelRefs {
@@ -66,11 +60,25 @@ export function Component() {
         users.forEach((user) => {
             const refs = labelRefs.current.get(user.identifier);
             if (refs) {
-                refs.firstName.current?.setText(user.firstName, { userId: user.identifier, field: "firstName" });
-                refs.lastName.current?.setText(user.lastName, { userId: user.identifier, field: "lastName" });
-                refs.email.current?.setText(user.email, { userId: user.identifier, field: "email" });
-                refs.status.current?.setText(user.disabled ? "Disabled" : "Enabled", { userId: user.identifier, field: "status" });
-                refs.updated.current?.setText(new Date(user.updatedAt).toLocaleString(), { userId: user.identifier, field: "updated" });
+                // Guarded re-seed: call setText only when the incoming value differs
+                // from the component's current value (see the three-phase model in Label.tsx).
+                if (refs.firstName.current && refs.firstName.current.getText() !== user.firstName) {
+                    refs.firstName.current.setText(user.firstName, { userId: user.identifier, field: "firstName" });
+                }
+                if (refs.lastName.current && refs.lastName.current.getText() !== user.lastName) {
+                    refs.lastName.current.setText(user.lastName, { userId: user.identifier, field: "lastName" });
+                }
+                if (refs.email.current && refs.email.current.getText() !== user.email) {
+                    refs.email.current.setText(user.email, { userId: user.identifier, field: "email" });
+                }
+                const statusText = user.disabled ? "Disabled" : "Enabled";
+                if (refs.status.current && refs.status.current.getText() !== statusText) {
+                    refs.status.current.setText(statusText, { userId: user.identifier, field: "status" });
+                }
+                const updatedText = new Date(user.updatedAt).toLocaleString();
+                if (refs.updated.current && refs.updated.current.getText() !== updatedText) {
+                    refs.updated.current.setText(updatedText, { userId: user.identifier, field: "updated" });
+                }
             }
         });
     }, [users]);
@@ -78,15 +86,16 @@ export function Component() {
     // PubSub subscription for live updates
     useEffect(() => {
         const token = subscribe(
-            { or: [TAG_UPDATE, TAG_DISABLE] },
+            { and: [TAG_USER, { or: [TAG_UPDATE, TAG_DISABLE] }] },
             (msg) => {
                 const tags = msg.tags;
-                // Find the user identifier in the tags (it's a UUID)
-                const userId = tags.find((t) => /^[0-9a-f-]{36}$/i.test(t));
+                const data = msg.data as Record<string, unknown> | undefined;
+                // Entity identifier comes from the payload (instance-form convention), not from a tag regex.
+                const rawUserId = data?.identifier ?? (data?.identifiers as Record<string, unknown> | undefined)?.user;
+                const userId = typeof rawUserId === "string" ? rawUserId : undefined;
                 if (!userId) return;
                 const refs = labelRefs.current.get(userId);
                 if (!refs) return;
-                const data = msg.data as Record<string, unknown> | undefined;
 
                 if (tags.includes(TAG_UPDATE)) {
                     if (data?.firstName !== undefined) refs.firstName.current?.setText(String(data.firstName), { userId, field: "firstName" });
@@ -102,7 +111,7 @@ export function Component() {
         );
         return () => {
             if (typeof token === "string") {
-                import("@/ui/pubsub").then((m) => m.unsubscribe(token));
+                unsubscribe(token);
             }
         };
     }, []);
@@ -113,17 +122,21 @@ export function Component() {
             const setLoading = page === 1 && users.length === 0 ? setIsLoading : setIsPageLoading;
             setLoading(true);
             try {
-                const includeInactiveParam = showDisabledUsers ? "&includeInactive=true" : "";
-                const payload = await apiGet<UsersResponse>(`/api/users?page=${page - 1}&pageSize=${pageSize}${includeInactiveParam}`);
+                const payload = await getUsers(page - 1, pageSize, showDisabledUsers);
                 if (!cancelled) {
                     setUsers(payload.users);
                     if (payload.page !== page - 1) updateQuery({ page: payload.page + 1 });
                     setTotal(payload.total);
                     setAvailablePageSizes(payload.availablePageSizes);
-                    if (!payload.availablePageSizes.includes(pageSize) && payload.availablePageSizes.length > 0) {
-                        updateQuery({ page: 1, pageSize: payload.availablePageSizes[0]! });
+                    if (!payload.availablePageSizes.includes(pageSize)) {
+                        const [firstPageSize] = payload.availablePageSizes;
+                        if (typeof firstPageSize === "number") {
+                            updateQuery({ page: 1, pageSize: firstPageSize });
+                        }
                     }
                 }
+            } catch (err) {
+                if (!cancelled) setError(err instanceof Error ? err.message : "Could not load users");
             } finally {
                 if (!cancelled) {
                     setIsLoading(false);
@@ -135,13 +148,12 @@ export function Component() {
         return () => {
             cancelled = true;
         };
-    }, [page, pageSize, searchParams.toString()]);
-
-    const totalPages = Math.max(1, Math.ceil(total / pageSize));
+    }, [page, pageSize, showDisabledUsers]);
 
     return (
         <PageTemplate urn={meta.urn} title={meta.title} description={meta.description}>
             <PageSection title="User list">
+                {error ? <p className="admin-config-error">{error}</p> : null}
                 <div className="admin-toggle-row">
                     <span>Show disabled users</span>
                     <Toggle<boolean>
@@ -169,17 +181,24 @@ export function Component() {
                                 </tr>
                             </thead>
                             <tbody>
-                                {users.map((user) => {
-                                    if (!labelRefs.current.has(user.identifier)) {
-                                        labelRefs.current.set(user.identifier, {
+                                {users.length === 0 ? (
+                                    <tr>
+                                        <td colSpan={7} style={{ textAlign: "center", padding: "2rem" }}>
+                                            No users found.
+                                        </td>
+                                    </tr>
+                                ) : (users.map((user) => {
+                                    let refs = labelRefs.current.get(user.identifier);
+                                    if (!refs) {
+                                        refs = {
                                             firstName: { current: null },
                                             lastName: { current: null },
                                             email: { current: null },
                                             status: { current: null },
                                             updated: { current: null },
-                                        });
+                                        };
+                                        labelRefs.current.set(user.identifier, refs);
                                     }
-                                    const refs = labelRefs.current.get(user.identifier)!;
                                     return (
                                         <tr
                                             key={user.identifier}
@@ -203,34 +222,18 @@ export function Component() {
                                             <td><Label ref={refs.updated} text={new Date(user.updatedAt).toLocaleString()} size="small" /></td>
                                         </tr>
                                     );
-                                })}
+                                }))}
                             </tbody>
                         </table>
 
-                        <div className="admin-pager-row">
-                            <button type="button" disabled={page <= 1} onClick={() => updateQuery({ page: Math.max(1, page - 1) })}>
-                                Previous
-                            </button>
-                            <span>Page {page} of {totalPages}</span>
-                            <button type="button" disabled={page >= totalPages} onClick={() => updateQuery({ page: Math.min(totalPages, page + 1) })}>
-                                Next
-                            </button>
-                            <label>
-                                Page size
-                                <select
-                                    className="admin-page-size"
-                                    value={pageSize}
-                                    onChange={(event) => {
-                                        updateQuery({ page: 1, pageSize: Number(event.target.value) });
-                                    }}
-                                >
-                                    {availablePageSizes.map((size) => (
-                                        <option key={size} value={size}>{size}</option>
-                                    ))}
-                                </select>
-                            </label>
-                            <span>{total} users</span>
-                        </div>
+                        <AdminPager
+                            page={page}
+                            pageSize={pageSize}
+                            total={total}
+                            availablePageSizes={availablePageSizes}
+                            onUpdate={updateQuery}
+                            entityLabel="users"
+                        />
                     </>
                 )}
             </PageSection>

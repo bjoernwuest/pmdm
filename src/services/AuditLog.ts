@@ -1,11 +1,11 @@
 import PubSub from "@/services/PubSub.ts";
-import {type DBClient, getDatabaseConnection} from "@/services/DatabaseDriver.ts";
+import {type DBClient} from "@/services/DatabaseDriver.ts";
 import { insertAuditEntries } from "@/repo/AuditRepo.ts";
 import { devMode } from "@/devmode.ts";
 import { getConfigEntriesByKey, upsertConfigEntry } from "@/repo/ConfigRepo.ts";
-import {type ConfigEntrySelectType, ConfigValueTypes} from "@/types/ConfigType.ts";
+import {type ConfigEntryInsertType, type ConfigEntrySelectType, ConfigValueTypes} from "@/types/ConfigType.ts";
 import type {AuditEntrySchemaInsertType} from "@/types/AuditEntryType.ts";
-import { TAG_CREATE, TAG_UPDATE, TAG_DELETE, TAG_GRANT, TAG_REVOKE, TAG_DISABLE, TAG_ENABLED, type TagExpression } from "../types/PubSubType";
+import { TAG_CREATE, TAG_UPDATE, TAG_DELETE, TAG_GRANT, TAG_REVOKE, TAG_DISABLE, TAG_ENABLED, TAG_UPSERT, type TagExpression } from "../types/PubSubType";
 
 const configDomain = "audit_log";
 
@@ -23,7 +23,7 @@ export const config = {
         editInUI: true,
         mandatoryForStart: false,
         userProfile: false,
-    } satisfies ConfigEntrySelectType,
+    } satisfies ConfigEntryInsertType,
     cfgFlushMaxBatchSize: {
         domain: configDomain,
         key: "FlushMaxBatchSize",
@@ -36,11 +36,12 @@ export const config = {
         editInUI: true,
         mandatoryForStart: false,
         userProfile: false,
-    } satisfies ConfigEntrySelectType,
-} satisfies Record<string, ConfigEntrySelectType>;
+    } satisfies ConfigEntryInsertType,
+} satisfies Record<string, ConfigEntryInsertType>;
 
 let batch: AuditEntrySchemaInsertType[] = [];
 let flushTimer: ReturnType<typeof setInterval> | null = null;
+let activeDb: DBClient | null = null;
 
 /**
  * Reads the two runtime parameters from the database (with fallbacks).
@@ -67,8 +68,12 @@ async function flushBatch(): Promise<void> {
     const toFlush = batch;
     batch = [];
     try {
-        const db = getDatabaseConnection();
-        await insertAuditEntries(db, toFlush);
+        if (!activeDb) {
+            // No database client captured (startAuditLog not called or already stopped).
+            batch = [...toFlush, ...batch];
+            return;
+        }
+        await insertAuditEntries(activeDb, toFlush);
         if (devMode) console.log(`[audit-log] Flushed ${toFlush.length} entries to database`);
     } catch (err) {
         console.error("[audit-log] Failed to flush audit entries:", err);
@@ -102,6 +107,7 @@ let subscriberToken: string | false = false;
  */
 export async function startAuditLog(db: DBClient): Promise<void> {
     if (subscriberToken) return; // Already started
+    activeDb = db;
 
     // Ensure the config rows exist (seed with defaults on first run)
     for (const entry of Object.values(config)) {
@@ -112,11 +118,12 @@ export async function startAuditLog(db: DBClient): Promise<void> {
     const { flushIntervalMs, flushMaxBatchSize } = await readRuntimeConfig(db);
     currentMaxBatchSize = flushMaxBatchSize;
 
-    const auditExpression: TagExpression = { or: [TAG_CREATE, TAG_UPDATE, TAG_DELETE, TAG_GRANT, TAG_REVOKE, TAG_DISABLE, TAG_ENABLED] };
+    // Sanctioned set (per SEC-009's directive): includes upsert (config changes), excludes login/logout events.
+    const auditExpression: TagExpression = { or: [TAG_CREATE, TAG_UPDATE, TAG_DELETE, TAG_GRANT, TAG_REVOKE, TAG_DISABLE, TAG_ENABLED, TAG_UPSERT] };
     subscriberToken = PubSub.subscribe(auditExpression, onPubSubEvent);
     flushTimer = setInterval(flushBatch, flushIntervalMs);
 
-    if (devMode) console.log("[audit-log] Subscriber started (tags: create, update, delete, grant, revoke, disable, enabled, interval:", flushIntervalMs, "ms, maxBatch:", flushMaxBatchSize, ")");
+    if (devMode) console.log("[audit-log] Subscriber started (tags: create, update, delete, grant, revoke, disable, enabled, upsert, interval:", flushIntervalMs, "ms, maxBatch:", flushMaxBatchSize, ")");
 }
 
 /**
@@ -132,5 +139,6 @@ export async function stopAuditLog(): Promise<void> {
         flushTimer = null;
     }
     await flushBatch();
+    activeDb = null;
     if (devMode) console.log("[audit-log] Subscriber stopped, final flush complete");
 }

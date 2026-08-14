@@ -2,6 +2,8 @@
 
 This folder contains the **business logic** of the application — everything that goes beyond simple CRUD data operations (which belong in `/src/repo/`). Services orchestrate repos, enforce domain rules, manage external integrations, and provide cross-cutting concerns like authentication, PubSub, and configuration.
 
+**Precedence:** this file is the authoritative layer doc for `src/services/` and takes precedence over parent `AGENTS.md` files (including the root file).
+
 ---
 
 ## Import Rules
@@ -86,7 +88,7 @@ export const config = {
 
 Declaring the `config` object alone does **not** persist entries to the database — they must be explicitly upserted at startup. Two patterns are used in the codebase:
 
-**Pattern A — Seed all on startup** (see `AuditLogAPI.ts` lines 115–118): iterate over all declared entries and upsert any that are missing. Best when multiple config entries are needed before the service can operate.
+**Pattern A — Seed all on startup** (see `AuditLog.ts` `startAuditLog`): iterate over all declared entries and upsert any that are missing. Best when multiple config entries are needed before the service can operate.
 
 ```typescript
 export async function startMyService(db: DBClient): Promise<void> {
@@ -122,10 +124,16 @@ matching (`and`/`or`/`not`). See `design/pubsub.md` for the full specification.
 
 - **Import tag constants** from `@/types/PubSubType` (e.g., `TAG_USER`, `TAG_UPDATE`,
   `TAG_AUTH_SESSION`, `TAG_LOGIN`).
-- **Publish** after successful operations as a tags array:
-  `PubSub.publish([TAG_RESOURCE, identifier?, TAG_ACTION, TAG_AFTER], payload)`.
+- **Publish** after successful operations as a tags array. The **instance form is the only
+  form**: exactly one event per affected entity, carrying the domain tag, the entity
+  identifier as a tag, the action tag, and `TAG_AFTER`, with an `identifiers` entry in the
+  payload. Never publish a tag-only event alongside the instance-form event for the same
+  mutation, and never publish tag-only delete events.
   Example: `PubSub.publish([TAG_USER, user.identifier, TAG_UPDATE, TAG_AFTER], { identifiers: { user: user.identifier }, ... })`.
   All post-operation publishes must include `TAG_AFTER`.
+- **Publish timing**: `runInTransaction` defers all publishes until the transaction commits;
+  events from rolled-back transactions are never delivered. Publishes outside a transaction
+  dispatch immediately. There is no other timing guarantee to implement by hand.
 - **Subscribe** with tag expressions:
   - Single tag: `PubSub.subscribe(TAG_API_KEY, cb)` — matches any message containing `"api_key"`.
   - Boolean AND: `PubSub.subscribe({ and: [TAG_USER, TAG_UPDATE] }, cb)` — all tags required.
@@ -142,6 +150,16 @@ matching (`and`/`or`/`not`). See `design/pubsub.md` for the full specification.
 
 ---
 
+## Caching Policy
+
+One caching policy governs services; use exactly one of these sanctioned idioms:
+
+1. **Expiring entry sets** (sessions, permission caches, in-flight refresh tracking) — use `TTLMap` (`src/utils/TTLMap.ts`). This is the standard for data that expires after a time window.
+2. **Long-lived derived state that changes only when DB config changes** (OIDC config, request-bundling server/client config, session timeout, root-group identifier, setup-demand state) — lazy-singleton module cache *plus* a config-change invalidation: subscribe to the config-upsert PubSub event for the owning domain/key (`{ and: [TAG_CONFIG, <domain>, <key?>, TAG_UPSERT] }`) and drop the cached value. Config edits then apply without restart.
+3. **Process-lifetime registries by design** — the SSE client filter registry in `src/services/ServerSentEvents.ts` and `functionalPermission_Grant` (the registered grant-permission row) are intentional process state, not caches; do not convert them to TTLMap.
+
+Invalidation must be conservative: when in doubt, expire — never serve staler permission data than today's TTLs allow.
+
 ## Service-to-Service Dependencies
 
 Services may import from each other.
@@ -152,7 +170,7 @@ Services may import from each other.
 
 ## File Naming & Structure
 
-- **PascalCase** matching the service domain: `AuthType.ts`, `AuditLogAPI.ts`, `EntraIDSync.ts`
+- **PascalCase** matching the service domain: `Auth.ts` (facade over the `auth/` sub-modules), `AuditLog.ts`, `EntraIDSync.ts`
 - **One file per service domain.** If a service grows large, extract sub-modules into a subdirectory (e.g., `auth/FunctionalPermissions.ts`).
 - Each file exports the functions and constants that other layers consume.
 - The `config` export (if present) must be a named export, not default.

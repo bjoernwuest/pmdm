@@ -93,6 +93,19 @@ cp .env.template .env
 
 > EntraID credentials and all other application settings are configured through the setup wizard (stored in the database), not in `.env`.
 
+3.# Trusted proxy configuration
+The application honors `X-Forwarded-Proto`/`X-Forwarded-Host` request headers **only** when the environment variable `TRUST_PROXY=1` is set. By default (unset), forwarded headers are ignored entirely and the public URL is derived from the incoming request itself.
+
+- Enable `TRUST_PROXY=1` **only** when the application runs behind a reverse proxy that terminates TLS and *sets/overwrites* `X-Forwarded-Proto` and `X-Forwarded-Host` on every request.
+- The proxy **must strip** any client-supplied `X-Forwarded-Proto`/`X-Forwarded-Host` headers before setting its own.
+- Enabling `TRUST_PROXY` without such a proxy exposes the deployment to host-header spoofing (OIDC `redirect_uri` would be built from attacker-controlled headers).
+
+Example nginx configuration:
+```nginx
+proxy_set_header X-Forwarded-Proto $scheme;
+proxy_set_header X-Forwarded-Host $host;
+```
+
 ### Build and run with Docker
 
 #### Download and run the published image

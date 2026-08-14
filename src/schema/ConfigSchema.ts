@@ -1,4 +1,5 @@
 import {boolean, jsonb, pgTable, primaryKey, text, varchar } from "drizzle-orm/pg-core";
+import { timestamps } from "./helpers";
 
 /**
  * Enum representing the various types of configuration values.
@@ -64,6 +65,7 @@ export const ConfigEntry = pgTable("config", {
     outputFormat: text("output_format").notNull().default(""),
     mandatoryForStart: boolean("mandatory_for_start").notNull().default(false),
     userProfile: boolean("user_profile").notNull().default(false),
+    ...timestamps,
 }, (table) => [
     primaryKey({ name: "config_domain_key_pk", columns: [table.domain, table.key] }),
 ]);

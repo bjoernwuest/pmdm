@@ -1,5 +1,7 @@
 # AI Agent Guidelines: UI Layer
 
+**Precedence:** sub-directory AGENTS.md take precedence over parent AGENTS.md files; this file is the authoritative layer doc for its folder.
+
 This folder contains the **browser-only React frontend** for the application. It is 100% client-side rendered and is responsible for bootstrapping the UI, rendering page layouts, organizing page registrations, and wrapping browser-facing integrations such as API access, PubSub, and server-sent events.
 
 ## Files in this folder
@@ -11,7 +13,8 @@ This folder contains the **browser-only React frontend** for the application. It
 - `PageTemplate.tsx` — shared page layout/template component used by page files.
 - `app_PageRegistry.ts` — the extension point for app-specific page registrations that should survive template updates (escape hatch for pages outside `src/ui/pages/`).
 - `pubsub.ts` — browser-side PubSub helpers.
-- `server_sent_events.ts` — client-side server-sent event bridge logic.
+- `saveConfirmation.ts` — shared "three-stream race" save-confirmation helper (`runSaveWithConfirmation`) used by pages for optimistic-locking saves.
+- `sse_bridge.ts` — client-side server-sent event bridge logic (EventSource handling).
 - `global.d.ts` — global browser type declarations.
 - `index.html` — the HTML shell used by the UI bundle.
 
@@ -23,8 +26,12 @@ Client-side API wrappers and transport helpers.
 - `index.ts` — re-exports the client API helpers used by the rest of the UI.
 - `_client.ts` — low-level API request primitives.
 - `_request_bundling.ts` — client-side request bundling queue and NDJSON handling.
-- `ApiKeys.ts`, `AuditLogAPI.ts`, `ConfigSchema.ts`, `server_sent_events.ts`, `session.ts` — domain-specific API helpers.
+- `ApiKeys.ts`, `AuditLog.ts`, `Config.ts`, `UserProfileConfig.ts`, `Users.ts`, `Groups.ts`, `FunctionalPermissions.ts`, `sse_api.ts`, `session.ts` — domain-specific API helpers.
 - `errors.ts` — client-side API error helpers.
+
+**Request bundling exception:** `sse_api.ts`'s `syncServerSentEventExpressions` is the single sanctioned
+mutation that bypasses request bundling (documented at the call site): the SSE expression filter must
+apply immediately and independently of the batching queue. No other client mutation may bypass bundling.
 
 ### `auth/`
 Frontend helpers for functional-permission-aware navigation and UI access control.

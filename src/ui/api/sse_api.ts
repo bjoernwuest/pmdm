@@ -1,20 +1,9 @@
 // noinspection JSUnusedGlobalSymbols
-import { ApiError } from "./errors.ts";
+import { ApiError, extractErrorMessage } from "./errors.ts";
 import { triggerLoginRedirect } from "./session.ts";
 import type { TagExpression } from "../../types/PubSubType";
 
 const BASE_OPTIONS: RequestInit = { credentials: "same-origin" };
-
-function extractErrorMessage(body: unknown, fallback: string): string {
-    if (body && typeof body === "object") {
-        const candidate = body as { message?: unknown; error?: unknown };
-        if (typeof candidate.message === "string") return candidate.message;
-        if (typeof candidate.error === "string") return candidate.error;
-    }
-
-    if (typeof body === "string" && body.length > 0) return body;
-    return fallback;
-}
 
 /**
  * Build the SSE stream URL.
@@ -31,6 +20,9 @@ export function buildServerSentEventsStreamUrl(): string {
  * Authentication is derived from the session cookie, so no clientId is needed.
  */
 export async function syncServerSentEventExpressions(expressions: readonly (TagExpression | string)[]): Promise<void> {
+    // This mutation intentionally bypasses request bundling (the only sanctioned exception):
+    // the SSE expression filter must apply immediately and independently of the batching queue
+    // so the stream filter always matches the local subscription state.
     const response = await fetch("/api/server_sent_events/expressions", {
         ...BASE_OPTIONS,
         method: "PATCH",

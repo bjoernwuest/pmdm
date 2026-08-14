@@ -2,11 +2,10 @@ import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import Editor from "@monaco-editor/react";
 import type { editor as MonacoEditor } from "monaco-editor";
 import { Dialog } from "primereact/dialog";
+import { ArrayEditorDialog, formatArraySummary, isArrayType, isInlineType, openArrayEditor, type ArrayEditorModalState } from "@/ui/components/ArrayEditor";
 import Toggle, { type ToggleHandle } from "@/ui/components/Toggle";
 import { InputText } from "primereact/inputtext";
-import InputField, { type InputFieldHandle } from "@/ui/components/InputField";
-import { uuidFormatter } from "@/ui/components/InputField/formatters/UUIDFormatter";
-import { numericFormatter } from "@/ui/components/InputField/formatters/NumericFormatter";
+import InputField, { formatterRegistry, type InputFieldHandle } from "@/ui/components/InputField";
 import { PageSection, PageTemplate } from "@/ui/PageTemplate.tsx";
 import type {
     ConfigDomainGroup,
@@ -14,10 +13,10 @@ import type {
 import type { PageMeta } from "@/types/PageType.ts";
 import { getConfigEntries, updateConfigEntry } from "@/ui/api/Config.ts";
 import { getUserProfileConfigEntries } from "@/ui/api/UserProfileConfig.ts";
-import type { UserProfileConfigResponse } from "@/ui/api/UserProfileConfig.ts";
 import { ApiError } from "@/ui/api/errors.ts";
 import { FP_MANAGE_CONFIGURATION } from "@/ui/auth/functional_permissions.ts";
 import { subscribe, unsubscribe } from "@/ui/pubsub.ts";
+import { runSaveWithConfirmation } from "@/ui/saveConfirmation";
 import { TAG_CONFIG, TAG_UPDATE } from "@/types/PubSubType";
 import type { PubSubMessage } from "@/types/PubSubType";
 import type { ConfigEntryUI } from "@/types/ConfigType.ts";
@@ -26,9 +25,6 @@ import type { InputFormatter } from "@/ui/components/InputField/formatters/types
 type ValidationResult =
     | { ok: true; parsedValue: unknown }
     | { ok: false; error: string };
-
-type InlineType = "string" | "number" | "boolean";
-type ArrayType = "string[]" | "number[]";
 
 type InlineEditState = {
     configKey: string;
@@ -41,18 +37,6 @@ type ObjectModalState = {
     validation: ValidationResult;
     schemaError: string | null;
     monacoErrorCount: number;
-    isSaving: boolean;
-};
-
-type ArrayModalState = {
-    entry: ConfigEntryUI;
-    items: Array<string | number>;
-    originalItems: Array<string | number>;
-    draftInput: string;
-    inputValidation: { ok: true } | { ok: false; error: string };
-    editingIndex: number | null;
-    editDraft: string;
-    editValidation: { ok: true } | { ok: false; error: string };
     isSaving: boolean;
 };
 
@@ -75,16 +59,8 @@ function rowId(entry: ConfigEntryUI): string {
     return `${entry.domain}::${entry.key}`;
 }
 
-function isInlineType(type: ConfigEntryUI["type"]): type is InlineType {
-    return type === "string" || type === "number" || type === "boolean";
-}
-
 function isObjectType(type: ConfigEntryUI["type"]): boolean {
     return type === "object";
-}
-
-function isArrayType(type: ConfigEntryUI["type"]): type is ArrayType {
-    return type === "string[]" || type === "number[]";
 }
 
 function toJsonString(value: unknown): string {
@@ -179,49 +155,10 @@ function validateObjectValue(raw: string): ValidationResult {
     }
 }
 
-function normalizeArrayValues(entry: ConfigEntryUI): Array<string | number> {
-    if (!Array.isArray(entry.value)) return [];
-    if (entry.type === "number[]") {
-        return entry.value
-            .map((item) => (typeof item === "number" ? item : Number(item)))
-            .filter((item) => Number.isFinite(item));
-    }
-    return entry.value.map((item) => String(item));
-}
-
-function validateArrayItem(entry: ConfigEntryUI, raw: string): { ok: true; parsedValue: string | number } | { ok: false; error: string } {
-    if (!isArrayType(entry.type)) return { ok: false, error: "Unsupported array type" };
-    const trimmed = raw.trim();
-    if (trimmed.length === 0) return { ok: false, error: "Value cannot be empty" };
-
-    if (entry.inputFormat && entry.inputFormat.trim().length > 0) {
-        try {
-            const regex = new RegExp(entry.inputFormat);
-            if (!regex.test(trimmed)) return { ok: false, error: "Value does not match required format" };
-        } catch {
-            return { ok: false, error: "Invalid input format definition" };
-        }
-    }
-
-    if (entry.type === "number[]") {
-        const parsed = Number(trimmed);
-        if (!Number.isFinite(parsed)) return { ok: false, error: "Invalid number" };
-        return { ok: true, parsedValue: parsed };
-    }
-
-    return { ok: true, parsedValue: trimmed };
-}
-
 function formatScalarValue(entry: ConfigEntryUI): string {
     if (entry.type === "boolean") return entry.value === true ? "Enabled" : "Disabled";
     if (entry.type === "number") return typeof entry.value === "number" ? String(entry.value) : String(Number(entry.value ?? 0));
     return String(entry.value ?? "");
-}
-
-function formatArraySummary(entry: ConfigEntryUI): string {
-    const values = normalizeArrayValues(entry);
-    if (values.length === 0) return "[]";
-    return JSON.stringify(values);
 }
 
 function mergeUpdatedEntry(groups: ConfigDomainGroup[], updated: ConfigEntryUI): ConfigDomainGroup[] {
@@ -272,20 +209,28 @@ function JsonPreviewEditor({ value, onOpen }: { value: unknown; onOpen: () => vo
 
 export function Component() {
     const [groups, setGroups] = useState<ConfigDomainGroup[]>([]);
+    // Latest-committed mirror so callbacks (handleChange) never read a stale `groups` closure.
+    const groupsRef = useRef<ConfigDomainGroup[]>([]);
+    useEffect(() => {
+        groupsRef.current = groups;
+    }, [groups]);
     const [isLoading, setIsLoading] = useState(true);
     const [error, setError] = useState<string | null>(null);
     const [inlineEdit, setInlineEdit] = useState<InlineEditState | null>(null);
     const [objectModal, setObjectModal] = useState<ObjectModalState | null>(null);
-    const [arrayModal, setArrayModal] = useState<ArrayModalState | null>(null);
+    const [arrayModal, setArrayModal] = useState<ArrayEditorModalState | null>(null);
+    const [arrayEditorEntry, setArrayEditorEntry] = useState<ConfigEntryUI | null>(null);
     const [userProfileOverrides, setUserProfileOverrides] = useState<Map<string, unknown>>(new Map());
 
     const inputEntryRef = useRef<InputFieldHandle | null>(null);
     const booleanToggleRef = useRef<ToggleHandle<boolean> | null>(null);
 
     const loadEntries = useCallback(async () => {
+        // Profile-override failures are part of the combined load: they reject into the
+        // page's existing load-error path instead of rendering a silently-empty override map.
         const [payload, profilePayload] = await Promise.all([
             getConfigEntries(),
-            getUserProfileConfigEntries().catch(() => ({ entries: [] } as UserProfileConfigResponse)),
+            getUserProfileConfigEntries(),
         ]);
         setGroups(payload.domains);
         const overrideMap = new Map<string, unknown>();
@@ -311,21 +256,6 @@ export function Component() {
             cancelled = true;
         };
     }, [loadEntries]);
-
-    useEffect(() => {
-        const token = subscribe(
-            { and: [TAG_CONFIG, TAG_UPDATE] },
-            () => {
-            void loadEntries().catch(() => undefined);
-        });
-        return () => {
-            if (token) unsubscribe(token);
-        };
-    }, [loadEntries]);
-
-    const formatterRegistry = new Map<string, InputFormatter>();
-    formatterRegistry.set("uuid", uuidFormatter);
-    formatterRegistry.set("numeric", numericFormatter);
 
     function resolveFormatter(entry: ConfigEntryUI): InputFormatter | undefined {
         return formatterRegistry.get(entry.inputFormat);
@@ -357,33 +287,30 @@ export function Component() {
 
     const startArrayModal = (entry: ConfigEntryUI) => {
         if (!isArrayType(entry.type)) return;
-        const items = normalizeArrayValues(entry);
-        setArrayModal({
-            entry,
-            items,
-            originalItems: [...items],
-            draftInput: "",
-            inputValidation: { ok: true },
-            editingIndex: null,
-            editDraft: "",
-            editValidation: { ok: true },
-            isSaving: false,
-        });
+        setArrayEditorEntry(entry);
+        setArrayModal(openArrayEditor({ type: entry.type, inputFormat: entry.inputFormat, value: entry.value, key: entry.key }));
         setInlineEdit(null);
         setObjectModal(null);
         setError(null);
     };
 
+    // The specific entry being edited (derived once per groups/inlineEdit change) so the
+    // edit effects do not re-subscribe/re-seed on unrelated entries' updates.
+    const editingEntry = useMemo(() => {
+        if (!inlineEdit) return undefined;
+        return groups
+            .flatMap(g => g.entries)
+            .find(e => e.key === inlineEdit.configKey);
+    }, [groups, inlineEdit]);
+
     // Mount effect: set initial value and subscribe to concurrent modifications
     useEffect(() => {
         if (inlineEdit && inputEntryRef.current) {
-            const entry = groups
-                .flatMap(g => g.entries)
-                .find(e => e.key === inlineEdit.configKey);
+            const entry = editingEntry;
             if (entry) {
                 const strVal = String(entry.value ?? "");
                 inputEntryRef.current.setOriginalValue(strVal, {
-                    updatedAt: (entry as any).updatedAt,
+                    updatedAt: entry.updatedAt,
                     domain: entry.domain,
                     key: entry.key,
                     value: entry.value,
@@ -433,22 +360,20 @@ export function Component() {
                 }
             }
         };
-    }, [inlineEdit, groups]);
+    }, [inlineEdit, editingEntry]);
 
     // PubSub subscription for boolean toggle (inline edit mode)
     useEffect(() => {
         if (!inlineEdit || !booleanToggleRef.current) return;
 
-        const entry = groups
-            .flatMap(g => g.entries)
-            .find(e => e.key === inlineEdit.configKey);
+        const entry = editingEntry;
         if (!entry || entry.type !== "boolean") return;
 
         // Set initial confirmed value and context
         booleanToggleRef.current.setValue(Boolean(entry.value), {
             configKey: entry.key,
             domain: entry.domain,
-            updatedAt: (entry as any).updatedAt,
+            updatedAt: entry.updatedAt,
             value: entry.value,
         });
 
@@ -469,7 +394,7 @@ export function Component() {
         return () => {
             if (token) unsubscribe(token);
         };
-    }, [inlineEdit, groups]);
+    }, [inlineEdit, editingEntry]);
 
     // Passive PubSub subscription for display updates (non-editing rows)
     useEffect(() => {
@@ -495,7 +420,7 @@ export function Component() {
 
     const handleChange = (component: InputFieldHandle) => {
         const value = component.getCurrentValue();
-        const entry = groups
+        const entry = groupsRef.current
             .flatMap(g => g.entries)
             .find(e => e.key === inlineEdit?.configKey);
 
@@ -528,12 +453,14 @@ export function Component() {
         // Number conversion
         let value: unknown = rawValue;
         if (entry.type === "number") {
-            const parsed = parseFloat(rawValue);
-            if (isNaN(parsed)) {
+            // Strict validation: the raw string must be a complete valid number
+            // (full-match), so partial input like "1abc" never persists as 1.
+            const trimmed = rawValue.trim();
+            if (trimmed.length === 0 || !/^[+-]?(\d+(\.\d*)?|\.\d+)$/.test(trimmed) || !Number.isFinite(Number(trimmed))) {
                 component.setHintText("Please enter a valid number");
                 return;
             }
-            value = parsed;
+            value = Number(trimmed);
         }
 
         // inputFormat regex validation
@@ -551,105 +478,67 @@ export function Component() {
 
         const ctx = component.getContext();
 
-        // === THREE-STREAM RACE ===
-        let resolved = false;
+        component.disableSaveButton();
+        component.disableRestoreButton();
 
-        const finalizeSuccess = (
-            newValue: string,
-            newUpdatedAt: string,
-            _winner: "pubsub" | "server" | "timeout",
-        ) => {
-            if (resolved) return;
-            resolved = true;
-            clearTimeout(timerId);
-            if (pubsubToken) unsubscribe(pubsubToken);
-
-            component.setOriginalValue(String(newValue ?? ""), {
-                updatedAt: newUpdatedAt,
-                domain: entry.domain,
-                key: entry.key,
-                value: newValue,
-            });
-            component.setDirty(false);
-            component.enableSaveButton();
-            component.enableRestoreButton();
-            component.setHintText("");
-            setInlineEdit(null);
-        };
-
-        // Stream 1: PubSub
-        let pubsubToken: string | false = false;
-        pubsubToken = subscribe(
-            { and: [TAG_CONFIG, entry.domain, entry.key, TAG_UPDATE] },
-            (msg: PubSubMessage) => {
-                finalizeSuccess(
-                    String(msg.data?.value ?? ""),
-                    msg.data?.updatedAt ?? (ctx?.updatedAt as string) ?? "",
-                    "pubsub",
-                );
-            },
-        );
-
-        // Stream 2: Timer (fallback re-fetch)
-        const timerId = setTimeout(async () => {
-            if (resolved) return;
-            resolved = true;
-            if (pubsubToken) unsubscribe(pubsubToken);
-
-            try {
+        await runSaveWithConfirmation({
+            pubsubExpression: { and: [TAG_CONFIG, entry.domain, entry.key, TAG_UPDATE] },
+            confirmFromPubSub: async (msg) => ({
+                value: String(msg.data?.value ?? ""),
+                updatedAt: (typeof msg.data?.updatedAt === "string" ? msg.data.updatedAt : undefined) ?? (typeof ctx?.updatedAt === "string" ? ctx.updatedAt : undefined) ?? "",
+            }),
+            confirmFromRefetch: async () => {
                 const payload = await getConfigEntries();
                 const updated = payload.domains
                     .flatMap(d => d.entries)
                     .find(e => e.domain === entry.domain && e.key === entry.key);
-
-                if (updated) {
-                    finalizeSuccess(
-                        String(updated.value ?? ""),
-                        (updated as any).updatedAt ?? (ctx?.updatedAt as string) ?? "",
-                        "timeout",
-                    );
-                    return;
-                }
-            } catch { /* re-fetch failed */ }
-
-            component.enableSaveButton();
-            component.enableRestoreButton();
-            component.setHintText("");
-            setInlineEdit(null);
-        }, 1000);
-
-        component.disableSaveButton();
-        component.disableRestoreButton();
-
-        // Stream 3: Server
-        try {
-            const response = await updateConfigEntry(entry.domain, entry.key, {
-                value,
-                knownValue: ctx?.value,
-            });
-            if (!resolved) {
-                finalizeSuccess(
-                    String(response.value ?? ""),
-                    (response as any).updatedAt ?? (ctx?.updatedAt as string) ?? "",
-                    "server",
-                );
-            }
-        } catch (err: any) {
-            clearTimeout(timerId);
-            if (pubsubToken) unsubscribe(pubsubToken);
-
-            if (err instanceof ApiError && err.status === 409) {
-                if (resolved) return; // PubSub/timer already resolved — consume silently
+                if (!updated) return undefined;
+                return {
+                    value: String(updated.value ?? ""),
+                    updatedAt: updated.updatedAt ?? (typeof ctx?.updatedAt === "string" ? ctx.updatedAt : undefined) ?? "",
+                };
+            },
+            mutate: async () => {
+                const response = await updateConfigEntry(entry.domain, entry.key, {
+                    value,
+                    knownUpdatedAt: (typeof ctx?.updatedAt === "string" ? ctx.updatedAt : undefined) ?? entry.updatedAt ?? "",
+                });
+                return {
+                    value: String(response.value ?? ""),
+                    updatedAt: response.updatedAt ?? (typeof ctx?.updatedAt === "string" ? ctx.updatedAt : undefined) ?? "",
+                };
+            },
+            onSuccess: (newValue, newUpdatedAt) => {
+                component.setOriginalValue(String(newValue ?? ""), {
+                    updatedAt: newUpdatedAt,
+                    domain: entry.domain,
+                    key: entry.key,
+                    value: newValue,
+                });
+                component.setDirty(false);
+                component.enableSaveButton();
+                component.enableRestoreButton();
+                component.setHintText("");
+                setInlineEdit(null);
+            },
+            onTimeoutFailure: () => {
+                component.enableSaveButton();
+                component.enableRestoreButton();
+                component.setHintText("");
+                setInlineEdit(null);
+            },
+            onConflict: () => {
                 component.setHintText("This value was modified by another user. Please refresh.");
                 component.setDirty(true);
                 component.enableRestoreButton();
                 setError("Conflict: value was modified elsewhere");
-            } else {
+            },
+            onOtherError: (err) => {
                 component.enableSaveButton();
                 component.enableRestoreButton();
                 setError(err instanceof Error ? err.message : "Failed to save");
-            }
-        }
+            },
+        });
     };
 
     const saveObjectModal = async () => {
@@ -658,7 +547,7 @@ export function Component() {
         try {
             const updated = await updateConfigEntry(objectModal.entry.domain, objectModal.entry.key, {
                 value: objectModal.validation.parsedValue,
-                knownValue: objectModal.entry.value,
+                knownUpdatedAt: objectModal.entry.updatedAt ?? "",
             });
             setGroups((current) => mergeUpdatedEntry(current, updated));
             setObjectModal(null);
@@ -675,12 +564,12 @@ export function Component() {
     };
 
     const saveArrayModal = async () => {
-        if (!arrayModal) return;
+        if (!arrayModal || !arrayEditorEntry) return;
         setArrayModal((current) => current ? { ...current, isSaving: true } : current);
         try {
-            const updated = await updateConfigEntry(arrayModal.entry.domain, arrayModal.entry.key, {
+            const updated = await updateConfigEntry(arrayEditorEntry.domain, arrayEditorEntry.key, {
                 value: arrayModal.items,
-                knownValue: arrayModal.entry.value,
+                knownUpdatedAt: arrayEditorEntry.updatedAt ?? "",
             });
             setGroups((current) => mergeUpdatedEntry(current, updated));
             setArrayModal(null);
@@ -708,11 +597,31 @@ export function Component() {
         return parseObjectSchema(objectModal.entry.inputFormat).schema;
     }, [objectModal]);
 
+    type MonacoJsonDefaults = {
+        setDiagnosticsOptions(options: {
+            validate?: boolean;
+            allowComments?: boolean;
+            enableSchemaRequest?: boolean;
+            schemas?: { uri: string; fileMatch: string[]; schema: unknown }[];
+        }): void;
+    };
+
+    // The Monaco `jsonDefaults` diagnostics options are global; the schema is scoped by
+    // model URI (fileMatch), and the options are reset when the object dialog closes so no
+    // schema leaks into other JSON editors after the dialog was used.
+    const monacoInstanceRef = useRef<typeof import("monaco-editor") | null>(null);
+
     const configureObjectSchema = (monaco: typeof import("monaco-editor")) => {
+        monacoInstanceRef.current = monaco;
         if (!objectModal) return;
         const modelPath = `inmemory://model/config/${encodeURIComponent(objectModal.entry.domain)}/${encodeURIComponent(objectModal.entry.key)}.json`;
         const schema = objectModalSchema;
-        const jsonDefaults = (monaco.languages as any).json?.jsonDefaults;
+        // The public monaco typings do not declare the dynamically-registered json
+        // contribution; the access is validated at runtime before use.
+        const jsonContribution: unknown = monaco.languages.json;
+        const jsonDefaults = (typeof jsonContribution === "object" && jsonContribution !== null && "jsonDefaults" in jsonContribution)
+            ? (jsonContribution as { jsonDefaults: MonacoJsonDefaults }).jsonDefaults
+            : undefined;
         if (!jsonDefaults) return;
         jsonDefaults.setDiagnosticsOptions({
             validate: true,
@@ -720,6 +629,23 @@ export function Component() {
             enableSchemaRequest: true,
             schemas: schema ? [{ uri: `config-schema://${objectModal.entry.domain}/${objectModal.entry.key}`, fileMatch: [modelPath], schema }] : [],
         });
+    };
+
+    const resetObjectSchema = () => {
+        const monaco = monacoInstanceRef.current;
+        if (!monaco) return;
+        const jsonContribution: unknown = monaco.languages.json;
+        const jsonDefaults = (typeof jsonContribution === "object" && jsonContribution !== null && "jsonDefaults" in jsonContribution)
+            ? (jsonContribution as { jsonDefaults: MonacoJsonDefaults }).jsonDefaults
+            : undefined;
+        if (!jsonDefaults) return;
+        jsonDefaults.setDiagnosticsOptions({
+            validate: true,
+            allowComments: false,
+            enableSchemaRequest: true,
+            schemas: [],
+        });
+        monacoInstanceRef.current = null;
     };
 
     return (
@@ -778,13 +704,13 @@ export function Component() {
                                                         try {
                                                             const updated = await updateConfigEntry(entry.domain, entry.key, {
                                                                 value: next,
-                                                                knownValue: entry.value,
+                                                                knownUpdatedAt: entry.updatedAt ?? "",
                                                             });
                                                             setGroups((current) => mergeUpdatedEntry(current, updated));
                                                             t.setValue(next, {
                                                                 configKey: entry.key,
                                                                 domain: entry.domain,
-                                                                updatedAt: (updated as any).updatedAt,
+                                                                updatedAt: updated.updatedAt,
                                                                 value: next,
                                                             });
                                                         } catch (err) {
@@ -844,7 +770,10 @@ export function Component() {
                 style={{ width: "min(980px, 95vw)" }}
                 className="admin-config-dialog admin-config-dialog-object"
                 modal
-                onHide={() => setObjectModal(null)}
+                onHide={() => {
+                    resetObjectSchema();
+                    setObjectModal(null);
+                }}
             >
                 {objectModal ? (
                     <div className="admin-config-modal-body">
@@ -905,186 +834,14 @@ export function Component() {
                 ) : null}
             </Dialog>
 
-            <Dialog
-                header={arrayModal ? `Edit ${arrayModal.entry.key}` : "Edit array"}
-                visible={Boolean(arrayModal)}
-                style={{ width: "min(860px, 95vw)" }}
-                className="admin-config-dialog admin-config-dialog-array"
-                modal
-                onHide={() => setArrayModal(null)}
-            >
-                {arrayModal ? (
-                    <div className="admin-config-array-editor">
-                        <div className="admin-config-array-add-row">
-                            <InputText
-                                value={arrayModal.draftInput}
-                                onChange={(event) => {
-                                    const next = event.target.value;
-                                    const validation = validateArrayItem(arrayModal.entry, next);
-                                    setArrayModal((current) => {
-                                        if (!current) return null;
-                                        return {
-                                            ...current,
-                                            draftInput: next,
-                                            inputValidation: validation.ok ? { ok: true } : { ok: false, error: validation.error },
-                                        };
-                                    });
-                                }}
-                                placeholder={arrayModal.entry.type === "number[]" ? "Add number" : "Add value"}
-                            />
-                            <button
-                                type="button"
-                                onClick={() => {
-                                    const validation = validateArrayItem(arrayModal.entry, arrayModal.draftInput);
-                                    if (!validation.ok) {
-                                        setArrayModal((current) => current ? { ...current, inputValidation: { ok: false, error: validation.error } } : current);
-                                        return;
-                                    }
-                                    setArrayModal((current) => {
-                                        if (!current) return null;
-                                        return {
-                                            ...current,
-                                            items: [...current.items, validation.parsedValue],
-                                            draftInput: "",
-                                            inputValidation: { ok: true },
-                                        };
-                                    });
-                                }}
-                            >
-                                Add
-                            </button>
-                        </div>
-
-                        {!arrayModal.inputValidation.ok ? (
-                            <p className="admin-config-validation-error">{arrayModal.inputValidation.error}</p>
-                        ) : null}
-
-                        <ul className="admin-config-array-list">
-                            {arrayModal.items.map((item, index) => {
-                                const isEditing = arrayModal.editingIndex === index;
-                                return (
-                                    <li key={`${index}-${String(item)}`} className="admin-config-array-item">
-                                        {isEditing ? (
-                                            <div className="admin-config-array-item-edit">
-                                                <InputText
-                                                    value={arrayModal.editDraft}
-                                                    onChange={(event) => {
-                                                        const next = event.target.value;
-                                                        const validation = validateArrayItem(arrayModal.entry, next);
-                                                        setArrayModal((current) => {
-                                                            if (!current) return null;
-                                                            return {
-                                                                ...current,
-                                                                editDraft: next,
-                                                                editValidation: validation.ok ? { ok: true } : { ok: false, error: validation.error },
-                                                            };
-                                                        });
-                                                    }}
-                                                />
-                                                <button
-                                                    type="button"
-                                                    disabled={!arrayModal.editValidation.ok}
-                                                    onClick={() => {
-                                                        const validation = validateArrayItem(arrayModal.entry, arrayModal.editDraft);
-                                                        if (!validation.ok) {
-                                                            setArrayModal((current) => current ? { ...current, editValidation: { ok: false, error: validation.error } } : current);
-                                                            return;
-                                                        }
-                                                        setArrayModal((current) => {
-                                                            if (!current || current.editingIndex === null) return current;
-                                                            const items = [...current.items];
-                                                            items[current.editingIndex] = validation.parsedValue;
-                                                            return {
-                                                                ...current,
-                                                                items,
-                                                                editingIndex: null,
-                                                                editDraft: "",
-                                                                editValidation: { ok: true },
-                                                            };
-                                                        });
-                                                    }}
-                                                >
-                                                    Save
-                                                </button>
-                                                <button
-                                                    type="button"
-                                                    onClick={() => setArrayModal((current) => current ? {
-                                                        ...current,
-                                                        editingIndex: null,
-                                                        editDraft: "",
-                                                        editValidation: { ok: true },
-                                                    } : current)}
-                                                >
-                                                    Cancel
-                                                </button>
-                                            </div>
-                                        ) : (
-                                            <>
-                                                <button
-                                                    type="button"
-                                                    className="admin-config-array-item-value"
-                                                    onClick={() => setArrayModal((current) => current ? {
-                                                        ...current,
-                                                        editingIndex: index,
-                                                        editDraft: String(item),
-                                                        editValidation: { ok: true },
-                                                    } : current)}
-                                                >
-                                                    {String(item)}
-                                                </button>
-                                                <div className="admin-config-array-item-actions">
-                                                    <button
-                                                        type="button"
-                                                        onClick={() => setArrayModal((current) => current ? {
-                                                            ...current,
-                                                            items: current.items.filter((_, itemIndex) => itemIndex !== index),
-                                                            editingIndex: current.editingIndex === index ? null : current.editingIndex,
-                                                        } : current)}
-                                                    >
-                                                        Remove
-                                                    </button>
-                                                </div>
-                                            </>
-                                        )}
-                                    </li>
-                                );
-                            })}
-                        </ul>
-
-                        {!arrayModal.editValidation.ok ? (
-                            <p className="admin-config-validation-error">{arrayModal.editValidation.error}</p>
-                        ) : null}
-
-                        <div className="admin-config-actions admin-top-gap">
-                            <button
-                                type="button"
-                                disabled={arrayModal.isSaving}
-                                onClick={() => setArrayModal((current) => {
-                                    if (!current) return null;
-                                    return {
-                                        ...current,
-                                        items: [...current.originalItems],
-                                        draftInput: "",
-                                        inputValidation: { ok: true },
-                                        editingIndex: null,
-                                        editDraft: "",
-                                        editValidation: { ok: true },
-                                    };
-                                })}
-                            >
-                                Revert
-                            </button>
-                            <button
-                                type="button"
-                                disabled={arrayModal.isSaving}
-                                onClick={() => void saveArrayModal()}
-                            >
-                                Fertig
-                            </button>
-                        </div>
-                    </div>
-                ) : null}
-            </Dialog>
+            {arrayModal ? (
+                <ArrayEditorDialog
+                    state={arrayModal}
+                    onChange={(updater) => setArrayModal((current) => current ? updater(current) : null)}
+                    onClose={() => setArrayModal(null)}
+                    onSave={() => void saveArrayModal()}
+                />
+            ) : null}
         </PageTemplate>
     );
 }

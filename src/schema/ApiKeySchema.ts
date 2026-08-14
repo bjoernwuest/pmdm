@@ -1,4 +1,5 @@
-import { boolean, primaryKey, text } from "drizzle-orm/pg-core";
+import { boolean, index, primaryKey, text } from "drizzle-orm/pg-core";
+import { sql } from "drizzle-orm";
 import { pgTable } from "drizzle-orm/pg-core";
 import {identifierColumnType, Identifier, timestampColumnType, timestamps} from "./helpers.ts";
 import { User } from "./UserSchema.ts";
@@ -17,7 +18,11 @@ export const ApiKeySchema = pgTable("api_keys", {
     disabled: boolean("disabled").notNull().default(false),
     disabledAt: timestampColumnType("disabled_at"),
     disabledBy: identifierColumnType("disabled_by").references(() => User.identifier),
-});
+}, (table) => [
+    // Serves validateApiKeySecret's `disabled = false AND expires_at > now()` pre-filter
+    // (the crypt() hash comparison itself is not indexable — it must scan the remaining rows).
+    index("api_keys_active_expiry_idx").on(table.expiresAt).where(sql`${table.disabled} = false`),
+]);
 
 /** Join table assigning functional permissions to API keys. */
 export const ApiKeyFunctionalPermission = pgTable("api_key_functional_permissions", {

@@ -1,6 +1,7 @@
-import { watch } from "fs";
-import { createHash } from "crypto";
-import path from "path";
+// `fs.watch` has no Bun-native equivalent (Bun.Glob is scan-only, not a change notifier),
+// so the Node API is retained via an explicit `node:`-prefixed import as a sanctioned exception.
+import { watch } from "node:fs";
+import path from "node:path";
 import {devMode} from "@/devmode.ts";
 
 interface ClientBundle {
@@ -69,7 +70,8 @@ export class ClientBundleService {
 
             const code = await result.outputs[0]!.text();
 
-            const etag = `"${createHash("sha256").update(code).digest("hex").substring(0, 16)}"`;
+            const digest = new Bun.CryptoHasher("sha256").update(code).digest("hex");
+            const etag = `"${digest.substring(0, 16)}"`;
 
             this._Bundle = {
                 code,

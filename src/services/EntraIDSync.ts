@@ -2,12 +2,12 @@ import { getConfigEntriesByKey, upsertConfigEntry } from "@/repo/ConfigRepo.ts";
 import { Value } from "@sinclair/typebox/value";
 import { IdentifierSchema, type IdentifierType } from "@/types/helpers.ts";
 import { ConfidentialClientApplication } from "@azure/msal-node";
-import { Client } from "@microsoft/microsoft-graph-client";
+import { Client, BatchResponseContent } from "@microsoft/microsoft-graph-client";
 import type { User as MSGraphUser, Group as MSGraphGroup } from "@microsoft/microsoft-graph-types";
 import { devMode } from "@/devmode.ts";
-import {type DBClient, getDatabaseConnection, runInTransaction} from "./DatabaseDriver.ts";
+import {type DBClient, runInTransaction} from "./DatabaseDriver.ts";
 import { Cron } from "croner";
-import { countUsersAndGroups, deleteObsoleteUserGroupAssignments, disableGroups, disableUsers, getGroups, getUsers, setGroupMemberships, setUserMemberships, upsertGroups, upsertUsers } from "@/repo/UserRepo.ts";
+import { countUsersAndGroups, deleteObsoleteUserGroupAssignments, disableGroups, disableUsers, getGroups, getUsers, setGroupMemberships, setUserMemberships, upsertGroups, upsertUsers, SYSTEM_USER_IDENTIFIER } from "@/repo/UserRepo.ts";
 import PubSub from "./PubSub.ts";
 import { TAG_AUTH_SESSION, TAG_LOGIN } from "../types/PubSubType";
 import {type ConfigEntrySelectType, ConfigValueTypes, type ConfigEntryInsertType} from "@/types/ConfigType.ts";
@@ -23,7 +23,7 @@ export const config = {
   cfgEnableUserSync: { domain: configDomain, key: `EnableUserSync`, description: "Enable periodic user synchronization and on-login user/group membership sync from EntraID. Disable if you only need group data.", type: ConfigValueTypes.boolean, value: false, formatRegex: "", inputFormat: "", outputFormat: "", editInUI: true, mandatoryForStart: false, userProfile: false },
   cfgSyncDeltalinkGroups: { domain: configDomain, key: `Delta.Groups`, description: "The group IDs to synchronize delta changes for. Leave empty to synchronize all groups.", type: ConfigValueTypes.string, value: undefined, formatRegex: "", inputFormat: "", outputFormat: "", editInUI: false, mandatoryForStart: false, userProfile: false },
   cfgSyncDeltalinkUsers: { domain: configDomain, key: `Delta.Users`, description: "The user IDs to synchronize delta changes for. Leave empty to synchronize all users.", type: ConfigValueTypes.string, value: undefined, formatRegex: "", inputFormat: "", outputFormat: "", editInUI: false, mandatoryForStart: false, userProfile: false },
-} satisfies Record<string, ConfigEntrySelectType>;
+} satisfies Record<string, ConfigEntryInsertType>;
 
 /**
  * Retrieves the Entra ID Client ID from the configuration entries stored in the database.
@@ -74,146 +74,251 @@ export function getGraphClient(db: DBClient): Client {
   });
 }
 
+type DeltaUser = MSGraphUser & { "@removed"?: { reason: string }; id: string };
+type DeltaGroup = MSGraphGroup & { "@removed"?: { reason: string }; id: string };
+type UserDeltaResult = { newOrUpdated: DeltaUser[]; deletedIds: IdentifierType[]; didFullLoad: boolean; deltaLink?: string };
+type GroupDeltaResult = { newOrUpdated: DeltaGroup[]; deletedIds: IdentifierType[]; didFullLoad: boolean; deltaLink?: string };
+
 /**
- * Synchronizes user data from Microsoft Graph API with the database.
- * The method fetches user data incrementally using delta links, updates the local database with new or updated users,
- * disables users that are no longer present, and cleans up obsolete user-group assignments.
+ * Fetches user data incrementally from Microsoft Graph using delta links. This performs
+ * only Graph API calls and configuration reads — no database mutations — so it must be
+ * called outside of any database transaction.
  *
  * @param {Client} MSGraphQLClient - The Microsoft Graph API client used to fetch user data.
- * @param {DBClient} DBClient - The database client for performing database operations.
- * @return {Promise<void>} A promise that resolves when the synchronization process is completed.
+ * @param {DBClient} DBClient - The database client used to read the stored delta link.
+ * @return {Promise<UserDeltaResult>} The fetched users, deleted user ids, and the fresh delta link.
  */
-async function userSync(MSGraphQLClient: Client, DBClient: DBClient): Promise<IdentifierType[]> {
-  type DeltaUser = MSGraphUser & { "@removed"?: { reason: string }; id: string };
-  type DeltaUserResponse = { value?: DeltaUser[]; "@odata.nextLink"?: string; "@odata.deltaLink"?: string };
+async function fetchUserDelta(MSGraphQLClient: Client, DBClient: DBClient): Promise<UserDeltaResult> {
+    type DeltaUserResponse = { value?: DeltaUser[]; "@odata.nextLink"?: string; "@odata.deltaLink"?: string };
 
-  const deltaCfg = (await getConfigEntriesByKey(DBClient, config.cfgSyncDeltalinkUsers.domain, config.cfgSyncDeltalinkUsers.key))[0];
-  let didFullLoad = deltaCfg == null || deltaCfg.value == null;
-  let nextLink: string | undefined = (deltaCfg && deltaCfg.value ? String(deltaCfg.value) : null) ?? '/users/delta?$select=id,mail,userPrincipalName,givenName,surname,accountEnabled';
+    const deltaCfg = (await getConfigEntriesByKey(DBClient, config.cfgSyncDeltalinkUsers.domain, config.cfgSyncDeltalinkUsers.key))[0];
+    let didFullLoad = deltaCfg == null || deltaCfg.value == null;
+    let nextLink: string | undefined = (deltaCfg && deltaCfg.value ? String(deltaCfg.value) : null) ?? '/users/delta?$select=id,mail,userPrincipalName,givenName,surname,accountEnabled';
 
-  const newOrUpdated: Set<DeltaUser> = new Set();
-  const deletedIds: Set<IdentifierType> = new Set();
+    const newOrUpdated: Set<DeltaUser> = new Set();
+    const deletedIds: Set<IdentifierType> = new Set();
+    let deltaLink: string | undefined;
 
-  let res: DeltaUserResponse | undefined;
-  do {
-    try {
-      res = (await MSGraphQLClient.api(nextLink!).header('Accept', 'application/json;odata.metadata=minimal').get()) as DeltaUserResponse;
-      for (const entry of res.value ?? []) {
-        if (entry["@removed"] && Value.Check(IdentifierSchema, { identifier: entry.id })) deletedIds.add({identifier: entry.id} satisfies IdentifierType);
-        else newOrUpdated.add(entry as DeltaUser);
-      }
-      nextLink = res["@odata.nextLink"];
-    } catch (mqlError: any) {
-      if (mqlError.statusCode === 410 && mqlError.code === "SyncStateNotFound") {
-        nextLink = "/groups?$select=id,displayName";
-        didFullLoad = true;
-      } else throw mqlError;
-    }
-  } while (nextLink);
+    let res: DeltaUserResponse | undefined;
+    do {
+        try {
+            res = (await MSGraphQLClient.api(nextLink!).header('Accept', 'application/json;odata.metadata=minimal').get()) as DeltaUserResponse;
+            for (const entry of res.value ?? []) {
+                if (entry["@removed"] && Value.Check(IdentifierSchema, { identifier: entry.id })) deletedIds.add({identifier: entry.id} satisfies IdentifierType);
+                else newOrUpdated.add(entry as DeltaUser);
+            }
+            nextLink = res["@odata.nextLink"];
+        } catch (mqlError: any) {
+            if (mqlError.statusCode === 410 && mqlError.code === "SyncStateNotFound") {
+                nextLink = '/users/delta?$select=id,mail,userPrincipalName,givenName,surname,accountEnabled';
+                didFullLoad = true;
+            } else throw mqlError;
+        }
+    } while (nextLink);
 
-  // Disable gone groups (or all, if we can not determine which ones are gone)
-  if (didFullLoad) await disableUsers(DBClient); else if (0 < deletedIds.size) await disableUsers(DBClient, [...deletedIds]);
+    if (res?.['@odata.deltaLink']) deltaLink = res['@odata.deltaLink'];
 
-  // Upsert all groups from newOrUpdated; this may set isActive to false if user acocunt was disabled in EntraID
-  await upsertUsers(DBClient, [...newOrUpdated].map(u => ({ identifier: u.id, firstName: u.givenName ?? '', lastName: u.surname ?? '', email: u.mail || u.userPrincipalName || '', disabled: (u.accountEnabled === false) } satisfies UserInsertType)));
-
-  // cleanup obsolete user/group assignments
-  await deleteObsoleteUserGroupAssignments(DBClient);
-
-  // after loop, capture deltaLink if present on last response
-  if (res?.['@odata.deltaLink']) await upsertConfigEntry(DBClient, { ...config.cfgSyncDeltalinkUsers, value: res?.['@odata.deltaLink'] } as ConfigEntryInsertType);
-
-  return Array.from(newOrUpdated).map(g => ({identifier: g.id} satisfies IdentifierType));
+    return { newOrUpdated: Array.from(newOrUpdated), deletedIds: Array.from(deletedIds), didFullLoad, deltaLink };
 }
 
 /**
- * Synchronizes membership relationships for users or groups by fetching data from Microsoft Graph API
- * and updating the database using the provided clients.
+ * Applies a fetched user delta to the database: disables gone users (or all users on a full
+ * load), upserts the new/updated users, cleans up obsolete user-group assignments and stores
+ * the fresh delta link. Expected to run inside a transaction.
+ *
+ * @param {DBClient} DBClient - The database client used for the mutations.
+ * @param {UserDeltaResult} delta - The delta result produced by {@link fetchUserDelta}.
+ * @return {Promise<IdentifierType[]>} The identifiers of the upserted users.
+ */
+async function applyUserDelta(DBClient: DBClient, delta: UserDeltaResult): Promise<IdentifierType[]> {
+    // Disable gone users (or all, if we can not determine which ones are gone)
+    if (delta.didFullLoad) await disableUsers(DBClient); else if (0 < delta.deletedIds.length) await disableUsers(DBClient, delta.deletedIds);
+
+    // Upsert all users from newOrUpdated; this may set disabled to false if the user account was re-enabled in EntraID
+    await upsertUsers(DBClient, delta.newOrUpdated.map(u => ({ identifier: u.id, firstName: u.givenName ?? '', lastName: u.surname ?? '', email: u.mail || u.userPrincipalName || '', disabled: (u.accountEnabled === false) } satisfies UserInsertType)));
+
+    // cleanup obsolete user/group assignments
+    await deleteObsoleteUserGroupAssignments(DBClient);
+
+    // store the fresh delta link if one was captured
+    if (delta.deltaLink) await upsertConfigEntry(DBClient, { ...config.cfgSyncDeltalinkUsers, value: delta.deltaLink } as ConfigEntryInsertType);
+
+    return delta.newOrUpdated.map(u => ({identifier: u.id} satisfies IdentifierType));
+}
+
+/**
+ * Strips scheme, host and API version from an absolute Graph URL so it can be used as a
+ * relative batch-item URL. Graph's $batch endpoint rejects URLs that still contain the
+ * version segment (e.g. "/v1.0/groups/...").
+ */
+function toGraphRelativeUrl(url: string): string {
+    return url.replace(/^https?:\/\/[^/]+\/(?:v1\.0|beta)/, "");
+}
+
+/**
+ * Fetches membership relationships for users or groups from the Microsoft Graph API using
+ * batched requests. This performs only Graph API calls — no database access — so it must be
+ * called outside of any database transaction.
+ *
+ * Identifiers whose fetch failed are reported in `failedKeys` so callers can skip applying
+ * them instead of overwriting existing memberships with empty data.
  *
  * @param {Client} MSGraphQLClient - The client used to interact with Microsoft Graph API.
- * @param {DBClient} DBClient - The database client used to update membership relationships.
- * @param {IdentifierType[]} Id_s - An array of identifiers representing the users or groups to sync.
- * @param {boolean} [users=false] - A flag indicating whether to synchronize user memberships (if true) or group memberships (if false).
- * @return {Promise<void>} A promise that resolves when the synchronization process is complete.
+ * @param {IdentifierType[]} Id_s - An array of identifiers representing the users or groups to fetch memberships for.
+ * @param {boolean} [users=false] - A flag indicating whether to fetch user memberships (if true) or group memberships (if false).
+ * @return {Promise<{memberIdsByKey: Map<string, string[]>, failedKeys: string[]}>} The fetched member identifiers per key and the keys whose fetch failed.
  */
-export async function membershipSync(MSGraphQLClient: Client, DBClient: DBClient, Id_s: IdentifierType[], users: boolean = false) {
-  const Ids = Id_s.filter(i => i.identifier !== "00000000-0000-0000-0000-000000000000");
-  type MemberPageResponse = { value?: { id: string; "@odata.type"?: string }[]; "@odata.nextLink"?: string };
-  for (const id of Ids) {
-    let nextLink: string | undefined = users ? `users/${id.identifier}/memberOf?$select=id` : `groups/${id.identifier}/members?$select=id`;
-    const memberIds: string[] = [];
-    try {
-      do {
-        const mRes = (await MSGraphQLClient.api(nextLink).header('Accept', 'application/json;odata.metadata=minimal').get()) as MemberPageResponse;
-        const vals = mRes.value ?? [];
-        for (const v of vals) {
-          if (v["@odata.type"] === (users ? "#microsoft.graph.group" : "#microsoft.graph.user")) memberIds.push(v.id);
+export async function fetchMemberships(MSGraphQLClient: Client, Id_s: IdentifierType[], users: boolean = false): Promise<{ memberIdsByKey: Map<string, string[]>, failedKeys: string[] }> {
+    const Ids = Id_s.filter(i => i.identifier !== SYSTEM_USER_IDENTIFIER);
+    type MemberPageResponse = { value?: { id: string; "@odata.type"?: string }[]; "@odata.nextLink"?: string };
+
+    // Microsoft Graph $batch supports at most 20 requests per batch.
+    const GRAPH_BATCH_LIMIT = 20;
+    const memberIdsByKey = new Map<string, string[]>();
+    const failedKeys = new Set<string>();
+    const pending: { key: string; url: string }[] = Ids.map(id => ({
+        key: id.identifier,
+        url: users ? `/users/${id.identifier}/memberOf?$select=id` : `/groups/${id.identifier}/members?$select=id`,
+    }));
+
+    while (pending.length > 0) {
+        const chunk = pending.splice(0, GRAPH_BATCH_LIMIT);
+        const batchBody = { requests: chunk.map(({ key, url }) => ({ id: key, method: "GET", url, headers: { Accept: "application/json;odata.metadata=minimal" } })) };
+
+        try {
+            const batchResponse = await MSGraphQLClient.api("/$batch").post(batchBody);
+            const responses = new BatchResponseContent(batchResponse);
+
+            for (const { key } of chunk) {
+                try {
+                    const item = await responses.getResponseById(key);
+                    if (!item.ok) {
+                        failedKeys.add(key);
+                        if (devMode) console.warn(`Failed to retrieve user/group memberships for ${key} from batch. Status: ${item.status}`);
+                        continue;
+                    }
+                    const body = await item.json() as MemberPageResponse;
+                    const memberIds = memberIdsByKey.get(key) ?? [];
+                    for (const v of body.value ?? []) {
+                        if (v["@odata.type"] === (users ? "#microsoft.graph.group" : "#microsoft.graph.user")) memberIds.push(v.id);
+                    }
+                    memberIdsByKey.set(key, memberIds);
+                    if (body["@odata.nextLink"]) pending.push({ key, url: toGraphRelativeUrl(body["@odata.nextLink"]) });
+                } catch (_e) {
+                    failedKeys.add(key);
+                    if (devMode) console.warn(`Failed to retrieve user/group memberships for ${key} from batch. Error:`, _e);
+                }
+            }
+        } catch (_e) {
+            // A batch-level failure marks every identifier in the chunk as failed so the
+            // apply phase skips them instead of overwriting existing memberships.
+            for (const { key } of chunk) failedKeys.add(key);
+            if (devMode) console.warn(`Failed to retrieve user/group memberships batch. Error:`, _e);
         }
-        nextLink = mRes['@odata.nextLink'];
-      } while (nextLink);
-    } catch (_e) { if (devMode) console.warn(`Failed to retrieve user/group memberships for ${id.identifier} from ${nextLink}. Error:`, _e);}
-    // Set new user/group memberships
-    if (users) await setUserMemberships(DBClient, id, memberIds.map(id => ({ identifier: id }))); else await setGroupMemberships(DBClient, id, memberIds.map(id => ({ identifier: id })));
-  }
+    }
+
+    return { memberIdsByKey, failedKeys: Array.from(failedKeys) };
 }
 
 /**
- * Synchronizes group data between a remote Graph API and a local database. It processes additions, updates, and deletions
- * of groups to keep the local database in sync with the remote state. If a sync state is lost or invalidated, a full
- * reload is performed.
+ * Applies previously fetched membership data by replacing the user or group memberships in
+ * the database for each identifier. Identifiers whose fetch failed are skipped, preserving
+ * their existing memberships.
+ *
+ * @param {DBClient} DBClient - The database client used to update membership relationships.
+ * @param {IdentifierType[]} Id_s - An array of identifiers whose memberships were fetched.
+ * @param {Map<string, string[]>} memberIdsByKey - The fetched member identifiers per key.
+ * @param {boolean} [users=false] - A flag indicating whether to set user memberships (if true) or group memberships (if false).
+ * @param {string[]} [failedKeys=[]] - Identifiers whose Graph fetch failed and must not be overwritten.
+ * @return {Promise<void>} A promise that resolves when all memberships have been applied.
+ */
+export async function applyMemberships(DBClient: DBClient, Id_s: IdentifierType[], memberIdsByKey: Map<string, string[]>, users: boolean = false, failedKeys: string[] = []) {
+    const Ids = Id_s.filter(i => i.identifier !== SYSTEM_USER_IDENTIFIER);
+    const failed = new Set(failedKeys);
+
+    // Set new user/group memberships
+    for (const id of Ids) {
+        if (failed.has(id.identifier)) {
+            if (devMode) console.warn(`Skipping membership apply for ${id.identifier} because the Graph fetch failed.`);
+            continue;
+        }
+        const memberIds = memberIdsByKey.get(id.identifier) ?? [];
+        if (users) await setUserMemberships(DBClient, id, memberIds.map(memberId => ({ identifier: memberId }))); else await setGroupMemberships(DBClient, id, memberIds.map(memberId => ({ identifier: memberId })));
+    }
+}
+
+/**
+ * Fetches group data incrementally from Microsoft Graph using delta links. This performs
+ * only Graph API calls and configuration reads — no database mutations — so it must be
+ * called outside of any database transaction.
  *
  * @param {Client} MSGraphQLClient - The client instance used to interact with the Graph API.
- * @param {DBClient} DBClient - The database client used for querying and updating local group records.
- * @return {Promise<void>} A promise that resolves once the group synchronization process is complete.
+ * @param {DBClient} DBClient - The database client used to read the stored delta link.
+ * @return {Promise<GroupDeltaResult>} The fetched groups, deleted group ids, and the fresh delta link.
  */
-async function groupSync(MSGraphQLClient: Client, DBClient: DBClient): Promise<IdentifierType[]> {
-  // Graph delta/page response types
-  type DeltaGroup = MSGraphGroup & { "@removed"?: { reason: string }; id: string };
-  type DeltaGroupResponse = { value?: DeltaGroup[]; "@odata.nextLink"?: string; "@odata.deltaLink"?: string };
+async function fetchGroupDelta(MSGraphQLClient: Client, DBClient: DBClient): Promise<GroupDeltaResult> {
+    // Graph delta/page response types
+    type DeltaGroupResponse = { value?: DeltaGroup[]; "@odata.nextLink"?: string; "@odata.deltaLink"?: string };
 
-  const deltaCfg = (await getConfigEntriesByKey(DBClient, config.cfgSyncDeltalinkGroups.domain, config.cfgSyncDeltalinkGroups.key))[0];
-  let didFullLoad = deltaCfg == null || deltaCfg.value == null;
-  let nextLink: string | undefined = (deltaCfg && deltaCfg.value ? String(deltaCfg.value) : null) ?? '/groups/delta?$select=id,displayName';
+    const deltaCfg = (await getConfigEntriesByKey(DBClient, config.cfgSyncDeltalinkGroups.domain, config.cfgSyncDeltalinkGroups.key))[0];
+    let didFullLoad = deltaCfg == null || deltaCfg.value == null;
+    let nextLink: string | undefined = (deltaCfg && deltaCfg.value ? String(deltaCfg.value) : null) ?? '/groups/delta?$select=id,displayName';
 
-  const newOrUpdated = new Set<DeltaGroup>();
-  const deletedIds = new Set<IdentifierType>();
+    const newOrUpdated = new Set<DeltaGroup>();
+    const deletedIds = new Set<IdentifierType>();
+    let deltaLink: string | undefined;
 
-  let res: DeltaGroupResponse | undefined;
-  do {
-    try {
-      res = (await MSGraphQLClient.api(nextLink!).header('Accept', 'application/json;odata.metadata=minimal').get()) as DeltaGroupResponse;
-      for (const entry of res.value ?? []) {
-        if (entry["@removed"] && Value.Check(IdentifierSchema, { identifier: entry.id })) deletedIds.add({identifier: entry.id} satisfies IdentifierType);
-        else newOrUpdated.add(entry as DeltaGroup);
-      }
-      nextLink = res["@odata.nextLink"];
-    } catch (mqlError: any) {
-      if (mqlError.statusCode === 410 && mqlError.code === "SyncStateNotFound") {
-        nextLink = "/groups?$select=id,displayName";
-        didFullLoad = true;
-      } else throw mqlError;
-    }
-  } while (nextLink);
+    let res: DeltaGroupResponse | undefined;
+    do {
+        try {
+            res = (await MSGraphQLClient.api(nextLink!).header('Accept', 'application/json;odata.metadata=minimal').get()) as DeltaGroupResponse;
+            for (const entry of res.value ?? []) {
+                if (entry["@removed"] && Value.Check(IdentifierSchema, { identifier: entry.id })) deletedIds.add({identifier: entry.id} satisfies IdentifierType);
+                else newOrUpdated.add(entry as DeltaGroup);
+            }
+            nextLink = res["@odata.nextLink"];
+        } catch (mqlError: any) {
+            if (mqlError.statusCode === 410 && mqlError.code === "SyncStateNotFound") {
+                nextLink = "/groups?$select=id,displayName";
+                didFullLoad = true;
+            } else throw mqlError;
+        }
+    } while (nextLink);
 
-  // Disable gone groups (or all, if we can not determine which ones are gone)
-  if (didFullLoad) await disableGroups(DBClient); else if (0 < deletedIds.size) await disableGroups(DBClient, [...deletedIds]);
+    if (res?.['@odata.deltaLink']) deltaLink = res['@odata.deltaLink'];
 
-  // Upsert all groups from newOrUpdated
-  await upsertGroups(DBClient, Array.from(newOrUpdated).map(g => ({ identifier: g.id, groupName: g.displayName ?? '' } satisfies GroupInsertType)));
+    return { newOrUpdated: Array.from(newOrUpdated), deletedIds: Array.from(deletedIds), didFullLoad, deltaLink };
+}
 
-  // cleanup obsolete user/group assignments
-  await deleteObsoleteUserGroupAssignments(DBClient);
+/**
+ * Applies a fetched group delta to the database: disables gone groups (or all groups on a
+ * full load), upserts the new/updated groups, cleans up obsolete user-group assignments and
+ * stores the fresh delta link. Expected to run inside a transaction.
+ *
+ * @param {DBClient} DBClient - The database client used for the mutations.
+ * @param {GroupDeltaResult} delta - The delta result produced by {@link fetchGroupDelta}.
+ * @return {Promise<IdentifierType[]>} The identifiers of the upserted groups.
+ */
+async function applyGroupDelta(DBClient: DBClient, delta: GroupDeltaResult): Promise<IdentifierType[]> {
+    // Disable gone groups (or all, if we can not determine which ones are gone)
+    if (delta.didFullLoad) await disableGroups(DBClient); else if (0 < delta.deletedIds.length) await disableGroups(DBClient, delta.deletedIds);
 
-  // after loop, capture deltaLink if present on last response
-  if (res?.['@odata.deltaLink']) await upsertConfigEntry(DBClient, { ...config.cfgSyncDeltalinkGroups, value: res?.['@odata.deltaLink'] } as ConfigEntryInsertType);
+    // Upsert all groups from newOrUpdated
+    await upsertGroups(DBClient, delta.newOrUpdated.map(g => ({ identifier: g.id, groupName: g.displayName ?? '' } satisfies GroupInsertType)));
 
-  return Array.from(newOrUpdated).map(g => ({identifier: g.id} satisfies IdentifierType));
+    // cleanup obsolete user/group assignments
+    await deleteObsoleteUserGroupAssignments(DBClient);
+
+    // store the fresh delta link if one was captured
+    if (delta.deltaLink) await upsertConfigEntry(DBClient, { ...config.cfgSyncDeltalinkGroups, value: delta.deltaLink } as ConfigEntryInsertType);
+
+    return delta.newOrUpdated.map(g => ({identifier: g.id} satisfies IdentifierType));
 }
 
 let syncRunning = false;
 type StartupSyncState = { groupsReady: Promise<void> };
 
-export async function startScheduler(): Promise<StartupSyncState> {
+export async function startScheduler(db: DBClient): Promise<StartupSyncState> {
   let resolveGroupsReady!: () => void;
   let rejectGroupsReady!: (reason?: unknown) => void;
   const groupsReady = new Promise<void>((resolve, reject) => {
@@ -222,14 +327,13 @@ export async function startScheduler(): Promise<StartupSyncState> {
   });
 
   // Ensure config rows exist (seed with defaults on first run)
-  const db = getDatabaseConnection();
   for (const entry of Object.values(config)) {
     const existing = await getConfigEntriesByKey(db, entry.domain, entry.key, { limit: 1 });
     if (existing.length < 1) await upsertConfigEntry(db, entry);
   }
 
   // read cron expression from config
-  const cfg = (await getConfigEntriesByKey(getDatabaseConnection(), config.cfgSyncInterval.domain, config.cfgSyncInterval.key))[0];
+  const cfg = (await getConfigEntriesByKey(db, config.cfgSyncInterval.domain, config.cfgSyncInterval.key))[0];
   const expr = cfg?.value ? String(cfg.value) : "off";
 
   // helper to determine whether user sync is enabled from config
@@ -248,26 +352,31 @@ export async function startScheduler(): Promise<StartupSyncState> {
     syncRunning = true;
     let groupsSynced = false;
     try {
+      const client = getGraphClient(db);
+
+      // Fetch group data outside of any transaction, then apply it in a short transaction.
+      const groupDelta = await fetchGroupDelta(client, db);
       // Commit groups first so the UI can become available as soon as group data exists.
-      await runInTransaction(getDatabaseConnection(), async tx => {
-        const client = getGraphClient(tx);
-        await groupSync(client, tx);
+      await runInTransaction(db, async tx => {
+        await applyGroupDelta(tx, groupDelta);
       });
 
       groupsSynced = true;
       onGroupsSynced?.();
 
       // Users and memberships can continue in the background after groups are available.
-      if (await isUserSyncEnabled(getDatabaseConnection())) {
-        await runInTransaction(getDatabaseConnection(), async tx => {
-          const client = getGraphClient(tx);
-          await userSync(client, tx);
-
-          let count = await countUsersAndGroups(tx);
-          let users: boolean = count.users > count.groups;
-
-          await membershipSync(client, tx, (users ? (await getUsers(tx)).map(u => ({identifier: u.identifier})) : (await getGroups(tx)).map(g => ({identifier: g.identifier}))), users);
+      if (await isUserSyncEnabled(db)) {
+        const userDelta = await fetchUserDelta(client, db);
+        await runInTransaction(db, async tx => {
+          await applyUserDelta(tx, userDelta);
         });
+
+        let count = await countUsersAndGroups(db);
+        let users: boolean = count.users > count.groups;
+
+        const ids = (users ? (await getUsers(db)).map(u => ({identifier: u.identifier})) : (await getGroups(db)).map(g => ({identifier: g.identifier})));
+        const { memberIdsByKey, failedKeys } = await fetchMemberships(client, ids, users);
+        await applyMemberships(db, ids, memberIdsByKey, users, failedKeys);
       }
     } catch (e) {
       if (!groupsSynced) rejectGroupsReady(e);
@@ -286,13 +395,14 @@ export async function startScheduler(): Promise<StartupSyncState> {
      if (session?.idTokenClaims?.oid) {
        const idTokenClaims = session.idTokenClaims;
        try {
-         await runInTransaction(getDatabaseConnection(), async tx => {
-           if (!await isUserSyncEnabled(tx)) return;
-           const graphClient = getGraphClient(tx);
+         if (!await isUserSyncEnabled(db)) return;
+         const graphClient = getGraphClient(db);
+         const { memberIdsByKey, failedKeys } = await fetchMemberships(graphClient, [{identifier: idTokenClaims.oid}], true);
+         await runInTransaction(db, async tx => {
            await upsertUsers(tx, [{ identifier: idTokenClaims.oid, firstName: idTokenClaims.given_name ?? '', lastName: idTokenClaims.family_name ?? '', email: idTokenClaims.email || idTokenClaims.preferred_username || '', disabled: false }]);
            // CRITICAL: Sync memberships from Graph API instead of token claims for reliability
            // This ensures group memberships are always current, even if token doesn't contain them
-           await membershipSync(graphClient, tx, [{identifier: idTokenClaims.oid}], true);
+           await applyMemberships(tx, [{identifier: idTokenClaims.oid}], memberIdsByKey, true, failedKeys);
          });
        } catch (e) {
          if (devMode) console.warn("Failed to sync user on login:", e);

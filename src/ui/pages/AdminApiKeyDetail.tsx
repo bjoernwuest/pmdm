@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { Link, useLocation, useParams, useSearchParams } from "react-router-dom";
 import { Dialog } from "primereact/dialog";
 import { InputText } from "primereact/inputtext";
@@ -7,6 +7,7 @@ import InputField, { type InputFieldHandle } from "@/ui/components/InputField";
 import Label, { type LabelHandle } from "@/ui/components/Label";
 import Toggle from "@/ui/components/Toggle";
 import { subscribe, unsubscribe } from "@/ui/pubsub";
+import { runSaveWithConfirmation } from "@/ui/saveConfirmation";
 import type { PageMeta } from "@/types/PageType.ts";
 import type { PubSubMessage } from "@/types/PubSubType.ts";
 import {
@@ -16,10 +17,12 @@ import {
 } from "@/types/PubSubType.ts";
 import {
     FP_PROLONG_API_KEYS,
+    FP_READ_FUNCTIONAL_PERMISSIONS,
     FP_VIEW_API_KEYS,
 } from "@/ui/auth/functional_permissions.ts";
 import type { FunctionalPermissionsResponse } from "@/types/ApiType.ts";
-import { apiGet } from "@/ui/api/index.ts";
+import { getFunctionalPermissions } from "@/ui/api/FunctionalPermissions.ts";
+import { getViewerContext } from "@/ui/api/session.ts";
 import {
     disableApiKey,
     getApiKeyDetail,
@@ -36,6 +39,9 @@ export const meta: PageMeta = {
     id: "admin-api-key-detail",
     urn: "urn:bun-starter:ui:page:admin-api-key-detail",
     path: "/admin/api-keys/:apikeyid",
+    detailBreadcrumb: {
+        resolveLabel: async (params) => (await getApiKeyDetail(params.apikeyid ?? "")).apiKey.name,
+    },
     title: "API key details",
     description: "Edit API key metadata, permissions, and lifecycle state.",
     menu: {
@@ -53,6 +59,8 @@ export function Component() {
     const location = useLocation();
     const [searchParams, setSearchParams] = useSearchParams();
     const [viewerContext, setViewerContext] = useState<ViewerContext>({ permissionNames: [] });
+    const [error, setError] = useState<string | null>(null);
+    const [notPermitted, setNotPermitted] = useState(false);
     const [detail, setDetail] = useState<ApiKeyDetailResponse | null>(null);
     const [allPermissions, setAllPermissions] = useState<FunctionalPermissionsResponse["functionalPermissions"]>([]);
     const [permissionsTotal, setPermissionsTotal] = useState(0);
@@ -81,34 +89,50 @@ export function Component() {
     const permissionsPage = Number.isInteger(queryPermissionsPage) && queryPermissionsPage > 0 ? queryPermissionsPage : 1;
     const permissionsPageSize = Number.isInteger(queryPermissionsPageSize) && queryPermissionsPageSize > 0 ? queryPermissionsPageSize : 10;
 
-    const updateQuery = (patch: { permissionsPage?: number; permissionsPageSize?: number }) => {
-        const next = new URLSearchParams(searchParams);
-        if (patch.permissionsPage !== undefined) next.set("permissionsPage", String(patch.permissionsPage));
-        if (patch.permissionsPageSize !== undefined) next.set("permissionsPageSize", String(patch.permissionsPageSize));
-        setSearchParams(next);
-    };
+    const updateQuery = useCallback((patch: { permissionsPage?: number; permissionsPageSize?: number }) => {
+        setSearchParams((prev) => {
+            const next = new URLSearchParams(prev);
+            if (patch.permissionsPage !== undefined) next.set("permissionsPage", String(patch.permissionsPage));
+            if (patch.permissionsPageSize !== undefined) next.set("permissionsPageSize", String(patch.permissionsPageSize));
+            return next;
+        });
+    }, [setSearchParams]);
 
     const canManage = viewerContext.permissionNames.includes(FP_PROLONG_API_KEYS.functionalPermissionName);
 
-    const load = async () => {
+    const load = useCallback(async () => {
         if (!apikeyid) return;
         setIsLoading(true);
-        const [context, payload, permissionsPayload] = await Promise.all([
-            apiGet<ViewerContext>("/api/me/context"),
-            getApiKeyDetail(apikeyid),
-            apiGet<FunctionalPermissionsResponse>(`/api/functionalpermissions?page=${permissionsPage - 1}&pageSize=${permissionsPageSize}`),
-        ]);
-        setViewerContext(context);
-        setDetail(payload);
-        setAllPermissions(permissionsPayload.functionalPermissions);
-        setPermissionsTotal(permissionsPayload.total);
-        setPermissionsAvailablePageSizes(permissionsPayload.availablePageSizes);
-        if (permissionsPayload.page !== permissionsPage - 1) updateQuery({ permissionsPage: permissionsPayload.page + 1 });
-        if (!permissionsPayload.availablePageSizes.includes(permissionsPageSize) && permissionsPayload.availablePageSizes.length > 0) {
-            updateQuery({ permissionsPage: 1, permissionsPageSize: permissionsPayload.availablePageSizes[0]! });
+        setError(null);
+        setNotPermitted(false);
+        try {
+            const context = await getViewerContext();
+            setViewerContext(context);
+            if (!context.permissionNames.includes(FP_READ_FUNCTIONAL_PERMISSIONS.functionalPermissionName)) {
+                setNotPermitted(true);
+                return;
+            }
+            const [payload, permissionsPayload] = await Promise.all([
+                getApiKeyDetail(apikeyid),
+                getFunctionalPermissions(permissionsPage - 1, permissionsPageSize),
+            ]);
+            setDetail(payload);
+            setAllPermissions(permissionsPayload.functionalPermissions);
+            setPermissionsTotal(permissionsPayload.total);
+            setPermissionsAvailablePageSizes(permissionsPayload.availablePageSizes);
+            if (permissionsPayload.page !== permissionsPage - 1) updateQuery({ permissionsPage: permissionsPayload.page + 1 });
+            if (!permissionsPayload.availablePageSizes.includes(permissionsPageSize)) {
+                const [firstPageSize] = permissionsPayload.availablePageSizes;
+                if (typeof firstPageSize === "number") {
+                    updateQuery({ permissionsPage: 1, permissionsPageSize: firstPageSize });
+                }
+            }
+        } catch (err) {
+            setError(err instanceof Error ? err.message : "Failed to load API key details");
+        } finally {
+            setIsLoading(false);
         }
-        setIsLoading(false);
-    };
+    }, [apikeyid, permissionsPage, permissionsPageSize, updateQuery]);
 
     const refreshDetailOnly = async () => {
         if (!apikeyid) return;
@@ -118,7 +142,7 @@ export function Component() {
 
     useEffect(() => {
         void load();
-    }, [apikeyid, permissionsPage, permissionsPageSize, searchParams.toString()]);
+    }, [load]);
 
     // Initialize InputField refs when detail is loaded
     useEffect(() => {
@@ -137,11 +161,26 @@ export function Component() {
         const id = detail.apiKey.identifier;
         const status = detail.apiKey.disabled ? "Disabled"
             : (new Date(detail.apiKey.expiresAt).getTime() <= Date.now() ? "Expired" : "Active");
-        nameLabelRef.current?.setText(detail.apiKey.name, { apiKeyId: id, field: "name" });
-        statusRef.current?.setText(status, { apiKeyId: id, field: "status" });
-        expiresRef.current?.setText(new Date(detail.apiKey.expiresAt).toLocaleString(), { apiKeyId: id, field: "expires" });
-        descriptionLabelRef.current?.setText(detail.apiKey.description ?? "-", { apiKeyId: id, field: "description" });
-        lastProlongedRef.current?.setText(detail.apiKey.lastProlongedAt ? new Date(detail.apiKey.lastProlongedAt).toLocaleString() : "-", { apiKeyId: id, field: "lastProlonged" });
+        // Guarded re-seed: call setText only when the incoming value differs
+        // from the component's current value (see the three-phase model in Label.tsx).
+        if (nameLabelRef.current && nameLabelRef.current.getText() !== detail.apiKey.name) {
+            nameLabelRef.current.setText(detail.apiKey.name, { apiKeyId: id, field: "name" });
+        }
+        if (statusRef.current && statusRef.current.getText() !== status) {
+            statusRef.current.setText(status, { apiKeyId: id, field: "status" });
+        }
+        const expiresText = new Date(detail.apiKey.expiresAt).toLocaleString();
+        if (expiresRef.current && expiresRef.current.getText() !== expiresText) {
+            expiresRef.current.setText(expiresText, { apiKeyId: id, field: "expires" });
+        }
+        const descriptionText = detail.apiKey.description ?? "-";
+        if (descriptionLabelRef.current && descriptionLabelRef.current.getText() !== descriptionText) {
+            descriptionLabelRef.current.setText(descriptionText, { apiKeyId: id, field: "description" });
+        }
+        const lastProlongedText = detail.apiKey.lastProlongedAt ? new Date(detail.apiKey.lastProlongedAt).toLocaleString() : "-";
+        if (lastProlongedRef.current && lastProlongedRef.current.getText() !== lastProlongedText) {
+            lastProlongedRef.current.setText(lastProlongedText, { apiKeyId: id, field: "lastProlonged" });
+        }
         lastProlongedByRef.current?.setText(formatUserDisplay(detail.apiKey.lastProlongedBy), { apiKeyId: id, field: "lastProlongedBy" });
         disabledAtRef.current?.setText(detail.apiKey.disabledAt ? new Date(detail.apiKey.disabledAt).toLocaleString() : "-", { apiKeyId: id, field: "disabledAt" });
         disabledByRef.current?.setText(formatUserDisplay(detail.apiKey.disabledBy), { apiKeyId: id, field: "disabledBy" });
@@ -202,7 +241,7 @@ export function Component() {
         );
         return () => {
             if (typeof token === "string") {
-                import("@/ui/pubsub").then((m) => m.unsubscribe(token));
+                unsubscribe(token);
             }
         };
     }, [detail]);
@@ -230,99 +269,62 @@ export function Component() {
 
         const ctx = component.getContext();
 
-        let resolved = false;
-
-        const finalizeSuccess = (
-            newName: string,
-            newUpdatedAt: string,
-        ) => {
-            if (resolved) return;
-            resolved = true;
-            clearTimeout(timerId);
-            if (pubsubToken) unsubscribe(pubsubToken);
-
-            component.setOriginalValue(newName, { updatedAt: newUpdatedAt });
-            component.setDirty(false);
-            component.enableSaveButton();
-            component.enableRestoreButton();
-            component.setHintText("");
-            // Update detail in-place so Description field context stays in sync
-            setDetail((prev) => prev ? {
-                ...prev,
-                apiKey: { ...prev.apiKey, name: newName, updatedAt: newUpdatedAt },
-            } : prev);
-        };
-
-        // Stream 1: PubSub
-        let pubsubToken: string | false = false;
-        pubsubToken = subscribe(
-            { and: [TAG_API_KEY, TAG_UPDATE] },
-            async (msg: PubSubMessage) => {
-                if (msg.data?.identifiers?.api_key !== detail.apiKey.identifier) return;
-                try {
-                    const refreshed = await getApiKeyDetail(apikeyid);
-                    if (!resolved) {
-                        finalizeSuccess(
-                            refreshed.apiKey.name,
-                            refreshed.apiKey.updatedAt,
-                        );
-                    }
-                } catch { /* consume */ }
-            },
-        );
-
-        // Stream 2: Timer (fallback re-fetch)
-        const timerId = setTimeout(async () => {
-            if (resolved) return;
-            resolved = true;
-            if (pubsubToken) unsubscribe(pubsubToken);
-
-            try {
-                const payload = await getApiKeyDetail(apikeyid);
-                if (!resolved) {
-                    finalizeSuccess(
-                        payload.apiKey.name,
-                        payload.apiKey.updatedAt,
-                    );
-                    return;
-                }
-            } catch { /* re-fetch failed */ }
-
-            component.enableSaveButton();
-            component.enableRestoreButton();
-            component.setHintText("");
-        }, 1000);
-
         component.disableSaveButton();
         component.disableRestoreButton();
 
-        // Stream 3: Server
-        try {
-            const response = await updateApiKeyMetadata(detail.apiKey.identifier, {
-                knownUpdatedAt: (ctx?.updatedAt as string) ?? detail.apiKey.updatedAt,
-                name: rawValue.trim(),
-                description: detail.apiKey.description ?? null,
-            });
-            if (!resolved) {
-                finalizeSuccess(
-                    rawValue.trim(),
-                    response.updatedAt,
-                );
-            }
-        } catch (err: any) {
-            clearTimeout(timerId);
-            if (pubsubToken) unsubscribe(pubsubToken);
-
-            if (err instanceof ApiError && err.status === 409) {
-                if (resolved) return;
+        await runSaveWithConfirmation({
+            pubsubExpression: { and: [TAG_API_KEY, TAG_UPDATE] },
+            confirmFromPubSub: async (msg) => {
+                if (msg.data?.identifiers?.api_key !== detail.apiKey.identifier) return undefined;
+                try {
+                    const refreshed = await getApiKeyDetail(apikeyid);
+                    return { value: refreshed.apiKey.name, updatedAt: refreshed.apiKey.updatedAt };
+                } catch { return undefined; }
+            },
+            confirmFromRefetch: async () => {
+                const payload = await getApiKeyDetail(apikeyid);
+                return { value: payload.apiKey.name, updatedAt: payload.apiKey.updatedAt };
+            },
+            mutate: async () => {
+                const response = await updateApiKeyMetadata(detail.apiKey.identifier, {
+                    knownUpdatedAt: (ctx?.updatedAt as string) ?? detail.apiKey.updatedAt,
+                    name: rawValue.trim(),
+                    description: detail.apiKey.description ?? null,
+                });
+                return { value: rawValue.trim(), updatedAt: response.updatedAt };
+            },
+            onSuccess: (newName, newUpdatedAt) => {
+                component.setOriginalValue(newName, { updatedAt: newUpdatedAt });
+                component.setDirty(false);
+                component.enableSaveButton();
+                component.enableRestoreButton();
+                component.setHintText("");
+                // Update detail in-place so Description field context stays in sync
+                setDetail((prev) => prev ? {
+                    ...prev,
+                    apiKey: { ...prev.apiKey, name: newName, updatedAt: newUpdatedAt },
+                } : prev);
+            },
+            onTimeoutResolved: () => {
+                component.enableSaveButton();
+                component.enableRestoreButton();
+                component.setHintText("");
+            },
+            onTimeoutFailure: () => {
+                component.enableSaveButton();
+                component.enableRestoreButton();
+                component.setHintText("");
+            },
+            onConflict: () => {
                 component.setHintText("This API key was modified by another user. Please refresh.");
                 component.setDirty(true);
                 component.enableRestoreButton();
-            } else if (!resolved) {
+            },
+            onOtherError: () => {
                 component.enableSaveButton();
                 component.enableRestoreButton();
-            }
-        }
+            },
+        });
     };
 
     const handleSaveDescription = async (
@@ -336,99 +338,62 @@ export function Component() {
 
         const ctx = component.getContext();
 
-        let resolved = false;
-
-        const finalizeSuccess = (
-            newDescription: string,
-            newUpdatedAt: string,
-        ) => {
-            if (resolved) return;
-            resolved = true;
-            clearTimeout(timerId);
-            if (pubsubToken) unsubscribe(pubsubToken);
-
-            component.setOriginalValue(newDescription, { updatedAt: newUpdatedAt });
-            component.setDirty(false);
-            component.enableSaveButton();
-            component.enableRestoreButton();
-            component.setHintText("");
-            // Update detail in-place so Name field context stays in sync
-            setDetail((prev) => prev ? {
-                ...prev,
-                apiKey: { ...prev.apiKey, description: newDescription || null, updatedAt: newUpdatedAt },
-            } : prev);
-        };
-
-        // Stream 1: PubSub
-        let pubsubToken: string | false = false;
-        pubsubToken = subscribe(
-            { and: [TAG_API_KEY, TAG_UPDATE] },
-            async (msg: PubSubMessage) => {
-                if (msg.data?.identifiers?.api_key !== detail.apiKey.identifier) return;
-                try {
-                    const refreshed = await getApiKeyDetail(apikeyid);
-                    if (!resolved) {
-                        finalizeSuccess(
-                            refreshed.apiKey.description ?? "",
-                            refreshed.apiKey.updatedAt,
-                        );
-                    }
-                } catch { /* consume */ }
-            },
-        );
-
-        // Stream 2: Timer (fallback re-fetch)
-        const timerId = setTimeout(async () => {
-            if (resolved) return;
-            resolved = true;
-            if (pubsubToken) unsubscribe(pubsubToken);
-
-            try {
-                const payload = await getApiKeyDetail(apikeyid);
-                if (!resolved) {
-                    finalizeSuccess(
-                        payload.apiKey.description ?? "",
-                        payload.apiKey.updatedAt,
-                    );
-                    return;
-                }
-            } catch { /* re-fetch failed */ }
-
-            component.enableSaveButton();
-            component.enableRestoreButton();
-            component.setHintText("");
-        }, 1000);
-
         component.disableSaveButton();
         component.disableRestoreButton();
 
-        // Stream 3: Server
-        try {
-            const response = await updateApiKeyMetadata(detail.apiKey.identifier, {
-                knownUpdatedAt: (ctx?.updatedAt as string) ?? detail.apiKey.updatedAt,
-                name: detail.apiKey.name,
-                description: rawValue.trim().length > 0 ? rawValue.trim() : null,
-            });
-            if (!resolved) {
-                finalizeSuccess(
-                    rawValue.trim().length > 0 ? rawValue.trim() : "",
-                    response.updatedAt,
-                );
-            }
-        } catch (err: any) {
-            clearTimeout(timerId);
-            if (pubsubToken) unsubscribe(pubsubToken);
-
-            if (err instanceof ApiError && err.status === 409) {
-                if (resolved) return;
+        await runSaveWithConfirmation({
+            pubsubExpression: { and: [TAG_API_KEY, TAG_UPDATE] },
+            confirmFromPubSub: async (msg) => {
+                if (msg.data?.identifiers?.api_key !== detail.apiKey.identifier) return undefined;
+                try {
+                    const refreshed = await getApiKeyDetail(apikeyid);
+                    return { value: refreshed.apiKey.description ?? "", updatedAt: refreshed.apiKey.updatedAt };
+                } catch { return undefined; }
+            },
+            confirmFromRefetch: async () => {
+                const payload = await getApiKeyDetail(apikeyid);
+                return { value: payload.apiKey.description ?? "", updatedAt: payload.apiKey.updatedAt };
+            },
+            mutate: async () => {
+                const response = await updateApiKeyMetadata(detail.apiKey.identifier, {
+                    knownUpdatedAt: (ctx?.updatedAt as string) ?? detail.apiKey.updatedAt,
+                    name: detail.apiKey.name,
+                    description: rawValue.trim().length > 0 ? rawValue.trim() : null,
+                });
+                return { value: rawValue.trim().length > 0 ? rawValue.trim() : "", updatedAt: response.updatedAt };
+            },
+            onSuccess: (newDescription, newUpdatedAt) => {
+                component.setOriginalValue(newDescription, { updatedAt: newUpdatedAt });
+                component.setDirty(false);
+                component.enableSaveButton();
+                component.enableRestoreButton();
+                component.setHintText("");
+                // Update detail in-place so Name field context stays in sync
+                setDetail((prev) => prev ? {
+                    ...prev,
+                    apiKey: { ...prev.apiKey, description: newDescription || null, updatedAt: newUpdatedAt },
+                } : prev);
+            },
+            onTimeoutResolved: () => {
+                component.enableSaveButton();
+                component.enableRestoreButton();
+                component.setHintText("");
+            },
+            onTimeoutFailure: () => {
+                component.enableSaveButton();
+                component.enableRestoreButton();
+                component.setHintText("");
+            },
+            onConflict: () => {
                 component.setHintText("This API key was modified by another user. Please refresh.");
                 component.setDirty(true);
                 component.enableRestoreButton();
-            } else if (!resolved) {
+            },
+            onOtherError: () => {
                 component.enableSaveButton();
                 component.enableRestoreButton();
-            }
-        }
+            },
+        });
     };
 
     const submitProlong = async () => {
@@ -449,7 +414,11 @@ export function Component() {
     return (
         <PageTemplate urn={meta.urn} title={meta.title} description={meta.description}>
             <PageSection title="API key details">
-                {isLoading || !detail ? (
+                {error ? (
+                    <p className="admin-config-error">{error}</p>
+                ) : notPermitted ? (
+                    <p className="admin-config-error">You are not permitted to read API key details. Required permission not granted: FP_READ_FUNCTIONAL_PERMISSIONS.</p>
+                ) : isLoading || !detail ? (
                     <p>Loading API key details...</p>
                 ) : (
                     <>
@@ -501,8 +470,12 @@ export function Component() {
                                         <button
                                             type="button"
                                             onClick={async () => {
-                                                await disableApiKey(detail.apiKey.identifier, { knownUpdatedAt: detail.apiKey.updatedAt });
-                                                await load();
+                                                try {
+                                                    await disableApiKey(detail.apiKey.identifier, { knownUpdatedAt: detail.apiKey.updatedAt });
+                                                    await load();
+                                                } catch (err) {
+                                                    setError(err instanceof Error ? err.message : "Failed to disable API key");
+                                                }
                                             }}
                                         >
                                             Disable

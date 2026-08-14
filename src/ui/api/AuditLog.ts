@@ -3,7 +3,7 @@ import { apiDelete, apiGet } from "./index.ts";
 export interface AuditEntry {
     identifier: string;
     topic: string;
-    payload: Record<string, any>;
+    payload: Record<string, unknown>;
     createdAt: string;
     updatedAt: string;
 }

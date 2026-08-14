@@ -297,21 +297,24 @@ a:hover { color: var(--at-primary-dark); }
   text-align: center;
 }
 .app-loading-title { margin: 0 0 1rem; font-size: 1.35rem; color: #0f172a; font-weight: 700; }
-.app-loading-progress-track {
+.app-loading-indeterminate-track {
   width: 100%;
   height: 12px;
   border-radius: 999px;
   background: #e2e8f0;
   overflow: hidden;
 }
-.app-loading-progress-fill {
+.app-loading-indeterminate-fill {
   height: 100%;
+  width: 40%;
   border-radius: inherit;
   background: linear-gradient(90deg, #6366f1 0%, #3b82f6 100%);
-  transition: width 0.14s ease;
+  animation: app-loading-indeterminate 1.2s ease-in-out infinite;
 }
-.app-loading-progress-text { margin-top: 0.7rem; font-size: 0.85rem; color: #475569; }
-.app-loading-hint { margin: 0.55rem 0 0; font-size: 0.75rem; color: #64748b; }
+@keyframes app-loading-indeterminate {
+  0% { transform: translateX(-100%); }
+  100% { transform: translateX(350%); }
+}
 
 /* ══════════════════════════════════════════════
    CARDS / SURFACES
@@ -1227,15 +1230,6 @@ html, body { background: var(--mui-bg); color: var(--mui-text); }
   padding: 14px 12px;
   gap: 12px;
 }
-.sidebar-upgrade-btn {
-  width: 100%;
-  border: 1px solid rgba(148, 163, 184, 0.3);
-  border-radius: 10px;
-  background: transparent;
-  color: #e2e8f0;
-  padding: 8px 10px;
-}
-.sidebar-upgrade-btn:hover { background: rgba(148, 163, 184, 0.12); }
 .sidebar-user-name { color: #f8fafc; }
 .sidebar-user-email { color: #94a3b8; }
 .sidebar-user-avatar {
@@ -1288,28 +1282,6 @@ html, body { background: var(--mui-bg); color: var(--mui-text); }
 }
 .app-topbar-search-icon { color: var(--mui-muted); font-size: 0.9rem; }
 .app-topbar-actions { gap: 10px; }
-.app-topbar-icon-btn,
-.app-topbar-avatar {
-  width: 36px;
-  height: 36px;
-  border-radius: 10px;
-  border: 1px solid var(--mui-border);
-  background: #fff;
-  color: #475569;
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
-  padding: 0;
-}
-.app-topbar-icon-btn:hover,
-.app-topbar-avatar:hover { background: #f8fafc; }
-.app-topbar-avatar {
-  border-radius: 50%;
-  background: #1e293b;
-  border-color: #1e293b;
-  color: #f8fafc;
-  font-size: 0.68rem;
-}
 
 .app-main-content {
   padding: 24px;

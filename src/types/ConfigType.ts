@@ -24,7 +24,7 @@ export const ConfigEntryInsertSchema = Type.Composite([
 export type ConfigEntryInsertType = Static<typeof ConfigEntryInsertSchema>;
 
 
-export type ConfigEntryUI = Pick<ConfigEntrySelectType, "domain" | "key" | "description" | "type" | "value" | "inputFormat" | "outputFormat" | "userProfile">;
+export type ConfigEntryUI = Pick<ConfigEntrySelectType, "domain" | "key" | "description" | "type" | "value" | "inputFormat" | "outputFormat" | "userProfile" | "updatedAt">;
 
 export function schemaForConfigType(type: ConfigEntrySelectType["type"]): TSchema {
     switch (type) {
@@ -56,7 +56,7 @@ export type ConfigListResponse = {
 
 export type ConfigUpdateRequest = {
     value: unknown;
-    knownValue: unknown;
+    knownUpdatedAt: string;
 };
 
 // --- TypeBox schemas for route validation and OpenAPI docs ---
@@ -70,6 +70,7 @@ export const ConfigEntryUiSchema = Type.Object({
     inputFormat: Type.String(),
     outputFormat: Type.String(),
     userProfile: Type.Boolean(),
+    updatedAt: Type.String(),
 }, { description: "One configuration entry in UI shape." });
 export type ConfigEntryUiSchemaType = Static<typeof ConfigEntryUiSchema>;
 
@@ -86,7 +87,7 @@ export type ConfigDomainsResponse = Static<typeof ConfigDomainsResponseSchema>;
 
 export const ConfigUpdateBodySchema = Type.Object({
     value: Type.Any({ description: "New value for the configuration entry." }),
-    knownValue: Type.Any({ description: "Last known stored value of the entry for optimistic locking. The request fails with 409 if it no longer matches the stored value." }),
+    knownUpdatedAt: Type.String({ description: "Last known updatedAt timestamp of the entry for optimistic locking. The request fails with 409 if it no longer matches the stored value." }),
 });
 export type ConfigUpdateBody = Static<typeof ConfigUpdateBodySchema>;
 
@@ -95,9 +96,3 @@ export const ConfigParamsSchema = Type.Object({
     key: Type.String({ description: "Configuration key within the domain." }),
 });
 export type ConfigParams = Static<typeof ConfigParamsSchema>;
-
-export const ConfigUpdateConflictSchema = Type.Object({
-    error: Type.String(),
-    currentValue: Type.Any(),
-}, { description: "Conflict payload containing the current stored value of the entry." });
-export type ConfigUpdateConflict = Static<typeof ConfigUpdateConflictSchema>;

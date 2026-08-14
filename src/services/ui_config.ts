@@ -1,7 +1,7 @@
 import { getConfigEntriesByKey, upsertConfigEntry } from "@/repo/ConfigRepo.ts";
 import { getUserProfileConfigEntry } from "@/repo/UserProfileConfigRepo.ts";
 import {type DBClient} from "@/services/DatabaseDriver.ts";
-import {type ConfigEntrySelectType, ConfigValueTypes} from "@/types/ConfigType.ts";
+import {type ConfigEntryInsertType, type ConfigEntrySelectType, ConfigValueTypes} from "@/types/ConfigType.ts";
 
 const DEFAULT_USER_LIST_PAGE_SIZES = [10, 20, 50] as const;
 
@@ -18,7 +18,7 @@ export const config = {
         editInUI: true,
         mandatoryForStart: false,
         userProfile: true,
-    } satisfies ConfigEntrySelectType,
+    } satisfies ConfigEntryInsertType,
 };
 
 function parsePageSizes(raw: unknown): number[] {

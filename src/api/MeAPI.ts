@@ -1,14 +1,16 @@
 import type { ApiInstance } from "@/apps/api.ts";
 import { getMyFunctionalPermissions } from "@/services/Auth.ts";
-import { Type } from "@sinclair/typebox";
 import { MeContextResponseSchema } from "@/types/AuthType.ts";
+import { InternalServerErrorResponseSchema, UnauthenticatedErrorResponseSchema } from "@/types/ApiType.ts";
 
 // noinspection JSUnusedGlobalSymbols
 export default function register(app: ApiInstance) {
     app.get("/me/context", async ({ dbClient, session, tokenClaims }) => {
         const claims = (session?.idTokenClaims ?? tokenClaims ?? {}) as Record<string, unknown>;
 
-        const functionalPermissions = await getMyFunctionalPermissions(dbClient, claims as Record<string, any>).catch(() => []);
+        // Failures propagate: a DB/permission-layer fault must surface as an error
+        // (Elysia maps it to 500), not as a legitimate-looking empty permission set.
+        const functionalPermissions = await getMyFunctionalPermissions(dbClient, claims as Record<string, any>);
 
         return {
             user: {
@@ -22,7 +24,8 @@ export default function register(app: ApiInstance) {
     }, {
         response: {
             200: MeContextResponseSchema,
-            401: Type.String({ description: "Unauthenticated. No valid session, API key, or bearer token was provided." }),
+            401: UnauthenticatedErrorResponseSchema,
+            500: InternalServerErrorResponseSchema,
         },
         detail: {
             tags: ["Auth"],

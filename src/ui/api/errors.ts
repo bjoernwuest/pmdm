@@ -1,5 +1,17 @@
 import type { RequestBundlingSignal } from "@/types/RequestBundlingType.ts";
 
+/** Pulls a human-readable error message from known response body shapes. */
+export function extractErrorMessage(body: unknown, fallback: string): string {
+    if (body && typeof body === "object") {
+        const candidate = body as { message?: unknown; error?: unknown };
+        if (typeof candidate.message === "string") return candidate.message;
+        if (typeof candidate.error === "string") return candidate.error;
+    }
+
+    if (typeof body === "string" && body.length > 0) return body;
+    return fallback;
+}
+
 /** Additional metadata attached to `ApiError` instances. */
 export interface ApiErrorOptions {
     /** Non-HTTP signal associated with the failure, such as timeout. */

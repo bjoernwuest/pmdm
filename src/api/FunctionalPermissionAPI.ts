@@ -1,19 +1,24 @@
 import type { ApiInstance } from "@/apps/api.ts";
-import { authorize } from "@/services/Auth.ts";
-import { getLoggedinUserObject } from "@/services/Auth.ts";
+import { getLoggedinUserObject, requirePermissions } from "@/services/Auth.ts";
 import {status} from "elysia";
 import { Type } from "@sinclair/typebox";
 import { FP_EDIT_FUNCTIONAL_PERMISSION_ASSIGNMENTS, FP_READ_FUNCTIONAL_PERMISSIONS, FP_READ_GROUP_FUNCTIONAL_PERMISSIONS, FP_READ_GROUPS } from "@/services/auth/FunctionalPermissions.ts";
-import { getFunctionalPermission, getFunctionalPermissionCount, getFunctionalPermissions, getGroupsAssignedToFunctionalPermission, grantFunctionalPermissionToGroup, revokeFunctionalPermissionFromGroup } from "@/repo/FunctionalPermissionRepo.ts";
+import { getFunctionalPermission, getFunctionalPermissionCount, getFunctionalPermissions, getFunctionalPermissionsPage, getGroupsAssignedToFunctionalPermission, grantFunctionalPermissionToGroup, revokeFunctionalPermissionFromGroup } from "@/repo/FunctionalPermissionRepo.ts";
 import {getGroups, getSystemUser} from "@/repo/UserRepo.ts";
 import { runInTransaction } from "@/services/DatabaseDriver.ts";
 import {
-    ErrorSchema, FunctionalPermissionDetailResponseSchema, FunctionalPermissionsResponseSchema,
+    ErrorSchema,
+    ForbiddenErrorResponseSchema,
+    FunctionalPermissionDetailResponseSchema,
+    FunctionalPermissionIdParamsSchema,
+    FunctionalPermissionsResponseSchema,
     type FunctionalPermissionDetailResponseType, type FunctionalPermissionsResponse,
     FunctionalPermissionsListSchema,
+    NotFoundErrorResponseSchema,
+    PaginationQuerySchema,
     SuccessResponseSchema,
+    UnauthenticatedErrorResponseSchema,
 } from "@/types/ApiType.ts";
-import { FunctionalPermission as FunctionalPermissionTable } from "@/schema/FunctionalPermissionSchema.ts";
 import {getUserListPageSizes} from "@/services/ui_config.ts";
 import { GroupIdentifiersBodySchema } from "@/types/FunctionalPermissionType.ts";
 
@@ -22,8 +27,8 @@ import { GroupIdentifiersBodySchema } from "@/types/FunctionalPermissionType.ts"
 export default function register(app: ApiInstance) {
     app.get("/functionalpermissions", async (context) => {
         const claims = context.session?.idTokenClaims ?? context.tokenClaims ?? {};
-        const authz = await authorize(context.dbClient, claims, [FP_READ_FUNCTIONAL_PERMISSIONS]);
-        if (!authz.some(p => p.identifier === FP_READ_FUNCTIONAL_PERMISSIONS.identifier)) return status(403, `Permission denied. Required: ${FP_READ_FUNCTIONAL_PERMISSIONS.functionalPermissionName}`);
+        const permissionCheck = await requirePermissions(context.dbClient, claims, [FP_READ_FUNCTIONAL_PERMISSIONS]);
+        if (!permissionCheck.ok) return permissionCheck.denial;
 
         const availablePageSizes = await getUserListPageSizes(context.dbClient, typeof claims.oid === "string" ? claims.oid : undefined);
         const hasPaging = context.query.page !== undefined || context.query.pageSize !== undefined;
@@ -32,7 +37,7 @@ export default function register(app: ApiInstance) {
         const page = Math.max(0, Number(context.query.page ?? 0));
         const pageSize = Math.max(1, Number(context.query.pageSize ?? availablePageSizes[0] ?? 10));
         const total = await getFunctionalPermissionCount(context.dbClient);
-        const functionalPermissions = await context.dbClient.select().from(FunctionalPermissionTable).orderBy(FunctionalPermissionTable.functionalPermissionName).offset(page * pageSize).limit(pageSize);
+        const functionalPermissions = await getFunctionalPermissionsPage(context.dbClient, { page, pageSize });
 
         return {
             functionalPermissions,
@@ -42,10 +47,11 @@ export default function register(app: ApiInstance) {
             availablePageSizes,
         } satisfies FunctionalPermissionsResponse;
     }, {
+        query: PaginationQuerySchema,
         response: {
             200: Type.Union([FunctionalPermissionsListSchema, FunctionalPermissionsResponseSchema], { description: "All functional permissions as a plain array, or a paginated result with metadata when page/pageSize are provided." }),
-            401: Type.String({ description: "Unauthenticated. No valid session, API key, or bearer token was provided." }),
-            403: Type.String({ description: "Forbidden. The authenticated principal lacks the required functional permission." }),
+            401: UnauthenticatedErrorResponseSchema,
+            403: ForbiddenErrorResponseSchema,
         },
         detail: {
             tags: ["Auth"],
@@ -80,11 +86,11 @@ export default function register(app: ApiInstance) {
     app.get("/functionalpermissions/:functionalpermissionid", async (context) => {
         const claims = context.session?.idTokenClaims ?? context.tokenClaims ?? {};
         const requiredPermissions = [FP_READ_FUNCTIONAL_PERMISSIONS, FP_READ_GROUP_FUNCTIONAL_PERMISSIONS, FP_READ_GROUPS];
-        const authz = await authorize(context.dbClient, claims, requiredPermissions);
-        if (!requiredPermissions.every(p => authz.some(ap => ap.identifier === p.identifier))) return status(403, `Permission denied. Required: ${requiredPermissions.map(p => p.functionalPermissionName).join(", ")}`);
+        const permissionCheck = await requirePermissions(context.dbClient, claims, requiredPermissions);
+        if (!permissionCheck.ok) return permissionCheck.denial;
 
         const [functionalPermission] = await getFunctionalPermission(context.dbClient, {identifier: context.params.functionalpermissionid});
-        if (!functionalPermission) return status(404, "Functional permission does not exist");
+        if (!functionalPermission) return status(404, { error: "Functional permission does not exist" });
 
         const groups = (await getGroupsAssignedToFunctionalPermission(context.dbClient, functionalPermission));
 
@@ -93,11 +99,12 @@ export default function register(app: ApiInstance) {
             grantedToGroups: groups
         } satisfies FunctionalPermissionDetailResponseType;
     }, {
+        params: FunctionalPermissionIdParamsSchema,
         response: {
             200: FunctionalPermissionDetailResponseSchema,
-            401: Type.String({ description: "Unauthenticated. No valid session, API key, or bearer token was provided." }),
-            403: Type.String({ description: "Forbidden. The authenticated principal lacks the required functional permission." }),
-            404: Type.String({ description: "Not found. The requested resource does not exist." }),
+            401: UnauthenticatedErrorResponseSchema,
+            403: ForbiddenErrorResponseSchema,
+            404: NotFoundErrorResponseSchema,
         },
         detail: {
             tags: ["Auth"],
@@ -124,29 +131,31 @@ export default function register(app: ApiInstance) {
 
     app.post("/functionalpermissions/:functionalpermissionid/groups", async (context) => {
         const claims = context.session?.idTokenClaims ?? context.tokenClaims ?? {};
-        const authz = await authorize(context.dbClient, claims, [FP_EDIT_FUNCTIONAL_PERMISSION_ASSIGNMENTS]);
-        if (!authz.some(p => p.identifier === FP_EDIT_FUNCTIONAL_PERMISSION_ASSIGNMENTS.identifier)) return status(403, `Permission denied. Required: ${FP_EDIT_FUNCTIONAL_PERMISSION_ASSIGNMENTS.functionalPermissionName}`);
+        const permissionCheck = await requirePermissions(context.dbClient, claims, [FP_EDIT_FUNCTIONAL_PERMISSION_ASSIGNMENTS]);
+        if (!permissionCheck.ok) return permissionCheck.denial;
 
         let user;
         try {
             user = await getLoggedinUserObject(context.dbClient, claims) ?? await getSystemUser(context.dbClient);
         } catch (_err) {
-            return status(500, {error: "Could not resolve user", message: _err});
+            return status(500, {error: "Could not resolve user", message: String(_err)});
         }
-        const result = await runInTransaction(context.dbClient, async (_tx) => {
-            const groups = await getGroups(_tx, context.body.groupIdentifiers.map(id => ({identifier: id})));
+        const grantOutcome = await runInTransaction(context.dbClient, async (tx) => {
+            const groups = await getGroups(tx, context.body.groupIdentifiers.map(id => ({identifier: id})));
             for (const group of groups) {
-                try { await grantFunctionalPermissionToGroup(_tx, user, group, [{identifier: context.params.functionalpermissionid}]); }
-                catch (_err) { return status(404, {error: "Could not grant", message: _err}); }
+                try { await grantFunctionalPermissionToGroup(tx, user, group, [{identifier: context.params.functionalpermissionid}]); }
+                catch (_err) { return { ok: false, reason: String(_err) } as const; }
             }
+            return { ok: true } as const;
         });
-        if (result && typeof result === "object" && "status" in result) return result;
+        if (!grantOutcome.ok) return status(404, {error: "Could not grant", message: grantOutcome.reason});
         return { success: true };
     }, {
+        params: FunctionalPermissionIdParamsSchema,
         response: {
             200: SuccessResponseSchema,
-            401: Type.String({ description: "Unauthenticated. No valid session, API key, or bearer token was provided." }),
-            403: Type.String({ description: "Forbidden. The authenticated principal lacks the required functional permission." }),
+            401: UnauthenticatedErrorResponseSchema,
+            403: ForbiddenErrorResponseSchema,
             404: ErrorSchema,
             500: ErrorSchema,
         },
@@ -176,29 +185,31 @@ export default function register(app: ApiInstance) {
 
     app.delete("/functionalpermissions/:functionalpermissionid/groups", async (context) => {
         const claims = context.session?.idTokenClaims ?? context.tokenClaims ?? {};
-        const authz = await authorize(context.dbClient, claims, [FP_EDIT_FUNCTIONAL_PERMISSION_ASSIGNMENTS]);
-        if (!authz.some(p => p.identifier === FP_EDIT_FUNCTIONAL_PERMISSION_ASSIGNMENTS.identifier)) return status(403, `Permission denied. Required: ${FP_EDIT_FUNCTIONAL_PERMISSION_ASSIGNMENTS.functionalPermissionName}`);
+        const permissionCheck = await requirePermissions(context.dbClient, claims, [FP_EDIT_FUNCTIONAL_PERMISSION_ASSIGNMENTS]);
+        if (!permissionCheck.ok) return permissionCheck.denial;
 
         let user;
         try {
             user = await getLoggedinUserObject(context.dbClient, claims) ?? await getSystemUser(context.dbClient);
         } catch (_err) {
-            return status(500, {error: "Could not resolve user", message: _err});
+            return status(500, {error: "Could not resolve user", message: String(_err)});
         }
-        const result = await runInTransaction(context.dbClient, async (_tx) => {
-            const groups = await getGroups(_tx, context.body.groupIdentifiers.map(id => ({identifier: id})));
+        const revokeOutcome = await runInTransaction(context.dbClient, async (tx) => {
+            const groups = await getGroups(tx, context.body.groupIdentifiers.map(id => ({identifier: id})));
             for (const group of groups) {
-                try { await revokeFunctionalPermissionFromGroup(_tx, user, group, [{identifier: context.params.functionalpermissionid}]); }
-                catch (_err) { return status(404, {error: "Could not revoke", message: _err}); }
+                try { await revokeFunctionalPermissionFromGroup(tx, user, group, [{identifier: context.params.functionalpermissionid}]); }
+                catch (_err) { return { ok: false, reason: String(_err) } as const; }
             }
+            return { ok: true } as const;
         });
-        if (result && typeof result === "object" && "status" in result) return result;
+        if (!revokeOutcome.ok) return status(404, {error: "Could not revoke", message: revokeOutcome.reason});
         return { success: true };
     }, {
+        params: FunctionalPermissionIdParamsSchema,
         response: {
             200: SuccessResponseSchema,
-            401: Type.String({ description: "Unauthenticated. No valid session, API key, or bearer token was provided." }),
-            403: Type.String({ description: "Forbidden. The authenticated principal lacks the required functional permission." }),
+            401: UnauthenticatedErrorResponseSchema,
+            403: ForbiddenErrorResponseSchema,
             404: ErrorSchema,
             500: ErrorSchema,
         },

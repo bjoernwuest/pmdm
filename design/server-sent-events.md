@@ -260,7 +260,7 @@ Responsibilities:
   `PATCH /api/server_sent_events/expressions`) when the set stabilises,
   handling in-flight overlaps safely via `syncInFlight` / `syncPending` flags.
 
-### `src/ui/server_sent_events.ts` – Browser EventSource Bridge
+### `src/ui/sse_bridge.ts` – Browser EventSource Bridge
 
 - Builds the SSE stream URL via `buildServerSentEventsStreamUrl()` (no
   `clientId` or `?topics=` parameter; server infers session key from auth

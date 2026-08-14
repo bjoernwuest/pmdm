@@ -1,25 +1,24 @@
 import type { ApiInstance } from "@/apps/api.ts";
-import { authorize, getLoggedinUserObject } from "@/services/Auth.ts";
+import { getLoggedinUserObject, requirePermissions } from "@/services/Auth.ts";
 import { FP_CLEAR_AUDIT_LOG, FP_READ_AUDIT_LOG } from "@/services/auth/FunctionalPermissions.ts";
 import { getAuditEntries, insertAuditEntries, clearAuditEntries } from "@/repo/AuditRepo.ts";
 import { status } from "elysia";
-import { Type } from "@sinclair/typebox";
 import { getSystemUser } from "@/repo/UserRepo.ts";
+import { runInTransaction } from "@/services/DatabaseDriver.ts";
 import { AuditLogClearResponseSchema, AuditLogResponseSchema } from "@/types/AuditEntryType.ts";
+import { AuditLogQuerySchema, ForbiddenErrorResponseSchema, InternalServerErrorResponseSchema, UnauthenticatedErrorResponseSchema } from "@/types/ApiType.ts";
 
 // noinspection JSUnusedGlobalSymbols
 export default function register(app: ApiInstance) {
     app.get("/audit-log", async (context) => {
         const claims = context.session?.idTokenClaims ?? context.tokenClaims ?? {};
-        const authz = await authorize(context.dbClient, claims, [FP_READ_AUDIT_LOG]);
-        if (!authz.some((p) => p.identifier === FP_READ_AUDIT_LOG.identifier)) {
-            return status(403, `Permission denied. Required: ${FP_READ_AUDIT_LOG.functionalPermissionName}`);
-        }
+        const permissionCheck = await requirePermissions(context.dbClient, claims, [FP_READ_AUDIT_LOG]);
+        if (!permissionCheck.ok) return permissionCheck.denial;
 
-        const page = Math.max(0, Number(context.query.page ?? 0));
-        const pageSize = Math.max(1, Number(context.query.pageSize ?? 50));
-        const jsonPathFilter = context.query.jsonPathFilter as string | undefined;
-        const search = context.query.search as string | undefined;
+        const page = Math.max(0, context.query.page ?? 0);
+        const pageSize = Math.max(1, context.query.pageSize ?? 50);
+        const jsonPathFilter = context.query.jsonPathFilter;
+        const search = context.query.search;
 
         const result = await getAuditEntries(context.dbClient, {
             jsonPathFilter: jsonPathFilter || undefined,
@@ -35,10 +34,11 @@ export default function register(app: ApiInstance) {
             total: result.total,
         };
     }, {
+        query: AuditLogQuerySchema,
         response: {
             200: AuditLogResponseSchema,
-            401: Type.String({ description: "Unauthenticated. No valid session, API key, or bearer token was provided." }),
-            403: Type.String({ description: "Forbidden. The authenticated principal lacks the required functional permission." }),
+            401: UnauthenticatedErrorResponseSchema,
+            403: ForbiddenErrorResponseSchema,
         },
         detail: {
             tags: ["Audit"],
@@ -87,27 +87,31 @@ export default function register(app: ApiInstance) {
 
     app.delete("/audit-log", async (context) => {
         const claims = context.session?.idTokenClaims ?? context.tokenClaims ?? {};
-        const authz = await authorize(context.dbClient, claims, [FP_CLEAR_AUDIT_LOG]);
-        if (!authz.some((p) => p.identifier === FP_CLEAR_AUDIT_LOG.identifier)) {
-            return status(403, `Permission denied. Required: ${FP_CLEAR_AUDIT_LOG.functionalPermissionName}`);
-        }
+        const permissionCheck = await requirePermissions(context.dbClient, claims, [FP_CLEAR_AUDIT_LOG]);
+        if (!permissionCheck.ok) return permissionCheck.denial;
 
         // Get user info for the "cleared by" entry
         const user = await getLoggedinUserObject(context.dbClient, claims) ?? await getSystemUser(context.dbClient);
 
-        const deletedCount = await clearAuditEntries(context.dbClient);
+        // Clear and record in one transaction so the "cleared by" entry cannot be lost
+        // if the insert fails after a successful delete.
+        const deletedCount = await runInTransaction(context.dbClient, async (tx) => {
+            const count = await clearAuditEntries(tx);
 
-        // Insert a new entry recording the clear action
-        await insertAuditEntries(context.dbClient, [
-            {
-                topic: "delete.audit_log_cleared",
-                payload: {
-                    action: "clear",
-                    clearedBy: user,
-                    entriesDeleted: deletedCount,
+            // Insert a new entry recording the clear action
+            await insertAuditEntries(tx, [
+                {
+                    topic: "delete.audit_log_cleared",
+                    payload: {
+                        action: "clear",
+                        clearedBy: user,
+                        entriesDeleted: count,
+                    },
                 },
-            },
-        ]);
+            ]);
+
+            return count;
+        });
 
         return { success: true, deletedCount };
     }, {
@@ -128,9 +132,9 @@ export default function register(app: ApiInstance) {
         },
         response: {
             200: AuditLogClearResponseSchema,
-            401: Type.String({ description: "Unauthenticated. No valid session, API key, or bearer token was provided." }),
-            403: Type.String({ description: "Forbidden. The authenticated principal lacks the required functional permission." }),
-            500: Type.String({ description: "Internal server error." }),
+            401: UnauthenticatedErrorResponseSchema,
+            403: ForbiddenErrorResponseSchema,
+            500: InternalServerErrorResponseSchema,
         },
     });
 }
