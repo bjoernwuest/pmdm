@@ -2,12 +2,13 @@
 
 **Precedence:** sub-directory AGENTS.md take precedence over parent AGENTS.md files; this file is the authoritative layer doc for its folder.
 
-This folder is strictly reserved for **Drizzle ORM schema definitions and their associated type constants**. All agents and automated tools must adhere to the following isolation rules.
+This folder is strictly reserved for **Drizzle ORM schema definitions**. Where possible, their associated type constants are to be imported from `@/types/<type file>.ts`. All agents and automated tools must adhere to the following isolation rules.
 
 ## 🛑 Critical Restrictions
 
 1. **Allowed Imports:**
     * You may import functions, types, and utilities exclusively from the `drizzle-orm` package and sub-packages (e.g. `drizzle-orm/pg-core`).
+    * You may import from `@/types/`, but not any `_....ts` file.
     * Internal imports (files within this exact subfolder importing each other) are permitted.
 2. **Forbidden Imports:**
     * **Absolute Prohibition:** No imports from outside this specific folder are allowed under any circumstances.

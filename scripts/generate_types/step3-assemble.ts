@@ -64,7 +64,7 @@ export async function writeGeneratedFilePair(input: FileGenerationInput): Promis
 
     if (!fs.existsSync(userPath)) {
         const scaffold =
-            `// This file is scaffolded ONCE by scripts/generator.ts. It is safe to extend\n` +
+            `// This file is scaffolded ONCE by scripts/generate_types.ts. It is safe to extend\n` +
             `// with hand-written exports (additional TypeBox schemas, types, constants, ...) —\n` +
             `// the generator only creates this file if it is missing; it will never\n` +
             `// overwrite or delete anything you add here afterwards.\n` +

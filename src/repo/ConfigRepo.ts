@@ -1,19 +1,11 @@
 import { and, eq, sql } from "drizzle-orm";
 import { Value } from "@sinclair/typebox/value";
 import { ConfigEntry } from "@/schema/ConfigSchema.ts";
-import {ConfigEntryInsertSchema, ConfigEntrySelectSchema, type ConfigEntrySelectType, type ConfigEntryInsertType} from "@/types/ConfigType.ts";
+import {ConfigEntryInsertSchema, type ConfigEntrySelectType, type ConfigEntryInsertType} from "@/types/ConfigType.ts";
 import PubSub from "@/services/PubSub.ts";
 
 import type {DBClient} from "@/services/DatabaseDriver.ts";
 import {TAG_CONFIG, TAG_CONFIGENTRY, TAG_UPSERT, TAG_AFTER} from "@/types/PubSubType.ts";
-
-/**
- * Escapes special characters in a string to make it safe for use in regular expressions to PostgreSQL.
- *
- * @param {string} In - The input string that may contain special characters.
- * @return {string} The processed string with special characters escaped.
- */
-export function regExFriendly(input: string): string { return input.replace(/[.*+?^${}()|[\]\\]/g, '\\$&'); }
 
 /**
  * Retrieves configuration entries from the database matching the specified pattern.
