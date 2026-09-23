@@ -32,6 +32,7 @@ This root file provides repo-wide guidance and a map of the repository. **Preced
 | `SQL_LOGGING` | Drizzle SQL logging (`"1"`) | unset | `src/services/Env.ts` (`sqlLogging`) |
 | `INTERNAL_API_BASE_URL` | Base URL for request-bundling loopback calls | falls back to `http://localhost:<PORT>` | `src/api/RequestBundlingAPI.ts` |
 | `BUNDLING_DEBUG` | Extra request-bundling debug logging (`"1"`) | unset | `src/api/RequestBundlingAPI.ts` |
+| `NOTIFICATIONS_DEBUG` | Detailed notifications-subsystem debug logging (`"1"`) | unset | `src/services/Env.ts` (`notificationsDebug`); `src/services/Notifications.ts` |
 | `TRUST_PROXY` | Trust `X-Forwarded-Proto`/`X-Forwarded-Host` (`"1"`) | unset ⇒ forwarded headers ignored | `src/services/Env.ts` (`trustProxy`); `src/utils/ProxyHeaders.ts`; configuration instructions in `README.md` |
 | `NODE_ENV` | Not load-bearing; exported raw only | unset | `src/services/Env.ts` (`nodeEnv`) |
 - `.gitignore` — ignore rules for generated output, local config, and template scratch files.

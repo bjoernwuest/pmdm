@@ -38,6 +38,9 @@ export const internalApiBaseUrl: string | undefined = envValue("INTERNAL_API_BAS
 /** Enables extra request-bundling debug output when set to `"1"`. */
 export const bundlingDebug: boolean = envValue("BUNDLING_DEBUG") === "1";
 
+/** Enables detailed notifications-subsystem debug output when set to `"1"`. */
+export const notificationsDebug: boolean = envValue("NOTIFICATIONS_DEBUG") === "1";
+
 /** Development mode flag; opt-in via `DEV_MODE=1`. */
 export const devMode: boolean = envValue("DEV_MODE") === "1";
 

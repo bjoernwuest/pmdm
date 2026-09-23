@@ -114,6 +114,21 @@ User notification preferences (§2.2) are also exposed through the user profile 
 
 Templates are stored as HTML strings. The `{awaiting}` and `{transitions}` placeholders are replaced with generated `<table>` fragments before sending.
 
+### 2.8 Debug Logging
+
+The notifications subsystem has a dedicated `.env` opt-in flag, independent of `DEV_MODE`:
+
+- **Variable**: `NOTIFICATIONS_DEBUG` — set to `"1"` to enable, unset (default) to stay silent.
+- **Accessor**: `notificationsDebug` in `src/services/Env.ts` (re-exported from `src/devmode.ts`).
+- **Output**: backend console only, prefixed with `[notifications]`.
+- **Scope**: startup (`init`), cron ticks, digest and out-of-sequence sends, and simulation. Logs
+  cover config values, candidate/item counts, per-user schedule matching, preference filtering,
+  explicit skip reasons (no items, viewer-only, missing email), each send attempt/failure, and
+  `LastDigestAt` updates. Email bodies are never logged in full (length only).
+
+Notification logging is gated **solely** by `NOTIFICATIONS_DEBUG`; it does not appear merely
+because `DEV_MODE=1`.
+
 ---
 
 ## 3. Functional Permission

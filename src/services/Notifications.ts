@@ -12,7 +12,15 @@ import {
 import { getGraphClient } from "@/services/EntraIDSync.ts";
 import { Cron } from "croner";
 import { type ConfigEntrySelectType, ConfigValueTypes } from "@/types/ConfigType.ts";
-import { devMode } from "@/devmode.ts";
+import { notificationsDebug } from "@/devmode.ts";
+
+function nlog(...args: unknown[]): void {
+    if (notificationsDebug) console.log("[notifications]", ...args);
+}
+
+function nwarn(...args: unknown[]): void {
+    if (notificationsDebug) console.warn("[notifications]", ...args);
+}
 
 const configDomain = "Notifications";
 export const config = {
@@ -162,6 +170,7 @@ function buildTransitionsTable(transitions: TransitionItem[], baseURL: string): 
 }
 
 async function sendEmail(fromEmail: string, toEmail: string, subject: string, htmlBody: string, db: DBClient) {
+    nlog(`sendEmail: from="${fromEmail}" to="${toEmail}" subject="${subject}" bodyLength=${htmlBody.length}`);
     const graphClient = getGraphClient(db);
     await graphClient.api(`/users/${fromEmail}/sendMail`).post({
         message: {
@@ -171,6 +180,7 @@ async function sendEmail(fromEmail: string, toEmail: string, subject: string, ht
         },
         saveToSentItems: false,
     });
+    nlog(`sendEmail: delivered to "${toEmail}"`);
 }
 
 async function readConfig(db: DBClient) {
@@ -191,16 +201,24 @@ async function getGlobalStringConfig(db: DBClient, entry: ConfigEntrySelectType)
 }
 
 export async function sendDigest(db: DBClient) {
-    if (syncRunning) return;
+    if (syncRunning) {
+        nwarn("sendDigest: skipped — previous run still active");
+        return;
+    }
     syncRunning = true;
+    nlog(`sendDigest: start at ${new Date().toISOString()}`);
     try {
         const { enabled, fromEmail } = await readConfig(db);
-        if (!enabled || !fromEmail) return;
+        if (!enabled || !fromEmail) {
+            nlog(`sendDigest: not sending (enabled=${enabled}, fromEmail="${fromEmail || ""}")`);
+            return;
+        }
 
         const lastDigestAt = await getGlobalStringConfig(db, config.cfgLastDigestAt);
         const subject = await getGlobalStringConfig(db, config.cfgSubject);
         const emailTemplate = await getGlobalStringConfig(db, config.cfgEmailTemplate);
         const baseURL = await getGlobalStringConfig(db, config.cfgBaseURL);
+        nlog(`sendDigest: config lastDigestAt="${lastDigestAt}" subject="${subject}" baseURL="${baseURL || ""}" templateLength=${emailTemplate.length}`);
 
         const transitions = lastDigestAt
             ? await getTransitionedProductRequests(db, lastDigestAt)
@@ -211,6 +229,7 @@ export async function sendDigest(db: DBClient) {
 
         const awaitingPerUser = await getAwaitingPerUser(db);
         const allUsers = await getUsersWithRelevantGroups(db);
+        nlog(`sendDigest: transitions=${transitions.length} transitionsPerUser=${transitionsPerUser.size} awaitingPerUser=${awaitingPerUser.size} candidateUsers=${allUsers.length}`);
 
         let sentCount = 0;
 
@@ -228,7 +247,9 @@ export async function sendDigest(db: DBClient) {
             const effectiveCron = userCronExpr && String(userCronExpr).length > 0 ? String(userCronExpr) : null;
             if (effectiveCron) {
                 try { new Cron(effectiveCron); } catch { /* invalid, fallback to system */ }
-                if (!cronMatchesNow(effectiveCron)) continue;
+                const matches = cronMatchesNow(effectiveCron);
+                nlog(`sendDigest: user=${user.identifier} personalSchedule="${effectiveCron}" matchesNow=${matches}`);
+                if (!matches) continue;
             }
 
             const filteredAwaitingProvide = notifyProvide ? awaiting.awaitingProvide : [];
@@ -244,10 +265,20 @@ export async function sendDigest(db: DBClient) {
 
             const hasWriteOrApprove = filteredAwaitingProvide.length > 0 || filteredAwaitingApprove.length > 0;
             const hasAnyItems = hasWriteOrApprove || filteredTransitions.length > 0;
-            if (!hasAnyItems) continue;
-            if (!hasWriteOrApprove) continue;
+            nlog(`sendDigest: user=${user.identifier} email=${user.email ?? "none"} prefs(provide=${notifyProvide},approve=${notifyApprove},importing=${notifyImporting},done=${notifyDone},cancelled=${notifyCancelled}) afterFilter(provide=${filteredAwaitingProvide.length},approve=${filteredAwaitingApprove.length},transitions=${filteredTransitions.length})`);
+            if (!hasAnyItems) {
+                nlog(`sendDigest: user=${user.identifier} skip — no items after filtering`);
+                continue;
+            }
+            if (!hasWriteOrApprove) {
+                nlog(`sendDigest: user=${user.identifier} skip — viewer-only (no provide/approve items)`);
+                continue;
+            }
 
-            if (!user.email) continue;
+            if (!user.email) {
+                nlog(`sendDigest: user=${user.identifier} skip — no email address`);
+                continue;
+            }
 
             const awaitingHtml = buildAwaitingTable(filteredAwaitingProvide, filteredAwaitingApprove, baseURL);
             const transitionsHtml = buildTransitionsTable(filteredTransitions, baseURL);
@@ -266,16 +297,17 @@ export async function sendDigest(db: DBClient) {
                 await sendEmail(fromEmail, user.email, userSubject, body, db);
                 sentCount++;
             } catch (e) {
-                if (devMode) console.warn(`Failed to send notification to ${user.email}:`, e);
+                nwarn(`sendDigest: failed to send to ${user.email}:`, e);
             }
         }
 
+        const newLastDigestAt = new Date().toISOString();
         await upsertConfigEntry(db, {
             ...config.cfgLastDigestAt,
-            value: new Date().toISOString(),
+            value: newLastDigestAt,
         });
 
-        if (devMode) console.log(`[notifications] Digest sent to ${sentCount} users`);
+        nlog(`sendDigest: complete — sent to ${sentCount} user(s), LastDigestAt="${newLastDigestAt}"`);
     } finally {
         syncRunning = false;
     }
@@ -287,10 +319,17 @@ export async function sendToUser(
     userIds?: string[],
     groupIds?: string[],
 ): Promise<number> {
+    nlog(`sendToUser: start userIds=${JSON.stringify(userIds ?? null)} groupIds=${JSON.stringify(groupIds ?? null)}`);
     const { enabled, fromEmail: cfgFrom } = await readConfig(db);
-    if (!enabled) return 0;
+    if (!enabled) {
+        nlog("sendToUser: not sending — notifications disabled");
+        return 0;
+    }
     const effectiveFrom = fromEmail || cfgFrom;
-    if (!effectiveFrom) return 0;
+    if (!effectiveFrom) {
+        nlog("sendToUser: not sending — no effective from address");
+        return 0;
+    }
 
     const subject = await getGlobalStringConfig(db, config.cfgSubject);
     const emailTemplate = await getGlobalStringConfig(db, config.cfgEmailTemplate);
@@ -317,15 +356,21 @@ export async function sendToUser(
             .from(UserGroup)
             .innerJoin(User, and(eq(UserGroup.userIdentifier, User.identifier), eq(User.disabled, false)))
             .where(inArray(UserGroup.groupIdentifier, groupIds));
+        nlog(`sendToUser: group expansion matched ${memberRows.length} membership row(s)`);
         for (const r of memberRows) targetUserIds.add(r.userId);
     }
     if (!userIds && !groupIds) {
+        nlog("sendToUser: no explicit targets — using full candidate scope");
         for (const u of allUsers) targetUserIds.add(u.identifier);
     }
+    nlog(`sendToUser: transitions=${transitions.length} awaitingPerUser=${awaitingPerUser.size} candidateUsers=${allUsers.length} targetUserIds=${targetUserIds.size}`);
 
     let sentCount = 0;
     for (const user of allUsers) {
-        if (targetUserIds.size > 0 && !targetUserIds.has(user.identifier)) continue;
+        if (targetUserIds.size > 0 && !targetUserIds.has(user.identifier)) {
+            nlog(`sendToUser: user=${user.identifier} skip — not in target set`);
+            continue;
+        }
 
         const awaiting = awaitingPerUser.get(user.identifier) ?? { awaitingProvide: [], awaitingApprove: [] };
         const userTransitions = transitionsPerUser.get(user.identifier) ?? [];
@@ -349,8 +394,15 @@ export async function sendToUser(
 
         const hasWriteOrApprove = filteredAwaitingProvide.length > 0 || filteredAwaitingApprove.length > 0;
         const hasAnyItems = hasWriteOrApprove || filteredTransitions.length > 0;
-        if (!hasAnyItems || !hasWriteOrApprove) continue;
-        if (!user.email) continue;
+        nlog(`sendToUser: user=${user.identifier} email=${user.email ?? "none"} afterFilter(provide=${filteredAwaitingProvide.length},approve=${filteredAwaitingApprove.length},transitions=${filteredTransitions.length})`);
+        if (!hasAnyItems || !hasWriteOrApprove) {
+            nlog(`sendToUser: user=${user.identifier} skip — ${!hasAnyItems ? "no items after filtering" : "viewer-only (no provide/approve items)"}`);
+            continue;
+        }
+        if (!user.email) {
+            nlog(`sendToUser: user=${user.identifier} skip — no email address`);
+            continue;
+        }
 
         const awaitingHtml = buildAwaitingTable(filteredAwaitingProvide, filteredAwaitingApprove, baseURL);
         const transitionsHtml = buildTransitionsTable(filteredTransitions, baseURL);
@@ -369,10 +421,11 @@ export async function sendToUser(
             await sendEmail(effectiveFrom, user.email, userSubject, body, db);
             sentCount++;
         } catch (e) {
-            if (devMode) console.warn(`[notifications] Failed to send to ${user.email}:`, e);
+            nwarn(`sendToUser: failed to send to ${user.email}:`, e);
         }
     }
 
+    nlog(`sendToUser: complete — sent to ${sentCount} user(s)`);
     return sentCount;
 }
 
@@ -381,6 +434,7 @@ export async function simulateEmail(
     userId?: string,
     groupId?: string,
 ): Promise<{ html: string; subject: string; simulatedFor: { type: string; identifier: string; name: string } } | { error: string }> {
+    nlog(`simulateEmail: start userId=${userId ?? "none"} groupId=${groupId ?? "none"} (preview only — no email is sent and no state is mutated)`);
     const subject = await getGlobalStringConfig(db, config.cfgSubject);
     const emailTemplate = await getGlobalStringConfig(db, config.cfgEmailTemplate);
     const baseURL = await getGlobalStringConfig(db, config.cfgBaseURL);
@@ -404,7 +458,10 @@ export async function simulateEmail(
         const { User } = await import("@/schema/UserSchema.ts");
         const { eq } = await import("drizzle-orm");
         const userRows = await db.select().from(User).where(eq(User.identifier, userId)).limit(1);
-        if (userRows.length === 0) return { error: "User not found" };
+        if (userRows.length === 0) {
+            nwarn(`simulateEmail: user ${userId} not found`);
+            return { error: "User not found" };
+        }
         simUserId = userId;
         simFirstName = userRows[0]!.firstName;
         simLastName = userRows[0]!.lastName;
@@ -414,15 +471,20 @@ export async function simulateEmail(
         const { Group } = await import("@/schema/UserSchema.ts");
         const { eq } = await import("drizzle-orm");
         const groupRows = await db.select().from(Group).where(eq(Group.identifier, groupId)).limit(1);
-        if (groupRows.length === 0) return { error: "Group not found" };
+        if (groupRows.length === 0) {
+            nwarn(`simulateEmail: group ${groupId} not found`);
+            return { error: "Group not found" };
+        }
         simUserId = `group:${groupId}`;
         simFirstName = `Member of ${groupRows[0]!.groupName}`;
         simLastName = "";
         simType = "group";
         simName = groupRows[0]!.groupName;
     } else {
+        nwarn("simulateEmail: neither userId nor groupId provided");
         return { error: "Either userId or groupId must be provided" };
     }
+    nlog(`simulateEmail: resolved ${simType} "${simName}" as ${simUserId}, transitions=${transitions.length} awaitingPerUser=${awaitingPerUser.size}`);
 
     const awaiting = awaitingPerUser.get(simUserId) ?? { awaitingProvide: [], awaitingApprove: [] };
     const userTransitions = transitionsPerUser.get(simUserId) ?? [];
@@ -460,6 +522,8 @@ export async function simulateEmail(
         .replace(/\{User\.Firstname\}/g, simFirstName)
         .replace(/\{User\.Lastname\}/g, simLastName);
 
+    nlog(`simulateEmail: rendered for ${simType} "${simName}" — afterFilter(provide=${filteredAwaitingProvide.length},approve=${filteredAwaitingApprove.length},transitions=${filteredTransitions.length}) subject="${userSubject}" bodyLength=${body.length}`);
+
     return {
         html: body,
         subject: userSubject,
@@ -472,23 +536,40 @@ export async function simulateEmail(
 }
 
 export async function init(db: DBClient) {
+    const seeded: string[] = [];
+    const existingKeys: string[] = [];
     for (const entry of Object.values(config)) {
         const existing = await getConfigEntriesByKey(db, entry.domain, entry.key, { limit: 1 });
-        if (existing.length < 1) await upsertConfigEntry(db, entry);
+        if (existing.length < 1) {
+            await upsertConfigEntry(db, entry);
+            seeded.push(entry.key);
+        } else {
+            existingKeys.push(entry.key);
+        }
     }
+    nlog(`init: config seed complete — seeded=[${seeded.join(", ")}] existing=${existingKeys.length}`);
 
-    const { enabled, cronExpr } = await readConfig(db);
-    if (!enabled || !cronExpr) {
-        if (devMode) console.log("[notifications] Not started: disabled or missing schedule");
+    const { enabled, cronExpr, fromEmail } = await readConfig(db);
+    nlog(`init: config enabled=${enabled} cronExpr="${cronExpr || ""}" fromEmail="${fromEmail || ""}"`);
+    if (!enabled) {
+        nlog("init: not started — notifications disabled");
         return;
+    }
+    if (!cronExpr) {
+        nlog("init: not started — missing schedule");
+        return;
+    }
+    if (!fromEmail) {
+        nlog("init: warning — sender address (From) is empty; sends will be skipped until configured");
     }
 
     try {
         new Cron(cronExpr, () => {
+            nlog(`init: cron tick (schedule "${cronExpr}")`);
             void sendDigest(db);
         }, { name: "Notification digest" });
-        if (devMode) console.log(`[notifications] Started with schedule: ${cronExpr}`);
+        nlog(`init: started with schedule "${cronExpr}"`);
     } catch (e) {
-        if (devMode) console.warn("[notifications] Invalid CRON expression:", e);
+        nwarn(`init: invalid CRON expression "${cronExpr}":`, e);
     }
 }
