@@ -186,7 +186,7 @@ export function Component() {
             setViewerContext(context);
             setDetail(detailPayload.lookup);
             setValues(valuesPayload.values);
-            setTotal(valuesPayload.values.length);
+            setTotal(valuesPayload.total);
             setAvailablePageSizes(valuesPayload.availablePageSizes);
             if (valuesPayload.page !== page - 1) updateQuery({ page: valuesPayload.page + 1 });
             if (!valuesPayload.availablePageSizes.includes(pageSize) && valuesPayload.availablePageSizes.length > 0) {

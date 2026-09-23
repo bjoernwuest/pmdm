@@ -15,6 +15,7 @@ import { FP_DO_CONFIGURATION, FP_MANAGE_LOOKUPS, FP_VIEW_LOOKUPS, FP_READ_PRODUC
 import { runInTransaction } from "@/services/DatabaseDriver.ts";
 import { getUserListPageSizes } from "@/services/ui_config.ts";
 import {
+    countValue,
     createValue,
     disableValue,
     enableValue,
@@ -481,8 +482,9 @@ export default function register(app: ApiInstance) {
         const pageSize = Math.max(1, Number(context.query.pageSize ?? availablePageSizes[0] ?? 10));
         const includeDisabled = parseBooleanQuery(context.query.includeDisabled);
         const values = await getValue(context.dbClient, lookup, includeDisabled, page, pageSize);
+        const total = await countValue(context.dbClient, lookup, includeDisabled);
 
-        return { values, page, pageSize, availablePageSizes, includeDisabled };
+        return { values, page, pageSize, total, availablePageSizes, includeDisabled };
     }, {
         params: t.Object({ lookupid: t.String({ format: "uuid" }) }),
         query: Type.Composite([PaginationQuerySchema, IncludeDisabledQuerySchema]),
@@ -491,6 +493,7 @@ export default function register(app: ApiInstance) {
                 values: t.Array(LookupsValuesSelectSchema),
                 page: t.Number({ minimum: 0 }),
                 pageSize: t.Number({ minimum: 1 }),
+                total: t.Number({ minimum: 0 }),
                 availablePageSizes: t.Array(t.Number({ minimum: 1 })),
                 includeDisabled: t.Boolean(),
             }, { description: "Paged lookup values with pagination metadata and disabled-inclusion flag." }),

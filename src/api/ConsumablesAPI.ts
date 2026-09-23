@@ -16,6 +16,7 @@ import { runInTransaction } from "@/services/DatabaseDriver.ts";
 import { getUserListPageSizes } from "@/services/ui_config.ts";
 import {
     ConsumableRepo,
+    countValue,
     createValue,
     disableValue,
     enableValue,
@@ -472,11 +473,13 @@ export default function register(app: ApiInstance) {
         const includeDisabled = parseBooleanQuery(context.query.includeDisabled);
         const showUsed = parseBooleanQuery(context.query.showUsed);
         const values = await getValue(context.dbClient, consumable, includeDisabled, !showUsed, page, pageSize);
+        const total = await countValue(context.dbClient, consumable, includeDisabled, !showUsed);
 
         return {
             values,
             page,
             pageSize,
+            total,
             availablePageSizes,
             includeDisabled,
             showUsed,
@@ -493,10 +496,11 @@ export default function register(app: ApiInstance) {
                 values: t.Array(ConsumablesValuesSelectSchema),
                 page: t.Number({ minimum: 0 }),
                 pageSize: t.Number({ minimum: 1 }),
+                total: t.Number({ minimum: 0 }),
                 availablePageSizes: t.Array(t.Number({ minimum: 1 })),
                 includeDisabled: t.Boolean(),
                 showUsed: t.Boolean(),
-            }, { description: "Paged consumable values with pagination metadata, disabled-inclusion flag, and used-inclusion flag." }),
+            }, { description: "Paged consumable values with pagination metadata, total count, disabled-inclusion flag, and used-inclusion flag." }),
             401: UnauthenticatedErrorResponseSchema,
             403: ForbiddenErrorResponseSchema,
             404: NotFoundErrorResponseSchema,

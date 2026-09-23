@@ -46,9 +46,18 @@ export const ConsumableRepo = { ..._ConsumableRepo, get };
  * @param db Database client instance.
  * @param consumable The consumable whose values shall be counted.
  * @param includeDisabled Whether disabled consumable values should be included.
+ * @param unusedOnly Count only values that are not assigned.
  * @returns Total number of matching consumables.
  */
-export const countValue = (db: DBClient, parent: ConsumablesSelectType, includeDisabled: boolean = false) => _count(db, ConsumablesValues, includeDisabled, eq(ConsumablesValues.consumableIdentifier, parent.identifier));
+export const countValue = (db: DBClient, parent: ConsumablesSelectType, includeDisabled: boolean = false, unusedOnly: boolean = false) => _count(
+    db,
+    ConsumablesValues,
+    includeDisabled,
+    and(
+        eq(ConsumablesValues.consumableIdentifier, parent.identifier),
+        unusedOnly ? eq(ConsumablesValues.isUsed, false) : undefined,
+    ),
+);
 
 /**
  * Retrieves consumable values with optional pagination.
