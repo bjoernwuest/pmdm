@@ -358,9 +358,10 @@ export async function getUsers(db: DBClient, userIds: IdentifierType[] = [], pag
  *
  * @param db Database client.
  * @param includeInactive Whether disabled users should be included.
+ * @param search Optional case-insensitive search across first name, last name, and email (supports `*`/`?` wildcards).
  * @returns Total number of matching users.
  */
-export async function getUserCount(db: DBClient, includeInactive: boolean = false): Promise<number> {
+export async function getUserCount(db: DBClient, includeInactive: boolean = false, search: string = ""): Promise<number> {
     const conditions: SQL[] = [];
     if (!includeInactive) conditions.push(eq(User.disabled, false));
     const searchPattern = wildcardToLikePattern(search);
