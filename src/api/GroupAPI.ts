@@ -13,6 +13,7 @@ import {
     InternalServerErrorResponseSchema,
     NotFoundErrorResponseSchema,
     PaginationQuerySchema,
+    SearchQuerySchema,
     SuccessResponseSchema,
     UnauthenticatedErrorResponseSchema,
 } from "@/types/ApiType.ts";
@@ -42,9 +43,10 @@ export default function register(app: ApiInstance) {
         const page = Math.max(0, Number(context.query.page ?? 0));
         const pageSize = Math.max(0, Number(context.query.pageSize ?? availablePageSizes[0] ?? 1));
         const includeInactive = parseBooleanQuery(context.query.includeInactive);
-        const total = await getGroupCount(context.dbClient, includeInactive);
+        const search = (context.query.search ?? "").trim();
+        const total = await getGroupCount(context.dbClient, includeInactive, search);
 
-        const groups = await getGroups(context.dbClient, undefined, {page: page, pageSize: pageSize}, includeInactive);
+        const groups = await getGroups(context.dbClient, undefined, {page: page, pageSize: pageSize}, includeInactive, search);
 
         return {
             groups,
@@ -55,7 +57,7 @@ export default function register(app: ApiInstance) {
             includeInactive,
         } satisfies GroupsResponse;
     }, {
-        query: Type.Composite([PaginationQuerySchema, IncludeInactiveQuerySchema]),
+        query: Type.Composite([PaginationQuerySchema, IncludeInactiveQuerySchema, SearchQuerySchema]),
         response: {
             200: GroupsResponseSchema,
             401: UnauthenticatedErrorResponseSchema,
@@ -64,7 +66,7 @@ export default function register(app: ApiInstance) {
         detail: {
             tags: ["Users & Groups"],
             summary: "Get paged group list",
-            description: "Retrieve a paginated list of groups with their core information. Supports filtering by active/inactive status. Requires 'FP_READ_GROUPS' permission.",
+            description: "Retrieve a paginated list of groups with their core information. Supports filtering by active/inactive status and a case-insensitive search across the group name. Requires 'FP_READ_GROUPS' permission.",
             parameters: [
                 {
                     name: "page",
@@ -86,6 +88,13 @@ export default function register(app: ApiInstance) {
                     in: "query",
                     required: false,
                     schema: { type: "string", enum: ["true", "1", "false", "0"], default: "false" },
+                },
+                {
+                    name: "search",
+                    description: "Case-insensitive search across the group name. Matches anywhere in the text and supports '*' (zero or more characters) and '?' (single character) wildcards.",
+                    in: "query",
+                    required: false,
+                    schema: { type: "string", maxLength: 200 },
                 },
                 {
                     name: "X-API-Key",

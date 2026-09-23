@@ -3,9 +3,10 @@ import type { GroupsResponse, GroupFunctionalPermissionResponseType, SuccessResp
 import type { FunctionalPermissionSelectType } from "@/types/FunctionalPermissionType.ts";
 
 /** Paged group list. `page` is zero-based, matching the server contract. */
-export async function getGroups(page: number, pageSize: number, includeInactive: boolean): Promise<GroupsResponse> {
+export async function getGroups(page: number, pageSize: number, includeInactive: boolean, search: string = ""): Promise<GroupsResponse> {
     const params = new URLSearchParams({ page: String(page), pageSize: String(pageSize) });
     if (includeInactive) params.set("includeInactive", "true");
+    if (search) params.set("search", search);
     return apiGet<GroupsResponse>(`/api/groups?${params.toString()}`);
 }
 

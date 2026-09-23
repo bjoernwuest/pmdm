@@ -125,6 +125,14 @@ export const IncludeDisabledQuerySchema = Type.Object({
     ], { description: "Include disabled API keys. Accepts 'true'/'1' (true) or 'false'/'0' (false)." })),
 });
 
+/** Optional free-text `search` term for paged list endpoints, supporting '*' and '?' wildcards. */
+export const SearchQuerySchema = Type.Object({
+    search: Type.Optional(Type.String({
+        maxLength: 200,
+        description: "Case-insensitive substring match; supports '*' (zero or more chars) and '?' (single char).",
+    })),
+});
+
 /** Path parameter schemas for the UUID-identified detail routes. */
 export const UserIdParamsSchema = Type.Object({ userid: Type.String({ format: "uuid", description: "UUID of the user." }) });
 export const GroupIdParamsSchema = Type.Object({ groupid: Type.String({ format: "uuid", description: "UUID of the group." }) });

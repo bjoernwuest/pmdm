@@ -9,6 +9,7 @@ import {
     IncludeInactiveQuerySchema,
     NotFoundErrorResponseSchema,
     PaginationQuerySchema,
+    SearchQuerySchema,
     type UserDetailsResponse,
     UserDetailsResponseSchema,
     UnauthenticatedErrorResponseSchema,
@@ -36,9 +37,10 @@ export default function register(app: ApiInstance) {
         const page = Math.max(0, Number(context.query.page ?? 0));
         const pageSize = Math.max(0, Number(context.query.pageSize ?? availablePageSizes[0] ?? 1));
         const includeInactive = parseBooleanQuery(context.query.includeInactive);
-        const total = await getUserCount(context.dbClient, includeInactive);
+        const search = (context.query.search ?? "").trim();
+        const total = await getUserCount(context.dbClient, includeInactive, search);
 
-        const users = await getUsers(context.dbClient, undefined, {page: page, pageSize: pageSize}, includeInactive);
+        const users = await getUsers(context.dbClient, undefined, {page: page, pageSize: pageSize}, includeInactive, search);
 
         return {
             users,
@@ -49,7 +51,7 @@ export default function register(app: ApiInstance) {
             includeInactive,
         } satisfies UsersResponse;
     }, {
-        query: Type.Composite([PaginationQuerySchema, IncludeInactiveQuerySchema]),
+        query: Type.Composite([PaginationQuerySchema, IncludeInactiveQuerySchema, SearchQuerySchema]),
         response: {
             200: UsersResponseSchema,
             401: UnauthenticatedErrorResponseSchema,
@@ -58,7 +60,7 @@ export default function register(app: ApiInstance) {
         detail: {
             tags: ["Users & Groups"],
             summary: "Get paged user list",
-            description: "Retrieve a paginated list of users with their core information. Supports filtering by active/inactive status. Requires 'FP_READ_USERS' permission.",
+            description: "Retrieve a paginated list of users with their core information. Supports filtering by active/inactive status and a case-insensitive search across first name, last name, and email. Requires 'FP_READ_USERS' permission.",
             parameters: [
                 {
                     name: "page",
@@ -80,6 +82,13 @@ export default function register(app: ApiInstance) {
                     in: "query",
                     required: false,
                     schema: { type: "string", enum: ["true", "1", "false", "0"], default: "false" },
+                },
+                {
+                    name: "search",
+                    description: "Case-insensitive search across first name, last name, and email. Matches anywhere in the text and supports '*' (zero or more characters) and '?' (single character) wildcards.",
+                    in: "query",
+                    required: false,
+                    schema: { type: "string", maxLength: 200 },
                 },
                 {
                     name: "X-API-Key",

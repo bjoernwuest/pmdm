@@ -4,7 +4,9 @@ import { User, Group, UserGroup } from "@/schema/UserSchema.ts";
 import type { UserSelectType, UserInsertType, GroupInsertType, GroupSelectType } from "@/types/UserType.ts";
 import { Type } from "@sinclair/typebox";
 import { devMode } from "@/devmode.ts";
-import { and, or, eq, ne, inArray, sql } from "drizzle-orm";
+import { and, or, eq, ne, inArray, ilike, sql } from "drizzle-orm";
+import type { SQL } from "drizzle-orm";
+import { wildcardToLikePattern } from "@/utils/likePattern.ts";
 import PubSub from "@/services/PubSub.ts";
 import {
     TAG_USER,
@@ -329,26 +331,26 @@ export async function countUsersAndGroups(db: DBClient, includeInactive: boolean
  * @param {{page: number, pageSize: number}} page - Request specific result page. Only works if userIds is not given.
  * @return {Promise<UserSelectType[]>} A promise that resolves to an array of user objects matching the provided identifiers.
  */
-export async function getUsers(db: DBClient, userIds: IdentifierType[] = [], page: {page: number, pageSize: number} | undefined = undefined, includeInactive: boolean = false): Promise<UserSelectType[]> {
+export async function getUsers(db: DBClient, userIds: IdentifierType[] = [], page: {page: number, pageSize: number} | undefined = undefined, includeInactive: boolean = false, search: string = ""): Promise<UserSelectType[]> {
     if (devMode) console.log("Fetching users by identifiers...");
     if (!Value.Check(Type.Array(IdentifierSchema), userIds as unknown)) throw new Error("Invalid user identifiers provided.");
 
-    // If specific IDs provided, filter by those; also apply active-filter only when includeInactive is false
-    if (0 < userIds.length) {
-        const ids = userIds.map(i => i.identifier);
-        if (includeInactive) return (await db.select().from(User).where(inArray(User.identifier, ids))) satisfies UserSelectType[];
-        return (await db.select().from(User).where(and(eq(User.disabled, false), inArray(User.identifier, ids)))) satisfies UserSelectType[];
+    const conditions: SQL[] = [];
+    if (!includeInactive) conditions.push(eq(User.disabled, false));
+    if (0 < userIds.length) conditions.push(inArray(User.identifier, userIds.map(i => i.identifier)));
+    const searchPattern = wildcardToLikePattern(search);
+    if (searchPattern) {
+        const searchCondition = or(ilike(User.firstName, searchPattern), ilike(User.lastName, searchPattern), ilike(User.email, searchPattern));
+        if (searchCondition) conditions.push(searchCondition);
     }
+    const whereClause = conditions.length > 0 ? and(...conditions) : undefined;
 
     // If paging is given
     if (page) {
-        if (includeInactive) return (await db.select().from(User).orderBy(User.identifier).offset(Math.max(0, page.page) * Math.max(0, page.pageSize)).limit(Math.max(0, page.pageSize))) satisfies UserSelectType[];
-        return (await db.select().from(User).where(eq(User.disabled, false)).orderBy(User.identifier).offset(Math.max(0, page.page) * Math.max(0, page.pageSize)).limit(Math.max(0, page.pageSize))) satisfies UserSelectType[];
+        return (await db.select().from(User).where(whereClause).orderBy(User.identifier).offset(Math.max(0, page.page) * Math.max(0, page.pageSize)).limit(Math.max(0, page.pageSize))) satisfies UserSelectType[];
     }
 
-    // No specific IDs: return all or only active depending on includeInactive
-    if (includeInactive) return (await db.select().from(User)) satisfies UserSelectType[];
-    return (await db.select().from(User).where(eq(User.disabled, false))) satisfies UserSelectType[];
+    return (await db.select().from(User).where(whereClause)) satisfies UserSelectType[];
 }
 
 /**
@@ -359,7 +361,14 @@ export async function getUsers(db: DBClient, userIds: IdentifierType[] = [], pag
  * @returns Total number of matching users.
  */
 export async function getUserCount(db: DBClient, includeInactive: boolean = false): Promise<number> {
-    const [countRow] = await db.select({ c: sql<number>`count(*)` }).from(User).where(includeInactive ? undefined : eq(User.disabled, false));
+    const conditions: SQL[] = [];
+    if (!includeInactive) conditions.push(eq(User.disabled, false));
+    const searchPattern = wildcardToLikePattern(search);
+    if (searchPattern) {
+        const searchCondition = or(ilike(User.firstName, searchPattern), ilike(User.lastName, searchPattern), ilike(User.email, searchPattern));
+        if (searchCondition) conditions.push(searchCondition);
+    }
+    const [countRow] = await db.select({ c: sql<number>`count(*)` }).from(User).where(conditions.length > 0 ? and(...conditions) : undefined);
     return Number(countRow?.c ?? 0);
 }
 
@@ -381,24 +390,25 @@ export async function getGroup(db: DBClient, groupId: IdentifierType) { return a
  * @return {Promise<GroupSelectType[]>} A promise that resolves to an array of groups matching the provided identifiers.
  * @throws {Error} If the provided group identifiers are invalid.
  */
-export async function getGroups(db: DBClient, groupIds: IdentifierType[] = [], page: {page: number, pageSize: number} | undefined = undefined, includeInactive: boolean = false): Promise<GroupSelectType[]> {
+export async function getGroups(db: DBClient, groupIds: IdentifierType[] = [], page: {page: number, pageSize: number} | undefined = undefined, includeInactive: boolean = false, search: string = ""): Promise<GroupSelectType[]> {
     if (devMode) console.log("Fetching groups by identifiers...");
     if (!Value.Check(Type.Array(IdentifierSchema), groupIds as unknown)) throw new Error("Invalid group identifiers provided.");
 
-    if (0 < groupIds.length) {
-        const ids = groupIds.map(i => i.identifier);
-        if (includeInactive) return (await db.select().from(Group).where(inArray(Group.identifier, ids))) satisfies GroupSelectType[];
-        return (await db.select().from(Group).where(and(eq(Group.disabled, false), inArray(Group.identifier, ids)))) satisfies GroupSelectType[];
-    }
+    const conditions: SQL[] = [];
+    if (!includeInactive) conditions.push(eq(Group.disabled, false));
+    if (0 < groupIds.length) conditions.push(inArray(Group.identifier, groupIds.map(i => i.identifier)));
+    const searchPattern = wildcardToLikePattern(search);
+    if (searchPattern) conditions.push(ilike(Group.groupName, searchPattern));
+    const whereClause = conditions.length > 0 ? and(...conditions) : undefined;
 
     // If paging is given
     if (page) {
         if (includeInactive) return (await db.select().from(Group).orderBy(Group.identifier).offset(Math.max(0, page.page) * Math.max(0, page.pageSize)).limit(Math.max(0, page.pageSize))) satisfies GroupSelectType[];
-        return (await db.select().from(Group).where(eq(Group.disabled, false)).orderBy(Group.identifier).offset(Math.max(0, page.page) * Math.max(0, page.pageSize)).limit(Math.max(0, page.pageSize))) satisfies GroupSelectType[];
+        return (await db.select().from(Group).where(whereClause).orderBy(Group.identifier).offset(Math.max(0, page.page) * Math.max(0, page.pageSize)).limit(Math.max(0, page.pageSize))) satisfies GroupSelectType[];
     }
 
     if (includeInactive) return (await db.select().from(Group)) satisfies GroupSelectType[];
-    return (await db.select().from(Group).where(eq(Group.disabled, false))) satisfies GroupSelectType[];
+    return (await db.select().from(Group).where(whereClause)) satisfies GroupSelectType[];
 }
 
 /**
@@ -408,8 +418,12 @@ export async function getGroups(db: DBClient, groupIds: IdentifierType[] = [], p
  * @param includeInactive Whether disabled groups should be included.
  * @returns Total number of matching groups.
  */
-export async function getGroupCount(db: DBClient, includeInactive: boolean = false): Promise<number> {
-    const [countRow] = await db.select({ c: sql<number>`count(*)` }).from(Group).where(includeInactive ? undefined : eq(Group.disabled, false));
+export async function getGroupCount(db: DBClient, includeInactive: boolean = false, search: string = ""): Promise<number> {
+    const conditions: SQL[] = [];
+    if (!includeInactive) conditions.push(eq(Group.disabled, false));
+    const searchPattern = wildcardToLikePattern(search);
+    if (searchPattern) conditions.push(ilike(Group.groupName, searchPattern));
+    const [countRow] = await db.select({ c: sql<number>`count(*)` }).from(Group).where(conditions.length > 0 ? and(...conditions) : undefined);
     return Number(countRow?.c ?? 0);
 }
 

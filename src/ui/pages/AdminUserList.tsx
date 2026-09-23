@@ -1,5 +1,6 @@
 import { useEffect, useRef, useState } from "react";
 import { useLocation, useNavigate } from "react-router-dom";
+import { InputText } from "primereact/inputtext";
 import Toggle from "@/ui/components/Toggle";
 import Label, { type LabelHandle } from "@/ui/components/Label";
 import { PageTemplate, PageSection } from "@/ui/PageTemplate.tsx";
@@ -38,12 +39,30 @@ export function Component() {
         page,
         pageSize,
         showDisabled: showDisabledUsers,
+        search,
         availablePageSizes,
         total,
         setAvailablePageSizes,
         setTotal,
         updateQuery,
     } = useAdminListQuery();
+    const [searchInput, setSearchInput] = useState(search);
+
+    // Keep the local input in sync with the URL (e.g. browser back/forward), without
+    // clobbering in-progress typing.
+    useEffect(() => {
+        setSearchInput((current) => (current.trim() === search ? current : search));
+    }, [search]);
+
+    // Debounced as-you-type commit of the search term to the URL, resetting to page 1.
+    useEffect(() => {
+        const trimmed = searchInput.trim();
+        if (trimmed === search) return;
+        const timer = setTimeout(() => {
+            updateQuery({ search: trimmed, page: 1 });
+        }, 300);
+        return () => clearTimeout(timer);
+    }, [searchInput, search, updateQuery]);
 
     // --- Label refs for pubsub-driven updates ---
     interface UserLabelRefs {
@@ -122,7 +141,7 @@ export function Component() {
             const setLoading = page === 1 && users.length === 0 ? setIsLoading : setIsPageLoading;
             setLoading(true);
             try {
-                const payload = await getUsers(page - 1, pageSize, showDisabledUsers);
+                const payload = await getUsers(page - 1, pageSize, showDisabledUsers, search);
                 if (!cancelled) {
                     setUsers(payload.users);
                     if (payload.page !== page - 1) updateQuery({ page: payload.page + 1 });
@@ -148,7 +167,7 @@ export function Component() {
         return () => {
             cancelled = true;
         };
-    }, [page, pageSize, showDisabledUsers]);
+    }, [page, pageSize, showDisabledUsers, search]);
 
     return (
         <PageTemplate urn={meta.urn} title={meta.title} description={meta.description}>
@@ -162,6 +181,15 @@ export function Component() {
                         options={[{ value: true, label: "Show disabled users" }, { value: false, label: "Hide disabled users" }]}
                         onChange={(t) => updateQuery({ showDisabled: t.getValue(), page: 1 })}
                     />
+                    <label style={{ display: "flex", alignItems: "center", gap: "6px" }}>
+                        <span>Search</span>
+                        <InputText
+                            value={searchInput}
+                            onChange={(event) => setSearchInput(event.target.value)}
+                            placeholder="Search first name, last name or email..."
+                            style={{ width: "260px" }}
+                        />
+                    </label>
                 </div>
 
                 {isLoading || isPageLoading ? (

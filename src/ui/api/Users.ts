@@ -2,9 +2,10 @@ import { apiGet } from "./index.ts";
 import type { UsersResponse, UserDetailsResponse } from "@/types/ApiType.ts";
 
 /** Paged user list. `page` is zero-based, matching the server contract. */
-export async function getUsers(page: number, pageSize: number, includeInactive: boolean): Promise<UsersResponse> {
+export async function getUsers(page: number, pageSize: number, includeInactive: boolean, search: string = ""): Promise<UsersResponse> {
     const params = new URLSearchParams({ page: String(page), pageSize: String(pageSize) });
     if (includeInactive) params.set("includeInactive", "true");
+    if (search) params.set("search", search);
     return apiGet<UsersResponse>(`/api/users?${params.toString()}`);
 }
 
