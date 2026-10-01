@@ -404,11 +404,9 @@ export async function getGroups(db: DBClient, groupIds: IdentifierType[] = [], p
 
     // If paging is given
     if (page) {
-        if (includeInactive) return (await db.select().from(Group).orderBy(Group.identifier).offset(Math.max(0, page.page) * Math.max(0, page.pageSize)).limit(Math.max(0, page.pageSize))) satisfies GroupSelectType[];
         return (await db.select().from(Group).where(whereClause).orderBy(Group.identifier).offset(Math.max(0, page.page) * Math.max(0, page.pageSize)).limit(Math.max(0, page.pageSize))) satisfies GroupSelectType[];
     }
 
-    if (includeInactive) return (await db.select().from(Group)) satisfies GroupSelectType[];
     return (await db.select().from(Group).where(whereClause)) satisfies GroupSelectType[];
 }
 
