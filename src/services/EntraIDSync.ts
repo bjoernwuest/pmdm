@@ -12,6 +12,7 @@ import PubSub from "./PubSub.ts";
 import { TAG_AUTH_SESSION, TAG_LOGIN } from "../types/PubSubType";
 import {type ConfigEntrySelectType, ConfigValueTypes, type ConfigEntryInsertType} from "@/types/ConfigType.ts";
 import type {GroupInsertType, UserInsertType} from "@/types/UserType.ts";
+import { isDeltaTokenExpiredError } from "@/utils/graphErrors.ts";
 
 // Config keys (single source of truth)
 const configDomain = "EntraID";
@@ -91,9 +92,12 @@ type GroupDeltaResult = { newOrUpdated: DeltaGroup[]; deletedIds: IdentifierType
 async function fetchUserDelta(MSGraphQLClient: Client, DBClient: DBClient): Promise<UserDeltaResult> {
     type DeltaUserResponse = { value?: DeltaUser[]; "@odata.nextLink"?: string; "@odata.deltaLink"?: string };
 
+    const FULL_LOAD_PATH = '/users/delta?$select=id,mail,userPrincipalName,givenName,surname,accountEnabled';
     const deltaCfg = (await getConfigEntriesByKey(DBClient, config.cfgSyncDeltalinkUsers.domain, config.cfgSyncDeltalinkUsers.key))[0];
     let didFullLoad = deltaCfg == null || deltaCfg.value == null;
-    let nextLink: string | undefined = (deltaCfg && deltaCfg.value ? String(deltaCfg.value) : null) ?? '/users/delta?$select=id,mail,userPrincipalName,givenName,surname,accountEnabled';
+    let nextLink: string | undefined = (deltaCfg && deltaCfg.value ? String(deltaCfg.value) : null) ?? FULL_LOAD_PATH;
+    // Only a run started from a stored delta token may fall back to a full load, and only once.
+    let allowFullSyncFallback = !didFullLoad;
 
     const newOrUpdated: Set<DeltaUser> = new Set();
     const deletedIds: Set<IdentifierType> = new Set();
@@ -109,9 +113,15 @@ async function fetchUserDelta(MSGraphQLClient: Client, DBClient: DBClient): Prom
             }
             nextLink = res["@odata.nextLink"];
         } catch (mqlError: any) {
-            if (mqlError.statusCode === 410 && mqlError.code === "SyncStateNotFound") {
-                nextLink = '/users/delta?$select=id,mail,userPrincipalName,givenName,surname,accountEnabled';
+            if (allowFullSyncFallback && isDeltaTokenExpiredError(mqlError)) {
+                if (devMode) console.warn("Stored EntraID delta link is no longer valid; falling back to a full user sync.");
+                nextLink = FULL_LOAD_PATH;
                 didFullLoad = true;
+                allowFullSyncFallback = false;
+                // The full load re-delivers every entity, so drop partial delta results to
+                // avoid duplicate rows in the set-based upsert.
+                newOrUpdated.clear();
+                deletedIds.clear();
             } else throw mqlError;
         }
     } while (nextLink);
@@ -260,9 +270,12 @@ async function fetchGroupDelta(MSGraphQLClient: Client, DBClient: DBClient): Pro
     // Graph delta/page response types
     type DeltaGroupResponse = { value?: DeltaGroup[]; "@odata.nextLink"?: string; "@odata.deltaLink"?: string };
 
+    const FULL_LOAD_PATH = '/groups/delta?$select=id,displayName';
     const deltaCfg = (await getConfigEntriesByKey(DBClient, config.cfgSyncDeltalinkGroups.domain, config.cfgSyncDeltalinkGroups.key))[0];
     let didFullLoad = deltaCfg == null || deltaCfg.value == null;
-    let nextLink: string | undefined = (deltaCfg && deltaCfg.value ? String(deltaCfg.value) : null) ?? '/groups/delta?$select=id,displayName';
+    let nextLink: string | undefined = (deltaCfg && deltaCfg.value ? String(deltaCfg.value) : null) ?? FULL_LOAD_PATH;
+    // Only a run started from a stored delta token may fall back to a full load, and only once.
+    let allowFullSyncFallback = !didFullLoad;
 
     const newOrUpdated = new Set<DeltaGroup>();
     const deletedIds = new Set<IdentifierType>();
@@ -278,9 +291,15 @@ async function fetchGroupDelta(MSGraphQLClient: Client, DBClient: DBClient): Pro
             }
             nextLink = res["@odata.nextLink"];
         } catch (mqlError: any) {
-            if (mqlError.statusCode === 410 && mqlError.code === "SyncStateNotFound") {
-                nextLink = "/groups?$select=id,displayName";
+            if (allowFullSyncFallback && isDeltaTokenExpiredError(mqlError)) {
+                if (devMode) console.warn("Stored EntraID delta link is no longer valid; falling back to a full group sync.");
+                nextLink = FULL_LOAD_PATH;
                 didFullLoad = true;
+                allowFullSyncFallback = false;
+                // The full load re-delivers every entity, so drop partial delta results to
+                // avoid duplicate rows in the set-based upsert.
+                newOrUpdated.clear();
+                deletedIds.clear();
             } else throw mqlError;
         }
     } while (nextLink);
