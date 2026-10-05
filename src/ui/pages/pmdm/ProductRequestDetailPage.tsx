@@ -911,7 +911,7 @@ export function Component() {
     // Whether the current user may edit the value of a row
     const canEditRow = (row: any): boolean => isOpen && (
         row.userRoles?.includes("writer") ||
-        (row.requestorCanEdit && request.createdBy === row.createdBy)
+        (row.requestorCanEdit && request.isCreator === true)
     ) && (!isUpdateRequest || row.editableOnUpdate);
 
     // Data type info tooltip helpers

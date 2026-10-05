@@ -268,13 +268,15 @@ Core query. Returns a map from user ID to their awaiting items.
 ```
 For each open PR (with productType PT):
   For each data type DT assigned to this PR (from product_requests_values):
-    a. Find groups with writer/approver role in ProductTypesDataTypePermission (PT-level, overrides)
-    b. If not found in PT-level, fall back to DataTypePermission (data-type-level)
-    c. Map groups → users via user_groups
+    a. Find groups with writer/approver role in ProductTypesDataTypePermission (PT-level)
+    b. Find groups with writer/approver role in DataTypePermission (DT-level)
+    c. Union both group sets (same semantics as the permission concept's edit
+       path — buildPermissionLookup/getEffectivePermissions), then map groups → users via user_groups
     
     For each writer-user:
       Check: is value null (needs value)?
-        AND is the user the creator with requestorCanEdit? OR has writer role?
+        AND (has writer role? OR (is the user the creator with requestorCanEdit
+             AND holds at least one role on the data type — mirroring the edit-path gate))?
         AND (if update request) editableOnUpdate is true?
       → If yes, add PR to user's "awaitingProvide"
     
@@ -297,7 +299,8 @@ Given a list of transition events (from §5.1), determines which users should be
 
 For each transitioned PR (with productType PT):
   For each data type DT in the PR:
-    Resolve groups with **any** permission — viewer, writer, or approver (PT-level → DT-level fallback)
+    Resolve groups with **any** permission — viewer, writer, or approver
+    (union of PT-level and DT-level grants, matching the permission concept's edit path)
     Map groups → users
     Add PR to each identified user's transition list
 

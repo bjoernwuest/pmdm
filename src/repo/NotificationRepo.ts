@@ -6,7 +6,8 @@ import { DataTypeKind } from "@/types/DataTypeType.ts";
 import { User, UserGroup, Group } from "@/schema/UserSchema.ts";
 import { eq, and, inArray, sql } from "drizzle-orm";
 
-import { isEmptyValue } from "@/repo/ProductRequestRepo.ts";
+import { isEmptyValue, resolveRequestorCanEdit } from "@/repo/ProductRequestRepo.ts";
+import * as ScriptEngine from "@/services/ScriptEngine.ts";
 
 export type AwaitingItem = {
     requestId: string;
@@ -18,6 +19,7 @@ export type TransitionItem = {
     requestId: string;
     productNumber: string;
     newStatus: string;
+    productType: string;
     productTypeName: string;
 };
 
@@ -52,6 +54,7 @@ export async function getTransitionedProductRequests(
         requestId: r.requestId!,
         productNumber: r.productNumber,
         newStatus: r.status,
+        productType: r.productType!,
         productTypeName: r.productTypeName ?? "",
     }));
 }
@@ -72,14 +75,15 @@ export async function getAwaitingPerUser(
             productType: ProductRequests.productType,
             productToUpdate: ProductRequests.productToUpdate,
             productTypeName: ProductTypes.name,
+            createdBy: ProductRequests.createdBy,
+            creatorDisabled: User.disabled,
         })
         .from(ProductRequests)
         .leftJoin(ProductTypes, eq(ProductRequests.productType, ProductTypes.identifier))
+        .leftJoin(User, eq(ProductRequests.createdBy, User.identifier))
         .where(eq(ProductRequests.status, "open"));
 
     if (openPRs.length === 0) return result;
-
-    const productTypes = [...new Set(openPRs.map((p) => p.productType!))];
 
     for (const pr of openPRs) {
         const values = await db
@@ -89,7 +93,12 @@ export async function getAwaitingPerUser(
                 approvedBy: ProductRequestsValues.approvedBy,
                 dataTypeKind: DataTypeSchema.kind,
                 dataTypeConfig: DataTypeSchema.config,
+                requestorCanEdit: DataTypeSchema.requestorCanEdit,
+                requestorCanEditScript: DataTypeSchema.requestorCanEdit_script,
                 ptConfig: ProductTypesDataTypes.config,
+                ptRequestorCanEdit: ProductTypesDataTypes.requestorCanEdit,
+                ptRequestorCanEditScript: ProductTypesDataTypes.requestorCanEdit_script,
+                ptEditableOnUpdate: ProductTypesDataTypes.editableOnUpdate,
             })
             .from(ProductRequestsValues)
             .innerJoin(DataTypeSchema, eq(ProductRequestsValues.dataType, DataTypeSchema.identifier))
@@ -101,6 +110,17 @@ export async function getAwaitingPerUser(
 
         const isUpdateRequest = !!pr.productToUpdate;
 
+        // Script context for requestorCanEdit evaluations of the request
+        // creator (built once per PR; resolveRequestorCanEdit scopes per data type).
+        const creatorActive = pr.createdBy != null && pr.creatorDisabled !== true;
+        const creatorCtx = creatorActive
+            ? ScriptEngine.buildContext(db, {
+                cause: "product_request_update",
+                productRequestIdentifier: pr.requestId!,
+                principal: { userId: pr.createdBy, apiKeyIdentifier: null, isApiKey: false },
+            })
+            : null;
+
         for (const v of values) {
             const dtId = v.dataType!;
 
@@ -108,10 +128,36 @@ export async function getAwaitingPerUser(
             const approverUserIds = await resolveUsersWithRole(db, pr.productType!, dtId, "approver");
 
             const resolvedConfig = { ...((v.dataTypeConfig ?? {}) as Record<string, unknown>), ...((v.ptConfig ?? {}) as Record<string, unknown>) };
+            const isEmpty = isEmptyValue(v.value, v.dataTypeKind!, resolvedConfig);
+            // For update requests, values not editable on update never need input
+            const provideGateOpen = !isUpdateRequest || (v.ptEditableOnUpdate ?? true);
 
             for (const userId of writerUserIds) {
-                if (isEmptyValue(v.value, v.dataTypeKind!, resolvedConfig)) {
+                if (provideGateOpen && isEmpty) {
                     addToResult(result, userId, "awaitingProvide", {
+                        requestId: pr.requestId!,
+                        productNumber: pr.productNumber,
+                        productTypeName: pr.productTypeName ?? "",
+                    });
+                }
+            }
+
+            // The request creator may provide values without writer role when
+            // requestorCanEdit resolves to true and they hold at least one role
+            // on the data type (mirrors the edit-path gate).
+            if (provideGateOpen && isEmpty && creatorCtx && pr.createdBy) {
+                const viewerUserIds = await resolveUsersWithRole(db, pr.productType!, dtId, "viewer");
+                const creatorHasAnyRole = writerUserIds.includes(pr.createdBy)
+                    || approverUserIds.includes(pr.createdBy)
+                    || viewerUserIds.includes(pr.createdBy);
+                const reqEdit = creatorHasAnyRole && await resolveRequestorCanEdit(
+                    db,
+                    v.requestorCanEdit, v.requestorCanEditScript,
+                    v.ptRequestorCanEdit ?? null, v.ptRequestorCanEditScript ?? null,
+                    creatorCtx, dtId,
+                );
+                if (reqEdit) {
+                    addToResult(result, pr.createdBy, "awaitingProvide", {
                         requestId: pr.requestId!,
                         productNumber: pr.productNumber,
                         productTypeName: pr.productTypeName ?? "",
@@ -136,7 +182,9 @@ export async function getAwaitingPerUser(
 
 /**
  * Resolves user IDs that have a given role on a data type within a product type context.
- * Checks ProductTypesDataTypePermission first, falls back to DataTypePermission.
+ * Uses the same union semantics as the permission concept's edit path
+ * ({@link buildPermissionLookup} / getEffectivePermissions in ProductRequestRepo.ts):
+ * a user holds the role when ANY of their groups grants it at PT level OR at DT level.
  */
 async function resolveUsersWithRole(
     db: DBClient,
@@ -155,7 +203,7 @@ async function resolveUsersWithRole(
         )
         .limit(1);
 
-    let groupIds: string[] = [];
+    const groupIds = new Set<string>();
 
     if (assignment.length > 0) {
         const ptPerms = await db
@@ -167,29 +215,27 @@ async function resolveUsersWithRole(
                     eq(ProductTypesDataTypePermission.role, role as any),
                 ),
             );
-        groupIds = ptPerms.map((p) => p.groupIdentifier);
+        for (const p of ptPerms) groupIds.add(p.groupIdentifier);
     }
 
-    if (groupIds.length === 0) {
-        const dtPerms = await db
-            .select({ groupIdentifier: DataTypePermission.groupIdentifier })
-            .from(DataTypePermission)
-            .where(
-                and(
-                    eq(DataTypePermission.dataTypeIdentifier, dataTypeIdentifier),
-                    eq(DataTypePermission.role, role as any),
-                ),
-            );
-        groupIds = dtPerms.map((p) => p.groupIdentifier);
-    }
+    const dtPerms = await db
+        .select({ groupIdentifier: DataTypePermission.groupIdentifier })
+        .from(DataTypePermission)
+        .where(
+            and(
+                eq(DataTypePermission.dataTypeIdentifier, dataTypeIdentifier),
+                eq(DataTypePermission.role, role as any),
+            ),
+        );
+    for (const p of dtPerms) groupIds.add(p.groupIdentifier);
 
-    if (groupIds.length === 0) return [];
+    if (groupIds.size === 0) return [];
 
     const userRows = await db
         .select({ userId: UserGroup.userIdentifier })
         .from(UserGroup)
         .innerJoin(User, and(eq(UserGroup.userIdentifier, User.identifier), eq(User.disabled, false)))
-        .where(inArray(UserGroup.groupIdentifier, groupIds));
+        .where(inArray(UserGroup.groupIdentifier, [...groupIds]));
 
     return [...new Set(userRows.map((u) => u.userId))];
 }
@@ -229,9 +275,9 @@ export async function getTransitionsPerUser(
         for (const v of values) {
             const dtId = v.dataType!;
 
-            const viewerIds = await resolveUsersWithRole(db, t.productTypeName ? "" : "", dtId, "viewer");
-            const writerIds = await resolveUsersWithRole(db, t.productTypeName ? "" : "", dtId, "writer");
-            const approverIds = await resolveUsersWithRole(db, t.productTypeName ? "" : "", dtId, "approver");
+            const viewerIds = await resolveUsersWithRole(db, t.productType, dtId, "viewer");
+            const writerIds = await resolveUsersWithRole(db, t.productType, dtId, "writer");
+            const approverIds = await resolveUsersWithRole(db, t.productType, dtId, "approver");
             const allUserIds = new Set([...viewerIds, ...writerIds, ...approverIds]);
 
             for (const userId of allUserIds) {
@@ -243,6 +289,37 @@ export async function getTransitionsPerUser(
             }
         }
     }
+
+    return result;
+}
+
+/**
+ * Returns the set of active (non-disabled) user IDs holding at least one
+ * writer or approver permission anywhere (DT-level or PT-level). Used to gate
+ * digest delivery: pure viewers receive no email (design/notification.md §6).
+ */
+export async function getUsersWithWriterOrApprover(db: DBClient): Promise<Set<string>> {
+    const result = new Set<string>();
+
+    const dtRows = await db
+        .selectDistinct({ userId: UserGroup.userIdentifier })
+        .from(UserGroup)
+        .innerJoin(User, and(eq(UserGroup.userIdentifier, User.identifier), eq(User.disabled, false)))
+        .innerJoin(DataTypePermission, and(
+            eq(UserGroup.groupIdentifier, DataTypePermission.groupIdentifier),
+            inArray(DataTypePermission.role, ["writer", "approver"]),
+        ));
+    for (const r of dtRows) result.add(r.userId);
+
+    const ptRows = await db
+        .selectDistinct({ userId: UserGroup.userIdentifier })
+        .from(UserGroup)
+        .innerJoin(User, and(eq(UserGroup.userIdentifier, User.identifier), eq(User.disabled, false)))
+        .innerJoin(ProductTypesDataTypePermission, and(
+            eq(UserGroup.groupIdentifier, ProductTypesDataTypePermission.groupIdentifier),
+            inArray(ProductTypesDataTypePermission.role, ["writer", "approver"]),
+        ));
+    for (const r of ptRows) result.add(r.userId);
 
     return result;
 }

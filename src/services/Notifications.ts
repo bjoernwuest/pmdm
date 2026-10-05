@@ -6,6 +6,7 @@ import {
     getAwaitingPerUser,
     getTransitionsPerUser,
     getUsersWithRelevantGroups,
+    getUsersWithWriterOrApprover,
     type AwaitingItem,
     type TransitionItem,
 } from "@/repo/NotificationRepo.ts";
@@ -229,7 +230,8 @@ export async function sendDigest(db: DBClient) {
 
         const awaitingPerUser = await getAwaitingPerUser(db);
         const allUsers = await getUsersWithRelevantGroups(db);
-        nlog(`sendDigest: transitions=${transitions.length} transitionsPerUser=${transitionsPerUser.size} awaitingPerUser=${awaitingPerUser.size} candidateUsers=${allUsers.length}`);
+        const writerOrApproverUsers = await getUsersWithWriterOrApprover(db);
+        nlog(`sendDigest: transitions=${transitions.length} transitionsPerUser=${transitionsPerUser.size} awaitingPerUser=${awaitingPerUser.size} candidateUsers=${allUsers.length} writerOrApproverUsers=${writerOrApproverUsers.size}`);
 
         let sentCount = 0;
 
@@ -263,15 +265,19 @@ export async function sendDigest(db: DBClient) {
                 }
             });
 
-            const hasWriteOrApprove = filteredAwaitingProvide.length > 0 || filteredAwaitingApprove.length > 0;
-            const hasAnyItems = hasWriteOrApprove || filteredTransitions.length > 0;
+            const hasAnyItems = filteredAwaitingProvide.length > 0
+                || filteredAwaitingApprove.length > 0
+                || filteredTransitions.length > 0;
             nlog(`sendDigest: user=${user.identifier} email=${user.email ?? "none"} prefs(provide=${notifyProvide},approve=${notifyApprove},importing=${notifyImporting},done=${notifyDone},cancelled=${notifyCancelled}) afterFilter(provide=${filteredAwaitingProvide.length},approve=${filteredAwaitingApprove.length},transitions=${filteredTransitions.length})`);
             if (!hasAnyItems) {
                 nlog(`sendDigest: user=${user.identifier} skip — no items after filtering`);
                 continue;
             }
-            if (!hasWriteOrApprove) {
-                nlog(`sendDigest: user=${user.identifier} skip — viewer-only (no provide/approve items)`);
+            // Delivery is gated on HELD writer/approver permissions (anywhere),
+            // not on current provide/approve items — so writers/approvers with
+            // only transition items still receive the digest (pure viewers do not).
+            if (!writerOrApproverUsers.has(user.identifier)) {
+                nlog(`sendDigest: user=${user.identifier} skip — no writer/approver permission anywhere`);
                 continue;
             }
 
@@ -344,6 +350,7 @@ export async function sendToUser(
         : new Map<string, TransitionItem[]>();
     const awaitingPerUser = await getAwaitingPerUser(db);
     const allUsers = await getUsersWithRelevantGroups(db);
+    const writerOrApproverUsers = await getUsersWithWriterOrApprover(db);
 
     const targetUserIds = new Set<string>();
     if (userIds) for (const id of userIds) targetUserIds.add(id);
@@ -392,11 +399,16 @@ export async function sendToUser(
             }
         });
 
-        const hasWriteOrApprove = filteredAwaitingProvide.length > 0 || filteredAwaitingApprove.length > 0;
-        const hasAnyItems = hasWriteOrApprove || filteredTransitions.length > 0;
+        const hasAnyItems = filteredAwaitingProvide.length > 0
+            || filteredAwaitingApprove.length > 0
+            || filteredTransitions.length > 0;
         nlog(`sendToUser: user=${user.identifier} email=${user.email ?? "none"} afterFilter(provide=${filteredAwaitingProvide.length},approve=${filteredAwaitingApprove.length},transitions=${filteredTransitions.length})`);
-        if (!hasAnyItems || !hasWriteOrApprove) {
-            nlog(`sendToUser: user=${user.identifier} skip — ${!hasAnyItems ? "no items after filtering" : "viewer-only (no provide/approve items)"}`);
+        if (!hasAnyItems) {
+            nlog(`sendToUser: user=${user.identifier} skip — no items after filtering`);
+            continue;
+        }
+        if (!writerOrApproverUsers.has(user.identifier)) {
+            nlog(`sendToUser: user=${user.identifier} skip — no writer/approver permission anywhere`);
             continue;
         }
         if (!user.email) {

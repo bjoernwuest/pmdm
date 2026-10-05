@@ -442,7 +442,7 @@ async function resolveMandatory(
  * Resolves requestorCanEdit: ProductTypesDataTypes.requestorCanEdit > DataType.requestorCanEdit > true.
  * Expects raw YesNoScriptType column values and their associated script columns.
  */
-async function resolveRequestorCanEdit(
+export async function resolveRequestorCanEdit(
     db: DBClient,
     dtRequestorCanEdit: string,
     dtRequestorCanEditScript: string | null,
@@ -1190,6 +1190,7 @@ export async function getProductRequest(
         status: row.status,
         productTypeName: row.productTypeName!,
         createdByName: row.createdByName as string,
+        isCreator: row.createdBy === user.identifier,
         values: enrichedValues,
     } as ProductRequestDetail;
 }
@@ -1461,10 +1462,17 @@ export async function updateProductRequestValue(
     const dataType = await tx
         .select({
             requestorCanEdit: DataTypeSchema.requestorCanEdit,
+            requestorCanEditScript: DataTypeSchema.requestorCanEdit_script,
             kind: DataTypeSchema.kind,
             config: DataTypeSchema.config,
+            ptRequestorCanEdit: ProductTypesDataTypes.requestorCanEdit,
+            ptRequestorCanEditScript: ProductTypesDataTypes.requestorCanEdit_script,
         })
         .from(DataTypeSchema)
+        .leftJoin(ProductTypesDataTypes, and(
+            eq(ProductTypesDataTypes.productType, request[0]!.productType!),
+            eq(ProductTypesDataTypes.dataType, dataTypeIdentifier),
+        ))
         .where(eq(DataTypeSchema.identifier, dataTypeIdentifier))
         .limit(1);
 
@@ -1487,10 +1495,23 @@ export async function updateProductRequestValue(
         }
     }
 
+    // Resolve requestorCanEdit with the same precedence as the read paths
+    // (PT-level override > DT-level > default true, script-aware).
+    const permCtx = ScriptEngine.buildContext(tx, {
+        cause: "product_request_update",
+        productRequestIdentifier: requestId,
+        dataTypeIdentifier,
+        principal: { userId: user.identifier ?? null, apiKeyIdentifier: null, isApiKey: false },
+    });
     const isCreator = request[0]!.createdBy === user.identifier;
     const hasWriterRole = perms.roles.includes("writer" as DataTypeGroupRoles);
-    const reqEdit = dataType[0]!.requestorCanEdit ?? true;
-    if (!hasWriterRole && !(reqEdit && isCreator)) {
+    const reqEdit = await resolveRequestorCanEdit(
+        tx,
+        dataType[0]!.requestorCanEdit, dataType[0]!.requestorCanEditScript,
+        dataType[0]!.ptRequestorCanEdit ?? null, dataType[0]!.ptRequestorCanEditScript ?? null,
+        permCtx, dataTypeIdentifier,
+    );
+    if (!hasWriterRole && !(reqEdit && isCreator && perms.roles.length > 0)) {
         throw new PermissionDeniedError("Permission denied: you cannot edit this value");
     }
 

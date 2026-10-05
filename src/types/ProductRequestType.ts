@@ -94,6 +94,8 @@ export type ProductRequestValueEnriched = ProductRequestsValuesSelectType & {
 export type ProductRequestDetail = ProductRequestsSelectType & {
     productTypeName: string;
     createdByName: string;
+    /** Whether the current user is the creator of this product request. */
+    isCreator: boolean;
     values: ProductRequestValueEnriched[];
     availablePageSizes: number[];
 };
