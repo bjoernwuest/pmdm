@@ -2,11 +2,15 @@ import type { DBClient } from "@/services/DatabaseDriver.ts";
 import { ProductRequests, ProductRequestsValues } from "@/schema/ProductRequestSchema.ts";
 import { ProductTypes, ProductTypesDataTypes, ProductTypesDataTypePermission } from "@/schema/ProductTypeSchema.ts";
 import { DataTypeSchema, DataTypePermission } from "@/schema/DataTypeSchema.ts";
-import { DataTypeKind } from "@/types/DataTypeType.ts";
 import { User, UserGroup, Group } from "@/schema/UserSchema.ts";
 import { eq, and, inArray, sql } from "drizzle-orm";
 
-import { isEmptyValue, resolveRequestorCanEdit } from "@/repo/ProductRequestRepo.ts";
+import {
+    isEmptyValue,
+    resolveRequestorCanEdit,
+    resolveMandatory,
+    canApproveProductRequestValue,
+} from "@/services/ProductRequestActions.ts";
 import * as ScriptEngine from "@/services/ScriptEngine.ts";
 
 export type AwaitingItem = {
@@ -68,6 +72,11 @@ export async function getAwaitingPerUser(
 ): Promise<Map<string, { awaitingProvide: AwaitingItem[]; awaitingApprove: AwaitingItem[] }>> {
     const result = new Map<string, { awaitingProvide: AwaitingItem[]; awaitingApprove: AwaitingItem[] }>();
 
+    // Per-run cache for resolved mandatory flags used by the approver branch,
+    // keyed by `${requestId}:${dataType}:${userId}` (the script principal is
+    // the candidate approver, so results differ per user).
+    const mandatoryCache = new Map<string, boolean>();
+
     const openPRs = await db
         .select({
             requestId: ProductRequests.identifier,
@@ -90,15 +99,21 @@ export async function getAwaitingPerUser(
             .select({
                 dataType: ProductRequestsValues.dataType,
                 value: ProductRequestsValues.value,
+                defaultValue: ProductRequestsValues.defaultValue,
                 approvedBy: ProductRequestsValues.approvedBy,
                 dataTypeKind: DataTypeSchema.kind,
                 dataTypeConfig: DataTypeSchema.config,
+                dataTypeDisabled: DataTypeSchema.disabled,
                 requestorCanEdit: DataTypeSchema.requestorCanEdit,
                 requestorCanEditScript: DataTypeSchema.requestorCanEdit_script,
+                dataTypeMandatory: DataTypeSchema.mandatory,
+                dataTypeMandatoryScript: DataTypeSchema.mandatory_script,
                 ptConfig: ProductTypesDataTypes.config,
                 ptRequestorCanEdit: ProductTypesDataTypes.requestorCanEdit,
                 ptRequestorCanEditScript: ProductTypesDataTypes.requestorCanEdit_script,
                 ptEditableOnUpdate: ProductTypesDataTypes.editableOnUpdate,
+                ptMandatory: ProductTypesDataTypes.mandatory,
+                ptMandatoryScript: ProductTypesDataTypes.mandatory_script,
             })
             .from(ProductRequestsValues)
             .innerJoin(DataTypeSchema, eq(ProductRequestsValues.dataType, DataTypeSchema.identifier))
@@ -124,6 +139,10 @@ export async function getAwaitingPerUser(
         for (const v of values) {
             const dtId = v.dataType!;
 
+            // Disabled data types never contribute action items (mirrors the
+            // list/detail filters).
+            if (v.dataTypeDisabled) continue;
+
             const writerUserIds = await resolveUsersWithRole(db, pr.productType!, dtId, "writer");
             const approverUserIds = await resolveUsersWithRole(db, pr.productType!, dtId, "approver");
 
@@ -144,7 +163,9 @@ export async function getAwaitingPerUser(
 
             // The request creator may provide values without writer role when
             // requestorCanEdit resolves to true and they hold at least one role
-            // on the data type (mirrors the edit-path gate).
+            // on the data type. This is the `canEdit` clause of
+            // `canEditProductRequestValue` (hasWriterRole handled above;
+            // requestorCanEdit && isRequestCreator && userRoles.length > 0 here).
             if (provideGateOpen && isEmpty && creatorCtx && pr.createdBy) {
                 const viewerUserIds = await resolveUsersWithRole(db, pr.productType!, dtId, "viewer");
                 const creatorHasAnyRole = writerUserIds.includes(pr.createdBy)
@@ -165,8 +186,41 @@ export async function getAwaitingPerUser(
                 }
             }
 
+            // Approve actionability. For non-empty values mandatory is
+            // irrelevant, so every eligible approver is included. For empty
+            // values the mandatory flag is resolved per candidate approver
+            // (principal = approver) and cached for this run.
             for (const userId of approverUserIds) {
-                if (v.approvedBy === null && v.dataTypeKind !== DataTypeKind.Calculated) {
+                let mandatory = false;
+                if (isEmpty) {
+                    const cacheKey = `${pr.requestId!}:${dtId}:${userId}`;
+                    const cached = mandatoryCache.get(cacheKey);
+                    if (cached !== undefined) {
+                        mandatory = cached;
+                    } else {
+                        const approverCtx = ScriptEngine.buildContext(db, {
+                            cause: "product_request_approve",
+                            productRequestIdentifier: pr.requestId!,
+                            principal: { userId, apiKeyIdentifier: null, isApiKey: false },
+                        });
+                        mandatory = await resolveMandatory(
+                            db,
+                            v.dataTypeMandatory, v.dataTypeMandatoryScript,
+                            v.ptMandatory ?? null, v.ptMandatoryScript ?? null,
+                            approverCtx, dtId,
+                        );
+                        mandatoryCache.set(cacheKey, mandatory);
+                    }
+                }
+                if (canApproveProductRequestValue({
+                    hasApproverRole: true,
+                    approvedBy: v.approvedBy ?? null,
+                    kind: v.dataTypeKind!,
+                    mandatory,
+                    value: v.value,
+                    defaultValue: v.defaultValue,
+                    config: resolvedConfig,
+                })) {
                     addToResult(result, userId, "awaitingApprove", {
                         requestId: pr.requestId!,
                         productNumber: pr.productNumber,

@@ -131,11 +131,12 @@ A row is **visible** when ALL of:
 | `product` | Dropdown (single or multi) | See Section 4.3.1 |
 | `calculated` | Read-only display | Shows computed value; not editable |
 
-**Editable**: Input elements are enabled when:
-- User has `Writer` role, OR (`requestorCanEdit` is `true` AND user is `createdBy`)
-- AND (for update requests only) `editableOnUpdate` is `true`
+**Editable**: Input elements are enabled when the server-computed `canEdit` flag is true, i.e.:
+- The data type is not disabled, AND
+- User has `Writer` role, OR (`requestorCanEdit` is `true` AND user is `createdBy` AND the user holds at least one role on the data type), AND
+- (for update requests only) `editableOnUpdate` is `true`
 
-**Read-only**: All other cases (including `editableOnUpdate: false` for update requests).
+**Read-only**: All other cases (including `editableOnUpdate: false` for update requests). "Provide value" additionally requires the value to be empty; both decisions come from `canEditProductRequestValue` / `canProvideProductRequestValue` in `src/services/ProductRequestActions.ts`.
 
 #### 4.3.1 Lookup / Consumable / Product Dropdowns
 

@@ -88,6 +88,9 @@ export type ProductRequestValueEnriched = ProductRequestsValuesSelectType & {
     // Previous-approval dependency status
     previousApprovalDepsMet: boolean;
     previousApprovalDepsWaiting: string[];
+    // Server-computed actionability flags for the current user
+    canEdit: boolean;
+    canApprove: boolean;
 };
 
 /** Product request detail enriched with product type name, creator name, and values. */

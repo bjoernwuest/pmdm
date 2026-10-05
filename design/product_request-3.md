@@ -109,11 +109,11 @@ Uses PrimeReact [`DataTable`](https://primereact.org/datatable/) with lazy loadi
 
 For each product request, determine what actions the current user can take. This requires fetching the current user's permissions for each request's data types.
 
-**Algorithm** (per request):
+**Algorithm** (per request; computed server-side, the UI only renders the flags):
 1. Fetch the enriched product request values (from list endpoint or via included permission data)
-2. For each value, check:
-   - **Provide value**: The user has `Writer` role (or `requestorCanEdit` + is creator), AND `ProductRequestsValues.value` IS NULL (i.e., not yet provided)
-   - **Approve value**: The user has `Approver` role, AND `ProductRequestsValues.approvedBy` IS NULL (not yet approved)
+2. For each value, skip data types with `disabled === true`, then check:
+   - **Provide value** (`canProvide`): The user has `Writer` role, OR (`requestorCanEdit` AND the request creator AND the user holds **at least one role** on the data type); AND (for update requests) the data type is `editableOnUpdate`; AND `ProductRequestsValues.value` is empty (`isEmptyValue`, so tri-state booleans with `permitEmpty` never need a value)
+   - **Approve value** (`canApprove`): The user has `Approver` role, AND `ProductRequestsValues.approvedBy` IS NULL, AND the data type is not `calculated`, AND (when the data type is mandatory for the user) the value or default value is present
 3. Display logic:
    - If BOTH "Provide value" AND "Approve value" apply → show both labels (e.g., "Provide value, Approve value")
    - If only "Provide value" → show "Provide value"

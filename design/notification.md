@@ -12,8 +12,8 @@ The notification system sends **per-user digest emails** about product requests 
 
 | Type | Triggers when | Relevant users |
 |------|--------------|----------------|
-| **Awaiting "Provide value"** | PR is `open` AND user has `writer` role on a data type whose value is `null` (not yet provided) | Users in groups with writer permission on affected data types |
-| **Awaiting "Approve value"** | PR is `open` AND user has `approver` role on a data type that is not yet approved (`approvedBy IS NULL`) | Users in groups with approver permission on affected data types |
+| **Awaiting "Provide value"** | PR is `open` AND user has `writer` role (or is the request creator with `requestorCanEdit` and at least one role on the data type) on a **non-disabled** data type whose value is `null` (not yet provided) | Users in groups with writer permission on affected data types, plus the request creator when the requestor-edit gate passes |
+| **Awaiting "Approve value"** | PR is `open` AND user has `approver` role on a **non-disabled** data type that is not yet approved (`approvedBy IS NULL`); when the value is empty, the data type must not be mandatory (mandatory is evaluated per recipient) | Users in groups with approver permission on affected data types |
 | **Status transition** | PR is currently in status `importing`, `done`, or `cancelled` | Users in groups with **any** permission (viewer, writer, or approver) on the PR's data types |
 
 Each user receives a **single digest email** containing only the sections relevant to them. Users who have no awaiting items and no transitions since the last digest receive no email.
@@ -268,22 +268,34 @@ Core query. Returns a map from user ID to their awaiting items.
 ```
 For each open PR (with productType PT):
   For each data type DT assigned to this PR (from product_requests_values):
+    Skip DT when DataTypeSchema.disabled is true (disabled data types never
+    contribute awaiting items, mirroring the list and detail views).
     a. Find groups with writer/approver role in ProductTypesDataTypePermission (PT-level)
     b. Find groups with writer/approver role in DataTypePermission (DT-level)
     c. Union both group sets (same semantics as the permission concept's edit
        path — buildPermissionLookup/getEffectivePermissions), then map groups → users via user_groups
     
     For each writer-user:
-      Check: is value null (needs value)?
+      Check: is value empty (needs value)?
         AND (has writer role? OR (is the user the creator with requestorCanEdit
              AND holds at least one role on the data type — mirroring the edit-path gate))?
         AND (if update request) editableOnUpdate is true?
       → If yes, add PR to user's "awaitingProvide"
     
     For each approver-user:
-      Check: is approvedBy null AND data type is not Calculated?
+      Check: approvedBy is null AND data type is not Calculated
+        AND (value is non-empty OR the data type is not mandatory
+             for this recipient).
+      Mandatory is resolved per candidate approver with a script context whose
+      principal is that approver, and cached by (requestId, dataType, userId)
+      for the run. For non-empty values mandatory is irrelevant, so every
+      eligible approver is included.
       → If yes, add PR to user's "awaitingApprove"
 ```
+
+The same `canEditProductRequestValue` / `canApproveProductRequestValue`
+predicates from `src/services/ProductRequestActions.ts` drive the list view,
+the detail view, and this digest, so the three paths cannot drift.
 
 **Return type:**
 ```typescript

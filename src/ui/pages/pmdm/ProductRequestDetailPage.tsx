@@ -110,14 +110,6 @@ function describeValueConstraints(row: any): string[] {
     return constraints;
 }
 
-function isValuePresent(row: any): boolean {
-    if (!row.mandatory) return true;
-    if (row.value !== null && row.value !== undefined) return true;
-    if (row.defaultValue !== null && row.defaultValue !== "null") return true;
-    if (row.dataTypeKind === "boolean" && (row.dataTypeConfig?.permitEmpty ?? false)) return true;
-    return false;
-}
-
 interface DropdownOption {
     label: string;
     value: string;
@@ -885,13 +877,7 @@ export function Component() {
     const isOpen = request.status === "open";
 
     // Check if there are any approvable values for "Approve all" button
-    const hasApprovableValues = request.values?.some((v: any) =>
-        !v.approvedBy &&
-        v.dataTypeKind !== "calculated" &&
-        isValuePresent(v) &&
-        v.userRoles?.includes("approver") &&
-        v.previousApprovalDepsMet !== false,
-    );
+    const hasApprovableValues = request.values?.some((v: any) => v.canApprove);
 
 
 
@@ -908,11 +894,8 @@ export function Component() {
     // Determine if user can cancel
     const canCancel = isOpen; // Server validates cancel role
 
-    // Whether the current user may edit the value of a row
-    const canEditRow = (row: any): boolean => isOpen && (
-        row.userRoles?.includes("writer") ||
-        (row.requestorCanEdit && request.isCreator === true)
-    ) && (!isUpdateRequest || row.editableOnUpdate);
+    // Whether the current user may edit the value of a row (server-computed)
+    const canEditRow = (row: any): boolean => isOpen && row.canEdit === true;
 
     // Data type info tooltip helpers
     const hideInfoTooltip = () => {
@@ -1103,7 +1086,7 @@ export function Component() {
             );
         }
 
-        if (isOpen && row.userRoles?.includes("approver") && isValuePresent(row)) {
+        if (isOpen && row.canApprove === true) {
             if (row.previousApprovalDepsMet === false) {
                 return (
                     <span style={{ color: "var(--text-color-secondary)", fontStyle: "italic" }}>

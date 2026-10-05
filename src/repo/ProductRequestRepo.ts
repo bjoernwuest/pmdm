@@ -2,7 +2,7 @@ import type { DBClient } from "@/services/DatabaseDriver.ts";
 import { ProductRequests, ProductRequestsValues, ProductNumberState, ProductRequestStatus } from "@/schema/ProductRequestSchema.ts";
 import { ProductTypes, ProductTypesDataTypes, ProductTypesDataTypePermission, ProductTypesDataTypePreviousApproval, ProductTypesPermission } from "@/schema/ProductTypeSchema.ts";
 import { DataTypeSchema, DataTypePermission, type DataTypeGroupRoles } from "@/schema/DataTypeSchema.ts";
-import { DataTypeKind, YesNoScript, type YesNoScriptType, type ConfigString, type ConfigBoolean, type ConfigLookup, type ConfigConsumable, type ConfigProduct, CalculatedCalculationMode, DefaultValueCalculationMode, type ConfigCalculated } from "@/types/DataTypeType.ts";
+import { DataTypeKind, type ConfigString, type ConfigBoolean, type ConfigLookup, type ConfigConsumable, type ConfigProduct, CalculatedCalculationMode, DefaultValueCalculationMode, type ConfigCalculated } from "@/types/DataTypeType.ts";
 import { BusinessDomains } from "@/schema/BusinessDomainSchema.ts";
 import {Group, User, UserGroup} from "@/schema/UserSchema.ts";
 import { Products, ProductsValues } from "@/schema/ProductSchema.ts";
@@ -35,6 +35,15 @@ import { buildUserDisplaySql, createProductExportRows } from "@/repo/ProductExpo
 import * as ProductRepo from "@/repo/ProductRepo.ts";
 import * as ScriptEngine from "@/services/ScriptEngine.ts";
 import { ScriptCategory, type ScriptExecutionContext } from "@/types/ScriptEngineType.ts";
+import {
+    resolveConfig,
+    resolveMandatory,
+    resolveRequestorCanEdit,
+    isApprovableValuePresent,
+    canEditProductRequestValue,
+    canProvideProductRequestValue,
+    canApproveProductRequestValue,
+} from "@/services/ProductRequestActions.ts";
 import { devMode } from "@/devmode.ts";
 
 // ---------------------------------------------------------------------------
@@ -352,108 +361,6 @@ async function userCanCancel(
     }
 
     return false;
-}
-
-// ---------------------------------------------------------------------------
-// Default Value Calculation
-// ---------------------------------------------------------------------------
-
-/**
- * Resolves a config value: ProductTypesDataTypes config takes precedence over
- * DataType config. Individual keys from ptConfig override dtConfig.
- */
-function resolveConfig(
-    dtConfig: Record<string, unknown> | null,
-    ptConfig: Record<string, unknown> | null,
-): Record<string, unknown> {
-    return { ...(dtConfig ?? {}), ...(ptConfig ?? {}) };
-}
-
-/**
- * Returns `true` when the value represents an empty / no-value state for the
- * given data type kind.  Tri-state booleans (kind "boolean" with
- * `config.permitEmpty === true`) treat `null` as a valid value and return
- * `false`.  The function is used by the approval gates,
- * `computeActionableSummary`, and notification digests.
- */
-export function isEmptyValue(value: unknown, kind: string, config?: Record<string, unknown> | null): boolean {
-    if (value === null) {
-        if (kind === "boolean" && (config as { permitEmpty?: boolean } | null | undefined)?.permitEmpty) {
-            return false;
-        }
-        return true;
-    }
-    if (value === "") return true;
-    if (Array.isArray(value) && value.length === 0) return true;
-    return false;
-}
-
-/**
- * Converts a YesNoScript value (+ optional script) to a boolean or null.
- * - null          → null (inherit from parent)
- * - "Yes"          → true
- * - "No"           → false
- * - "Script"       → evaluate the script, cast to boolean; null if script is missing
- *
- * When a script is present it executes via the ScriptEngine with the supplied
- * context (scoped to `dataTypeIdentifier` when provided).
- */
-async function resolveYesNoScript(
-    db: DBClient,
-    value: string | null,
-    script: string | null,
-    ctx: ScriptExecutionContext | null,
-    category: ScriptCategory,
-    dataTypeIdentifier?: string,
-): Promise<boolean | null> {
-    if (value === null) return null;
-    if (value === YesNoScript.Yes) return true;
-    if (value === YesNoScript.No) return false;
-    if (value === YesNoScript.Script) {
-        if (script && ctx) {
-            const scoped = dataTypeIdentifier ? ScriptEngine.forDataType(ctx, dataTypeIdentifier) : ctx;
-            const result = await ScriptEngine.execute(db, script, scoped, category);
-            return Boolean(result);
-        }
-        return null;
-    }
-    return null;
-}
-
-/**
- * Resolves a mandatory flag: ProductTypesDataTypes.mandatory > DataType.mandatory > false.
- * Expects raw YesNoScriptType column values and their associated script columns.
- */
-async function resolveMandatory(
-    db: DBClient,
-    dtMandatory: string,
-    dtMandatoryScript: string | null,
-    ptMandatory: string | null,
-    ptMandatoryScript: string | null,
-    ctx: ScriptExecutionContext | null,
-    dataTypeIdentifier?: string,
-): Promise<boolean> {
-    const dtBool = await resolveYesNoScript(db, dtMandatory, dtMandatoryScript, ctx, ScriptCategory.MandatoryScript, dataTypeIdentifier);
-    const ptBool = await resolveYesNoScript(db, ptMandatory, ptMandatoryScript, ctx, ScriptCategory.MandatoryScript, dataTypeIdentifier);
-    return ptBool ?? dtBool ?? false;
-}
-
-/**
- * Resolves requestorCanEdit: ProductTypesDataTypes.requestorCanEdit > DataType.requestorCanEdit > true.
- * Expects raw YesNoScriptType column values and their associated script columns.
- */
-export async function resolveRequestorCanEdit(
-    db: DBClient,
-    dtRequestorCanEdit: string,
-    dtRequestorCanEditScript: string | null,
-    ptRequestorCanEdit: string | null,
-    ptRequestorCanEditScript: string | null,
-    ctx: ScriptExecutionContext | null,
-    dataTypeIdentifier?: string,
-): Promise<boolean> {
-    const dtBool = await resolveYesNoScript(db, dtRequestorCanEdit, dtRequestorCanEditScript, ctx, ScriptCategory.RequestorCanEditScript, dataTypeIdentifier);
-    const ptBool = await resolveYesNoScript(db, ptRequestorCanEdit, ptRequestorCanEditScript, ctx, ScriptCategory.RequestorCanEditScript, dataTypeIdentifier);
-    return ptBool ?? dtBool ?? true;
 }
 
 /**
@@ -1121,6 +1028,8 @@ export async function getProductRequest(
     });
 
     // Enrich values with permissions and resolve precedence
+    const isUpdateRequest = !!row.productToUpdate;
+    const isRequestCreator = row.createdBy === user.identifier;
     const enrichedValues: ProductRequestValueEnriched[] = [];
     for (const v of valueRows) {
         // Skip disabled data types
@@ -1141,6 +1050,29 @@ export async function getProductRequest(
         const ownerIdentifier = v.ptOwnerOverride ?? v.dataTypeOwner;
         const businessDomainName = ownerIdentifier ? (bdMap.get(ownerIdentifier) ?? null) : null;
 
+        const mandatory = await resolveMandatory(db, v.dataTypeMandatory, v.dataTypeMandatoryScript, v.ptMandatory, v.ptMandatoryScript, viewCtx, v.dataType ?? undefined);
+        const requestorCanEdit = await resolveRequestorCanEdit(db, v.dataTypeRequestorCanEdit, v.dataTypeRequestorCanEditScript, v.ptRequestorCanEdit, v.ptRequestorCanEditScript, viewCtx, v.dataType ?? undefined);
+        const editableOnUpdate = v.ptEditableOnUpdate ?? true;
+        const hasWriterRole = perms.roles.includes("writer" as DataTypeGroupRoles);
+        const hasApproverRole = perms.roles.includes("approver" as DataTypeGroupRoles);
+        const canEdit = canEditProductRequestValue({
+            hasWriterRole,
+            requestorCanEdit,
+            isRequestCreator,
+            userRoles: perms.roles,
+            isUpdateRequest,
+            editableOnUpdate,
+        });
+        const canApprove = canApproveProductRequestValue({
+            hasApproverRole,
+            approvedBy: v.approvedBy ?? null,
+            kind: v.dataTypeKind!,
+            mandatory,
+            value: v.value,
+            defaultValue: v.defaultValue,
+            config: resolvedConfig,
+        });
+
         enrichedValues.push({
             identifier: v.identifier,
             createdAt: v.createdAt,
@@ -1157,9 +1089,9 @@ export async function getProductRequest(
             dataTypeDescription: v.dataTypeDescription,
             dataTypeKind: v.dataTypeKind,
             dataTypeConfig: resolvedConfig,
-            mandatory: await resolveMandatory(db, v.dataTypeMandatory, v.dataTypeMandatoryScript, v.ptMandatory, v.ptMandatoryScript, viewCtx, v.dataType ?? undefined),
-            requestorCanEdit: await resolveRequestorCanEdit(db, v.dataTypeRequestorCanEdit, v.dataTypeRequestorCanEditScript, v.ptRequestorCanEdit, v.ptRequestorCanEditScript, viewCtx, v.dataType ?? undefined),
-            editableOnUpdate: v.ptEditableOnUpdate ?? true,
+            mandatory,
+            requestorCanEdit,
+            editableOnUpdate,
             businessDomainName,
             userRoles: perms.roles,
             showByDefault: perms.showByDefault,
@@ -1167,6 +1099,8 @@ export async function getProductRequest(
             editorEmail: v.editorEmail,
             approverName: v.approverName,
             approverEmail: v.approverEmail,
+            canEdit,
+            canApprove,
             ...(() => {
                 const deps = depsMap.get(v.dataType!) ?? [];
                 const unmetDeps = deps.filter(d => !approvedSet.has(d));
@@ -1285,6 +1219,7 @@ export async function listProductRequests(
             user,
             row.identifier,
             row.productType!,
+            row.createdBy ?? null,
             !!row.productToUpdate,
             valuesByRequest.get(row.identifier) ?? [],
             getPerms,
@@ -1347,17 +1282,23 @@ function selectActionableValuesForRequests(db: DBClient, requestIds: string[]) {
             productRequest: ProductRequestsValues.productRequest,
             dataType: ProductRequestsValues.dataType,
             value: ProductRequestsValues.value,
+            defaultValue: ProductRequestsValues.defaultValue,
             approvedBy: ProductRequestsValues.approvedBy,
             dataTypeKind: DataTypeSchema.kind,
             dataTypeConfig: DataTypeSchema.config,
+            dataTypeDisabled: DataTypeSchema.disabled,
             requestorCanEdit: DataTypeSchema.requestorCanEdit,
             requestorCanEditScript: DataTypeSchema.requestorCanEdit_script,
+            dataTypeMandatory: DataTypeSchema.mandatory,
+            dataTypeMandatoryScript: DataTypeSchema.mandatory_script,
             createdBy: ProductRequestsValues.createdBy,
             // ProductTypesDataTypes overrides
             ptConfig: ProductTypesDataTypes.config,
             ptRequestorCanEdit: ProductTypesDataTypes.requestorCanEdit,
             ptRequestorCanEditScript: ProductTypesDataTypes.requestorCanEdit_script,
             ptEditableOnUpdate: ProductTypesDataTypes.editableOnUpdate,
+            ptMandatory: ProductTypesDataTypes.mandatory,
+            ptMandatoryScript: ProductTypesDataTypes.mandatory_script,
         })
         .from(ProductRequestsValues)
         .innerJoin(ProductRequests, eq(ProductRequestsValues.productRequest, ProductRequests.identifier))
@@ -1400,7 +1341,8 @@ async function loadActionableValuesByRequest(
 /**
  * In-memory core of the actionable-summary computation for a single product
  * request. The caller supplies the already-loaded value rows (see
- * {@link loadActionableValuesByRequest}) and whether the request is an update.
+ * {@link loadActionableValuesByRequest}), the request creator, and whether the
+ * request is an update.
  *
  * When {@link getPerms} is provided (pre-built via {@link buildPermissionLookup}),
  * permission checks are O(1) in-memory lookups.  When omitted the function falls
@@ -1411,6 +1353,7 @@ async function computeActionableSummaryFromValues(
     user: UserType,
     requestId: string,
     productTypeIdentifier: string,
+    requestCreatedBy: string | null,
     isUpdateRequest: boolean,
     values: ActionableValueRow[],
     getPerms?: PermissionLookup,
@@ -1418,39 +1361,61 @@ async function computeActionableSummaryFromValues(
     let needsValue = false;
     let needsApproval = false;
 
-    // Build a script context once for all requestorCanEdit script evaluations.
+    // Build a script context once for all mandatory/requestorCanEdit script
+    // evaluations (the viewing user is the principal).
     const summaryCtx = ScriptEngine.buildContext(db, {
         cause: "product_request_update",
         productRequestIdentifier: requestId,
         principal: { userId: user.identifier ?? null, apiKeyIdentifier: null, isApiKey: false },
     });
 
+    const isRequestCreator = requestCreatedBy !== null && requestCreatedBy === user.identifier;
+
     for (const v of values) {
+        // Disabled data types never contribute action items (mirrors the detail
+        // view filter).
+        if (v.dataTypeDisabled) continue;
+
         const perms = getPerms
             ? getPerms(productTypeIdentifier, v.dataType!)
             : await getEffectivePermissions(db, user, productTypeIdentifier, v.dataType!);
-
-        // Check "needsValue": editable and value is null.
-        // Tri-state booleans (permitEmpty) accept null as a valid value, so
-        // they never need "Provide value" (mirrors the approve-path rule).
-        const isCreator = v.createdBy === user.identifier;
-        const hasWriterRole = perms.roles.includes("writer" as DataTypeGroupRoles);
-        const reqEdit = await resolveRequestorCanEdit(db, v.requestorCanEdit, v.requestorCanEditScript, v.ptRequestorCanEdit, v.ptRequestorCanEditScript, summaryCtx, v.dataType ?? undefined);
-        const canEdit = hasWriterRole || (reqEdit && isCreator);
-        const editableOnUpdate = v.ptEditableOnUpdate ?? true;
-        const canEditEffective = canEdit && (isUpdateRequest ? editableOnUpdate : true);
 
         const resolvedConfig = resolveConfig(
             v.dataTypeConfig as Record<string, unknown> | null,
             v.ptConfig as Record<string, unknown> | null,
         );
-        if (canEditEffective && isEmptyValue(v.value, v.dataTypeKind!, resolvedConfig)) {
+        const editableOnUpdate = v.ptEditableOnUpdate ?? true;
+        const hasWriterRole = perms.roles.includes("writer" as DataTypeGroupRoles);
+        const hasApproverRole = perms.roles.includes("approver" as DataTypeGroupRoles);
+        const requestorCanEdit = await resolveRequestorCanEdit(db, v.requestorCanEdit, v.requestorCanEditScript, v.ptRequestorCanEdit, v.ptRequestorCanEditScript, summaryCtx, v.dataType ?? undefined);
+
+        // "Provide value": the user may edit the value and it is empty.
+        if (canProvideProductRequestValue({
+            hasWriterRole,
+            requestorCanEdit,
+            isRequestCreator,
+            userRoles: perms.roles,
+            isUpdateRequest,
+            editableOnUpdate,
+            value: v.value,
+            kind: v.dataTypeKind!,
+            config: resolvedConfig,
+        })) {
             needsValue = true;
         }
 
-        // Check "needsApproval": approvable and not yet approved
-        const hasApproverRole = perms.roles.includes("approver" as DataTypeGroupRoles);
-        if (hasApproverRole && v.approvedBy === null && v.dataTypeKind !== DataTypeKind.Calculated) {
+        // "Approve value": approver, not approved, non-calculated, and the
+        // mandatory/value-present gate passes.
+        const mandatory = await resolveMandatory(db, v.dataTypeMandatory, v.dataTypeMandatoryScript, v.ptMandatory, v.ptMandatoryScript, summaryCtx, v.dataType ?? undefined);
+        if (canApproveProductRequestValue({
+            hasApproverRole,
+            approvedBy: v.approvedBy ?? null,
+            kind: v.dataTypeKind!,
+            mandatory,
+            value: v.value,
+            defaultValue: v.defaultValue,
+            config: resolvedConfig,
+        })) {
             needsApproval = true;
         }
     }
@@ -1513,6 +1478,7 @@ export async function updateProductRequestValue(
             config: DataTypeSchema.config,
             ptRequestorCanEdit: ProductTypesDataTypes.requestorCanEdit,
             ptRequestorCanEditScript: ProductTypesDataTypes.requestorCanEdit_script,
+            ptEditableOnUpdate: ProductTypesDataTypes.editableOnUpdate,
         })
         .from(DataTypeSchema)
         .leftJoin(ProductTypesDataTypes, and(
@@ -1557,7 +1523,14 @@ export async function updateProductRequestValue(
         dataType[0]!.ptRequestorCanEdit ?? null, dataType[0]!.ptRequestorCanEditScript ?? null,
         permCtx, dataTypeIdentifier,
     );
-    if (!hasWriterRole && !(reqEdit && isCreator && perms.roles.length > 0)) {
+    if (!canEditProductRequestValue({
+        hasWriterRole,
+        requestorCanEdit: reqEdit,
+        isRequestCreator: isCreator,
+        userRoles: perms.roles,
+        isUpdateRequest,
+        editableOnUpdate: dataType[0]!.ptEditableOnUpdate ?? true,
+    })) {
         throw new PermissionDeniedError("Permission denied: you cannot edit this value");
     }
 
@@ -2131,11 +2104,16 @@ async function reevaluateMandatoryAndRequestorCanEdit(
         // (e.g. a dependency field changed, making this field mandatory
         // after the value was already approved).
         if (mandatory[row.dataType] && row.approvedBy !== null
-            && isEmptyValue(row.value, row.dataTypeKind, resolveConfig(
-                row.dtConfig as Record<string, unknown> | null,
-                row.ptConfig as Record<string, unknown> | null,
-            ))
-            && (row.defaultValue === null || row.defaultValue === "null")) {
+            && !isApprovableValuePresent({
+                mandatory: true,
+                value: row.value,
+                defaultValue: row.defaultValue,
+                kind: row.dataTypeKind,
+                config: resolveConfig(
+                    row.dtConfig as Record<string, unknown> | null,
+                    row.ptConfig as Record<string, unknown> | null,
+                ),
+            })) {
             const [invalidated] = await tx
                 .update(ProductRequestsValues)
                 .set({ approvedBy: null, approvedAt: null, updatedAt: sql`now()` } as any)
@@ -2237,8 +2215,13 @@ export async function approveProductRequestValue(
         approveCtx,
         dataTypeIdentifier,
     );
-    if (isMandatory && isEmptyValue(row.value, row.dataTypeKind, row.dataTypeConfig as Record<string, unknown> | null)
-        && (row.defaultValue === null || row.defaultValue === "null")) {
+    if (!isApprovableValuePresent({
+        mandatory: isMandatory,
+        value: row.value,
+        defaultValue: row.defaultValue,
+        kind: row.dataTypeKind,
+        config: row.dataTypeConfig as Record<string, unknown> | null,
+    })) {
         throw new Error("Cannot approve: mandatory field has no value");
     }
 
@@ -2348,8 +2331,13 @@ export async function approveAllProductRequestValues(
             approveAllCtx,
             v.dataType ?? undefined,
         );
-        if (isMandatory && isEmptyValue(v.value, v.dataTypeKind, v.dataTypeConfig as Record<string, unknown> | null)
-            && (v.defaultValue === null || v.defaultValue === "null")) {
+        if (!isApprovableValuePresent({
+            mandatory: isMandatory,
+            value: v.value,
+            defaultValue: v.defaultValue,
+            kind: v.dataTypeKind,
+            config: v.dataTypeConfig as Record<string, unknown> | null,
+        })) {
             continue;
         }
 

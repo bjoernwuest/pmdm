@@ -108,7 +108,7 @@ Returns a single product request with value rows filtered by the current user's 
 
 Updates a single data type value on a product request.
 
-**Auth**: Authorization is checked inside the repo (writer role OR requestorCanEdit + is creator).
+**Auth**: Authorization is checked inside the repo (writer role OR (requestorCanEdit + is creator + the user holds at least one role on the data type)).
 
 **Request Body**:
 ```typescript
@@ -254,7 +254,7 @@ Each route must include `detail` with `tags`, `summary`, and `description` for L
 | Create update request | `FP_REQUEST_PRODUCT_UPDATE` | API route |
 | Create copy request | `FP_CREATE_PRODUCT_COPY` | API route |
 | View requests | `FP_VIEW_PRODUCTS` | API route |
-| Edit value | `DataTypeGroupRoles.Writer` OR `requestorCanEdit` + is creator | Repo |
+| Edit value | `DataTypeGroupRoles.Writer` OR (`requestorCanEdit` + is creator + at least one role on the data type) | Repo |
 | Approve value | `DataTypeGroupRoles.Approver` | Repo |
 | Cancel request | `role=cancel` in `ProductTypesPermission` | Repo |
 

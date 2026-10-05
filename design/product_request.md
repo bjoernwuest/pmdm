@@ -73,19 +73,26 @@ A data type is **visible** to a user on a product request detail page when ALL o
 ### 3. Edit Permissions on Product Request Detail
 
 A data type value is **editable** by a user when:
+- The data type is **enabled** (not disabled), AND
 - `editableOnUpdate` is `true` on the `ProductTypesDataTypes` assignment (or if the request is NOT an update request, this field is not checked), AND
 - Either:
   - The user has `DataTypeGroupRoles.Writer` assigned, OR
-  - `requestorCanEdit` is `true` AND the user is the `createdBy` of the product request
+  - `requestorCanEdit` is `true` AND the user is the `createdBy` of the product request AND the user holds **at least one role** (`viewer`, `writer`, or `approver`) on the data type
 
 For "Request update" product requests: if `editableOnUpdate` is `false`, the data type is read-only (not editable) and automatically approved. It is visible only if the user has view permission.
+
+"Provide value" additionally requires the value to be empty (`isEmptyValue`). These decisions are computed server-side by `canEditProductRequestValue` / `canProvideProductRequestValue` in [`src/services/ProductRequestActions.ts`](../src/services/ProductRequestActions.ts); the UI only renders the returned flags.
 
 ### 4. Approval Permissions
 
 A data type value can be **approved** by a user when:
+- The data type is **enabled** (not disabled)
 - The user has `DataTypeGroupRoles.Approver` assigned
-- AND there is a value assigned (`ProductRequestsValues.value` is not null, or `ProductRequestsValues.defaultValue` is not null)
+- AND `ProductRequestsValues.approvedBy` IS NULL (not yet approved)
 - "Calculated" data types are always considered approved (no approval action needed)
+- AND (when the data type is mandatory for the user) a value or default value is present — `ProductRequestsValues.value` is not empty, or `ProductRequestsValues.defaultValue` is not null/`"null"`
+
+This is computed server-side by `canApproveProductRequestValue` in [`src/services/ProductRequestActions.ts`](../src/services/ProductRequestActions.ts).
 
 ### 5. Tri-State Boolean
 
