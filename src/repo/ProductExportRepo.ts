@@ -29,7 +29,7 @@ export class AlreadyImportedError extends Error {
     }
 }
 
-function buildUserDisplaySql(userAlias: string): SQL {
+export function buildUserDisplaySql(userAlias: string): SQL {
     return sql`CASE
         WHEN COALESCE(${sql.identifier(userAlias)}.first_name, '') = '' AND COALESCE(${sql.identifier(userAlias)}.last_name, '') = ''
         THEN '(' || COALESCE(${sql.identifier(userAlias)}.email, '') || ')'

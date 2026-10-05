@@ -28,10 +28,10 @@ import type { ProductRequestsValuesSelectType as ProductRequestsValuesType } fro
 import type { UserSelectType as UserType } from "@/types/_UserType.ts";
 import type { UUIDType } from "@/types/helpers.ts";
 import { PermissionDeniedError, FilterScriptError } from "@/types/errors.ts";
-import { and, asc, desc, eq, ilike, inArray, isNotNull, isNull, or, sql, type SQL } from "drizzle-orm";
+import { and, asc, desc, eq, getTableName, ilike, inArray, isNotNull, isNull, or, sql, type SQL } from "drizzle-orm";
 import PubSub from "@/services/PubSub.ts";
 import { getLoggedinUserObject } from "@/services/Auth.ts";
-import { createProductExportRows } from "@/repo/ProductExportRepo.ts";
+import { buildUserDisplaySql, createProductExportRows } from "@/repo/ProductExportRepo.ts";
 import * as ProductRepo from "@/repo/ProductRepo.ts";
 import * as ScriptEngine from "@/services/ScriptEngine.ts";
 import { ScriptCategory, type ScriptExecutionContext } from "@/types/ScriptEngineType.ts";
@@ -1003,7 +1003,7 @@ export async function getProductRequest(
             productToUpdate: ProductRequests.productToUpdate,
             status: ProductRequests.status,
             productTypeName: ProductTypes.name,
-            createdByName: sql<string>`${User.firstName} || ' ' || ${User.lastName}`,
+            createdByName: buildUserDisplaySql(getTableName(User)),
         })
         .from(ProductRequests)
         .innerJoin(ProductTypes, eq(ProductRequests.productType, ProductTypes.identifier))
@@ -1230,47 +1230,64 @@ export async function listProductRequests(
 
     const where = conditions.length > 0 ? and(...conditions) : undefined;
 
-    // Get total count first
-    const countResult = await db
-        .select({ count: sql<number>`count(*)::int` })
-        .from(ProductRequests)
-        .where(where);
+    // Reusable row query (no pagination) so it can be executed either as a
+    // bounded page or in full when an action filter must be applied first.
+    const buildRowsQuery = () =>
+        db
+            .select({
+                identifier: ProductRequests.identifier,
+                createdAt: ProductRequests.createdAt,
+                updatedAt: ProductRequests.updatedAt,
+                createdBy: ProductRequests.createdBy,
+                updatedBy: ProductRequests.updatedBy,
+                productType: ProductRequests.productType,
+                productNumber: ProductRequests.productNumber,
+                productToUpdate: ProductRequests.productToUpdate,
+                status: ProductRequests.status,
+                productTypeName: ProductTypes.name,
+                createdByName: buildUserDisplaySql(getTableName(User)),
+            })
+            .from(ProductRequests)
+            .innerJoin(ProductTypes, eq(ProductRequests.productType, ProductTypes.identifier))
+            .innerJoin(User, eq(ProductRequests.createdBy, User.identifier))
+            .where(where)
+            .orderBy(desc(ProductRequests.createdAt));
 
-    let total = countResult[0]?.count ?? 0;
+    // The action filter ("provide value" / "approve value" / both) depends on
+    // per-request summaries, so when it is set it must be applied BEFORE
+    // pagination: fetch all matching rows, filter, then slice the page and
+    // report the full filtered count as `total`.
+    // Without an action filter the count-based, bounded path is used.
+    const countResult = filters.actionFilter
+        ? null
+        : await db
+            .select({ count: sql<number>`count(*)::int` })
+            .from(ProductRequests)
+            .where(where);
 
-    // Fetch page of results
-    const rows = await db
-        .select({
-            identifier: ProductRequests.identifier,
-            createdAt: ProductRequests.createdAt,
-            updatedAt: ProductRequests.updatedAt,
-            createdBy: ProductRequests.createdBy,
-            updatedBy: ProductRequests.updatedBy,
-            productType: ProductRequests.productType,
-            productNumber: ProductRequests.productNumber,
-            productToUpdate: ProductRequests.productToUpdate,
-            status: ProductRequests.status,
-            productTypeName: ProductTypes.name,
-            createdByName: sql<string>`${User.firstName} || ' ' || ${User.lastName}`,
-        })
-        .from(ProductRequests)
-        .innerJoin(ProductTypes, eq(ProductRequests.productType, ProductTypes.identifier))
-        .innerJoin(User, eq(ProductRequests.createdBy, User.identifier))
-        .where(where)
-        .orderBy(desc(ProductRequests.createdAt))
-        .limit(pageSize)
-        .offset(page * pageSize);
+    const rows = filters.actionFilter
+        ? await buildRowsQuery()
+        : await buildRowsQuery().limit(pageSize).offset(page * pageSize);
 
-    // Build batched permission lookup for all product types in this page
-    // (at most 4 queries instead of ~2000+ for a full page of results)
+    // Build batched permission lookup for all product types in the candidate
+    // rows (at most 4 queries instead of ~2000+ for a full page of results)
     const uniqueProductTypes = [...new Set(rows.map((r) => r.productType!))];
     const getPerms = await buildPermissionLookup(db, user, uniqueProductTypes);
+
+    // Load all values for the candidate rows in a single query.
+    const valuesByRequest = await loadActionableValuesByRequest(db, rows.map((r) => r.identifier));
 
     // Enrich with actionableSummary (uses batched permission lookup)
     const enrichedRows: ProductRequestListRow[] = [];
     for (const row of rows) {
-        const summary = await computeActionableSummary(
-            db, user, row.identifier, row.productType!, getPerms,
+        const summary = await computeActionableSummaryFromValues(
+            db,
+            user,
+            row.identifier,
+            row.productType!,
+            !!row.productToUpdate,
+            valuesByRequest.get(row.identifier) ?? [],
+            getPerms,
         );
         enrichedRows.push({
             identifier: row.identifier,
@@ -1288,12 +1305,10 @@ export async function listProductRequests(
         } as ProductRequestListRow);
     }
 
-    // Apply actionFilter on the enriched results if set.
-    // Action filters ("provide value", "approve value") only apply to "open"
-    // requests — non-open statuses always pass through.
-    let filteredRows = enrichedRows;
     if (filters.actionFilter) {
-        filteredRows = enrichedRows.filter((r) => {
+        // Action filters only apply to "open" requests — non-open statuses
+        // always pass through.
+        const filtered = enrichedRows.filter((r) => {
             if (r.status !== "open") return true;
             switch (filters.actionFilter) {
                 case "provide_or_approve":
@@ -1307,40 +1322,29 @@ export async function listProductRequests(
             }
         });
 
-        // Return the filtered count as total so pagination is self-consistent.
-        // (A fully accurate total would require computing summaries for all
-        // matching rows before pagination — prohibitively expensive.)
-        total = filteredRows.length;
+        return {
+            requests: filtered.slice(page * pageSize, page * pageSize + pageSize),
+            total: filtered.length,
+            availablePageSizes: [10, 20, 50, 100],
+        };
     }
 
     return {
-        requests: filteredRows,
-        total,
+        requests: enrichedRows,
+        total: countResult![0]?.count ?? 0,
         availablePageSizes: [10, 20, 50, 100],
     };
 }
 
 /**
- * Computes the actionableSummary for a single product request for a given user.
- *
- * When {@link getPerms} is provided (pre-built via {@link buildPermissionLookup}),
- * permission checks are O(1) in-memory lookups.  When omitted the function falls
- * back to per-value {@link getEffectivePermissions} calls for backwards
- * compatibility (e.g. single-request detail views that didn't pre-build a lookup).
+ * Selects the value rows needed to compute actionable summaries for a set of
+ * product requests. The product type is resolved through the owning request so
+ * a single query can cover requests of different product types.
  */
-async function computeActionableSummary(
-    db: DBClient,
-    user: UserType,
-    requestId: string,
-    productTypeIdentifier: string,
-    getPerms?: PermissionLookup,
-): Promise<{ needsValue: boolean; needsApproval: boolean }> {
-    let needsValue = false;
-    let needsApproval = false;
-
-    // Load all values for this request
-    const values = await db
+function selectActionableValuesForRequests(db: DBClient, requestIds: string[]) {
+    return db
         .select({
+            productRequest: ProductRequestsValues.productRequest,
             dataType: ProductRequestsValues.dataType,
             value: ProductRequestsValues.value,
             approvedBy: ProductRequestsValues.approvedBy,
@@ -1356,21 +1360,63 @@ async function computeActionableSummary(
             ptEditableOnUpdate: ProductTypesDataTypes.editableOnUpdate,
         })
         .from(ProductRequestsValues)
+        .innerJoin(ProductRequests, eq(ProductRequestsValues.productRequest, ProductRequests.identifier))
         .innerJoin(DataTypeSchema, eq(ProductRequestsValues.dataType, DataTypeSchema.identifier))
         .leftJoin(ProductTypesDataTypes, and(
-            eq(ProductTypesDataTypes.productType, productTypeIdentifier),
+            eq(ProductTypesDataTypes.productType, ProductRequests.productType),
             eq(ProductTypesDataTypes.dataType, ProductRequestsValues.dataType),
         ))
-        .where(eq(ProductRequestsValues.productRequest, requestId));
+        .where(inArray(ProductRequestsValues.productRequest, requestIds));
+}
 
-    // Also load the request to check if it's an update request
-    const request = await db
-        .select({ productToUpdate: ProductRequests.productToUpdate, createdBy: ProductRequests.createdBy })
-        .from(ProductRequests)
-        .where(eq(ProductRequests.identifier, requestId))
-        .limit(1);
+type ActionableValueRow = Awaited<ReturnType<typeof selectActionableValuesForRequests>>[number];
 
-    const isUpdateRequest = !!request[0]?.productToUpdate;
+/**
+ * Batched values loader for {@link computeActionableSummaryFromValues}: loads
+ * all values for the candidate request ids in a single query and groups them by
+ * request identifier, avoiding one values query per request.
+ */
+async function loadActionableValuesByRequest(
+    db: DBClient,
+    requestIds: string[],
+): Promise<Map<string, ActionableValueRow[]>> {
+    const byRequest = new Map<string, ActionableValueRow[]>();
+    if (requestIds.length === 0) return byRequest;
+
+    const rows = await selectActionableValuesForRequests(db, requestIds);
+    for (const row of rows) {
+        const requestId = row.productRequest;
+        if (!requestId) continue;
+        const list = byRequest.get(requestId);
+        if (list) {
+            list.push(row);
+        } else {
+            byRequest.set(requestId, [row]);
+        }
+    }
+    return byRequest;
+}
+
+/**
+ * In-memory core of the actionable-summary computation for a single product
+ * request. The caller supplies the already-loaded value rows (see
+ * {@link loadActionableValuesByRequest}) and whether the request is an update.
+ *
+ * When {@link getPerms} is provided (pre-built via {@link buildPermissionLookup}),
+ * permission checks are O(1) in-memory lookups.  When omitted the function falls
+ * back to per-value {@link getEffectivePermissions} calls.
+ */
+async function computeActionableSummaryFromValues(
+    db: DBClient,
+    user: UserType,
+    requestId: string,
+    productTypeIdentifier: string,
+    isUpdateRequest: boolean,
+    values: ActionableValueRow[],
+    getPerms?: PermissionLookup,
+): Promise<{ needsValue: boolean; needsApproval: boolean }> {
+    let needsValue = false;
+    let needsApproval = false;
 
     // Build a script context once for all requestorCanEdit script evaluations.
     const summaryCtx = ScriptEngine.buildContext(db, {

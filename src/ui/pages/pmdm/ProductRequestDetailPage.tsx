@@ -1142,9 +1142,14 @@ export function Component() {
             <Card style={{ marginBottom: "1rem" }}>
                 <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start", flexWrap: "wrap", gap: "0.5rem" }}>
                     <div>
-                        <h2 style={{ margin: "0 0 0.25rem 0" }}>
-                            Product: {request.productNumber}
-                        </h2>
+                        <div style={{ display: "flex", alignItems: "baseline", flexWrap: "wrap", columnGap: "1rem", rowGap: "0.25rem" }}>
+                            <h2 style={{ margin: "0 0 0.25rem 0" }}>
+                                Product: {request.productNumber}
+                            </h2>
+                            <span style={{ color: "var(--text-color-secondary)" }}>
+                                Requested by: {request.createdByName}
+                            </span>
+                        </div>
                         <p style={{ margin: "0 0 0.25rem 0", color: "var(--text-color-secondary)" }}>
                             {request.productTypeName}
                         </p>
