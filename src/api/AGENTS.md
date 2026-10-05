@@ -188,7 +188,7 @@ Canonical error descriptions:
 |---|---|
 | `400` | `Bad request. The request body or parameters failed validation.` |
 | `401` | `Unauthenticated. No valid session, API key, or bearer token was provided.` |
-| `403` | `Forbidden. The authenticated principal lacks the required functional permission.` (append ` Must be executed by a human user via browser session.` when the endpoint also enforces human-user) |
+| `403` | `Forbidden. The authenticated principal lacks the required functional permission.` (append ` Must be executed by a human user via browser session.` when the endpoint also enforces human-user; append ` Must be executed with an API key (X-API-Key header); browser-session authentication is not permitted.` when the endpoint is machine-only/API-key-only) |
 | `404` | `Not found. The requested resource does not exist.` |
 | `409` | `Conflict. The resource was modified concurrently; retry with the current value (optimistic locking).` |
 | `500` | `Internal server error.` |

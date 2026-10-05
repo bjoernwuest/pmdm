@@ -34,6 +34,7 @@ import { Type } from "@sinclair/typebox";
 import {
     BadRequestErrorResponseSchema,
     ConflictErrorResponseSchema,
+    ForbiddenApiKeyOnlyErrorResponseSchema,
     ForbiddenErrorResponseSchema,
     InternalServerErrorResponseSchema,
     NotFoundErrorResponseSchema,
@@ -412,6 +413,9 @@ export default function register(app: ApiInstance): void {
     // -----------------------------------------------------------------------
     app.put("/products/:productNumber", async (context) => {
         const claims = context.session?.idTokenClaims ?? context.tokenClaims ?? {};
+        if (context.authMethod !== "apiKey") {
+            return status(403, { error: "This endpoint can only be called with an API key (X-API-Key header)" });
+        }
         const permissionCheck = await requirePermissions(context.dbClient, claims, [FP_UPDATE_PRODUCT]);
         if (!permissionCheck.ok) return permissionCheck.denial;
 
@@ -436,9 +440,9 @@ export default function register(app: ApiInstance): void {
         detail: {
             tags: ["Products"],
             summary: "Update product",
-            description: "Updates product fields and optionally data type values. Requires optimistic lock timestamp. Requires FP_UPDATE_PRODUCT.",
+            description: "Updates product fields and optionally data type values. Requires optimistic lock timestamp. Requires FP_UPDATE_PRODUCT. Can only be called with an API key (X-API-Key header); browser-session and bearer-token authentication are rejected.",
             parameters: [
-                { name: "X-API-Key", in: "header", description: "API key used for authentication.", schema: { type: "string", example: "your-api-key" }, required: false },
+                { name: "X-API-Key", in: "header", description: "API key used for authentication. Required for this endpoint; browser-session and bearer-token authentication are not permitted.", schema: { type: "string", example: "your-api-key" }, required: true },
                 {
                     name: "productNumber",
                     description: "Product number of the product to update.",
@@ -451,7 +455,7 @@ export default function register(app: ApiInstance): void {
         response: {
             200: t.Object({ product: t.Any() }, { description: "The updated product." }),
              401: UnauthenticatedErrorResponseSchema,
-             403: ForbiddenErrorResponseSchema,
+             403: ForbiddenApiKeyOnlyErrorResponseSchema,
             409: ConflictErrorResponseSchema,
         },
     });

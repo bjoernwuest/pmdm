@@ -89,6 +89,8 @@ export const ForbiddenErrorResponseSchema = Type.Object({ error: Type.String() }
 
 export const ForbiddenHumanUserErrorResponseSchema = Type.Object({ error: Type.String() }, { description: "Forbidden. The authenticated principal lacks the required functional permission. Must be executed by a human user via browser session." });
 
+export const ForbiddenApiKeyOnlyErrorResponseSchema = Type.Object({ error: Type.String() }, { description: "Forbidden. Must be executed with an API key (X-API-Key header); browser-session authentication is not permitted." });
+
 export const NotFoundErrorResponseSchema = Type.Object({ error: Type.String() }, { description: "Not found. The requested resource does not exist." });
 
 export const ConflictErrorResponseSchema = Type.Object({ error: Type.String() }, { description: "Conflict. The resource was modified concurrently; retry with the current value (optimistic locking)." });

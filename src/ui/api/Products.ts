@@ -1,4 +1,4 @@
-import { apiGet, apiPost, apiPut, apiPatch } from "./index.ts";
+import { apiGet, apiPost, apiPatch } from "./index.ts";
 import type { ProductListRow, ProductDetail, EffectivePermissions } from "@/types/ProductType.ts";
 
 const BASE = "/api/products";
@@ -63,17 +63,6 @@ export async function createProduct(data: {
     values?: Record<string, unknown>;
 }): Promise<ProductDetailResponse> {
     return apiPost<ProductDetailResponse>(BASE, data);
-}
-
-export async function updateProduct(
-    productNumber: string,
-    data: {
-        productTypeIdentifier?: string;
-        values?: Record<string, unknown>;
-        knownUpdatedAt: string;
-    },
-): Promise<ProductDetailResponse> {
-    return apiPut<ProductDetailResponse>(`${BASE}/${encodeURIComponent(productNumber)}`, data);
 }
 
 export async function setProductDisabled(
