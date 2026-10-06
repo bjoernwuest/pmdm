@@ -8,7 +8,7 @@
  * - `auth/sessions.ts` — session store, `getSession`, `putSession`, `deleteSession`, `generateSessionId`
  * - `auth/oidc.ts` — `startAuth`, `finishAuth`, `logout`, `refreshSession`, `validateBearerToken`
  * - `auth/apiKeys.ts` — `validateApiKey`, `ApiKeyAuthContext`
- * - `auth/permissions.ts` — `authorize`, `requirePermissions`, `getMyFunctionalPermissions`, `init`, `getLoggedinUserObject`, `getFunctionalPermissionGrant`, `getMembershipSyncStatus`
+ * - `auth/permissions.ts` — `authorize`, `requirePermissions`, `requireAnyPermission`, `getMyFunctionalPermissions`, `init`, `getLoggedinUserObject`, `getFunctionalPermissionGrant`, `getMembershipSyncStatus`
  */
 
 export { type CookieOptions, getCookie, buildSetCookieHeader, buildDeleteCookieHeader } from "./auth/cookies.ts";
@@ -20,6 +20,7 @@ export {
     type PermissionCheckResult,
     authorize,
     requirePermissions,
+    requireAnyPermission,
     getMyFunctionalPermissions,
     init,
     getLoggedinUserObject,

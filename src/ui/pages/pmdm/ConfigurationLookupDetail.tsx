@@ -21,7 +21,7 @@ import {
     updateLookup,
     updateLookupValue,
 } from "@/ui/api/Lookups.ts";
-import { FP_DO_CONFIGURATION, FP_MANAGE_LOOKUPS, FP_VIEW_LOOKUPS } from "@/ui/auth/functional_permissions.ts";
+import { FP_DO_CONFIGURATION, FP_EXPORT_LOOKUPS, FP_MANAGE_LOOKUPS, FP_VIEW_LOOKUPS } from "@/ui/auth/functional_permissions.ts";
 import type { LookupEntity, LookupValue } from "@/types/ConfigurationTypes.ts";
 import type { UserSelectType } from "@/types/UserType.ts";
 import {
@@ -160,6 +160,7 @@ export function Component() {
     const pageSize = Number.isInteger(queryPageSize) && queryPage > 0 ? queryPageSize : 10;
 
     const canManage = viewerContext.permissionNames.includes(FP_MANAGE_LOOKUPS.functionalPermissionName);
+    const canExport = viewerContext.permissionNames.includes(FP_EXPORT_LOOKUPS.functionalPermissionName);
 
     const updateQuery = (patch: { page?: number; pageSize?: number; showDisabled?: boolean }) => {
         const next = new URLSearchParams(searchParams);
@@ -884,7 +885,7 @@ export function Component() {
 
                         <div className="admin-top-gap">
                             <div className="admin-top-gap" style={{ display: "flex", gap: "0.5rem", flexWrap: "wrap" }}>
-                                <Button label="Export" icon="pi pi-download" className="p-button-outlined" onClick={() => { void handleExport(); }} />
+                                {canExport ? <Button label="Export" icon="pi pi-download" className="p-button-outlined" onClick={() => { void handleExport(); }} /> : null}
                                 <Button label="Export template" icon="pi pi-download" className="p-button-outlined" onClick={() => { void handleExportTemplate(); }} />
                                 {canManage ? <Button label="Import" icon="pi pi-upload" className="p-button-outlined" onClick={() => setShowImportDialog(true)} /> : null}
                             </div>

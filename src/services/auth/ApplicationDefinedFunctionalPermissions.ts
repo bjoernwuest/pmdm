@@ -14,31 +14,35 @@ import { FunctionalPermissionNames } from "@/ui/auth/app_functional_permissions.
 
 const registrationPlaceholders = { identifier: "", createdAt: "", updatedAt: "" } as const;
 
-export const FP_VIEW_DATA_TYPES: FunctionalPermissionSelectType = { functionalPermissionName: FunctionalPermissionNames.FP_VIEW_DATA_TYPES, description: "View data type definitions — the field types available for product type configuration.", group: "Configuration", ...registrationPlaceholders };
+export const FP_VIEW_DATA_TYPES: FunctionalPermissionSelectType = { functionalPermissionName: FunctionalPermissionNames.FP_VIEW_DATA_TYPES, description: "View data type definitions — the field types available for product type configuration. Grants read access without FP_DO_CONFIGURATION; changes still require the manage permission.", group: "Configuration", ...registrationPlaceholders };
 
 export const FP_MANAGE_DATA_TYPES: FunctionalPermissionSelectType = { functionalPermissionName: FunctionalPermissionNames.FP_MANAGE_DATA_TYPES, description: "Create, edit, enable, or disable data types. Also grants access to script execution and script log features.", group: "Configuration", ...registrationPlaceholders };
 
-export const FP_DO_CONFIGURATION: FunctionalPermissionSelectType = { functionalPermissionName: FunctionalPermissionNames.FP_DO_CONFIGURATION, description: "Access the master data configuration area. Required alongside domain-specific permissions for lookups and consumables.", group: "Configuration", ...registrationPlaceholders };
+export const FP_DO_CONFIGURATION: FunctionalPermissionSelectType = { functionalPermissionName: FunctionalPermissionNames.FP_DO_CONFIGURATION, description: "Access the master data configuration area. On its own grants read access to all configuration entities; mutating them additionally requires the domain-specific manage permission.", group: "Configuration", ...registrationPlaceholders };
 
-export const FP_VIEW_TARGET_SYSTEMS: FunctionalPermissionSelectType = { functionalPermissionName: FunctionalPermissionNames.FP_VIEW_TARGET_SYSTEMS, description: "View the list of target systems — the external systems that product change requests get exported to.", group: "Configuration", ...registrationPlaceholders };
+export const FP_VIEW_TARGET_SYSTEMS: FunctionalPermissionSelectType = { functionalPermissionName: FunctionalPermissionNames.FP_VIEW_TARGET_SYSTEMS, description: "View the list of target systems — the external systems that product change requests get exported to. Grants read access without FP_DO_CONFIGURATION; changes still require the manage permission.", group: "Configuration", ...registrationPlaceholders };
 
 export const FP_MANAGE_TARGET_SYSTEMS: FunctionalPermissionSelectType = { functionalPermissionName: FunctionalPermissionNames.FP_MANAGE_TARGET_SYSTEMS, description: "Create, edit, enable, or disable target system definitions.", group: "Configuration", ...registrationPlaceholders };
 
-export const FP_VIEW_PRODUCT_TYPES: FunctionalPermissionSelectType = { functionalPermissionName: FunctionalPermissionNames.FP_VIEW_PRODUCT_TYPES, description: "View product type definitions and their data type assignments.", group: "Configuration", ...registrationPlaceholders };
+export const FP_VIEW_PRODUCT_TYPES: FunctionalPermissionSelectType = { functionalPermissionName: FunctionalPermissionNames.FP_VIEW_PRODUCT_TYPES, description: "View product type definitions and their data type assignments. Grants read access without FP_DO_CONFIGURATION; changes still require the manage permission.", group: "Configuration", ...registrationPlaceholders };
 
 export const FP_MANAGE_PRODUCT_TYPES: FunctionalPermissionSelectType = { functionalPermissionName: FunctionalPermissionNames.FP_MANAGE_PRODUCT_TYPES, description: "Create, edit, enable, or disable product types. Also assign and reorder data types on product types.", group: "Configuration", ...registrationPlaceholders };
 
-export const FP_VIEW_BUSINESS_DOMAINS: FunctionalPermissionSelectType = { functionalPermissionName: FunctionalPermissionNames.FP_VIEW_BUSINESS_DOMAINS, description: "View business domain definitions — categories used to organize products.", group: "Configuration", ...registrationPlaceholders };
+export const FP_VIEW_BUSINESS_DOMAINS: FunctionalPermissionSelectType = { functionalPermissionName: FunctionalPermissionNames.FP_VIEW_BUSINESS_DOMAINS, description: "View business domain definitions — categories used to organize products. Grants read access without FP_DO_CONFIGURATION; changes still require the manage permission.", group: "Configuration", ...registrationPlaceholders };
 
 export const FP_MANAGE_BUSINESS_DOMAINS: FunctionalPermissionSelectType = { functionalPermissionName: FunctionalPermissionNames.FP_MANAGE_BUSINESS_DOMAINS, description: "Create, edit, enable, or disable business domain definitions.", group: "Configuration", ...registrationPlaceholders };
 
-export const FP_VIEW_CONSUMABLES: FunctionalPermissionSelectType = { functionalPermissionName: FunctionalPermissionNames.FP_VIEW_CONSUMABLES, description: "View consumable master data definitions and their values. Requires FP_DO_CONFIGURATION alongside this permission.", group: "Configuration", ...registrationPlaceholders };
+export const FP_VIEW_CONSUMABLES: FunctionalPermissionSelectType = { functionalPermissionName: FunctionalPermissionNames.FP_VIEW_CONSUMABLES, description: "View consumable master data definitions and their values. Grants read access without FP_DO_CONFIGURATION; changes still require the manage permission.", group: "Configuration", ...registrationPlaceholders };
 
 export const FP_MANAGE_CONSUMABLES: FunctionalPermissionSelectType = { functionalPermissionName: FunctionalPermissionNames.FP_MANAGE_CONSUMABLES, description: "Create, edit, enable, or disable consumable master data and their values. Requires FP_DO_CONFIGURATION alongside this permission.", group: "Configuration", ...registrationPlaceholders };
 
-export const FP_VIEW_LOOKUPS: FunctionalPermissionSelectType = { functionalPermissionName: FunctionalPermissionNames.FP_VIEW_LOOKUPS, description: "View lookup table definitions and their values. Requires FP_DO_CONFIGURATION alongside this permission.", group: "Configuration", ...registrationPlaceholders };
+export const FP_VIEW_LOOKUPS: FunctionalPermissionSelectType = { functionalPermissionName: FunctionalPermissionNames.FP_VIEW_LOOKUPS, description: "View lookup table definitions and their values. Grants read access without FP_DO_CONFIGURATION; changes still require the manage permission.", group: "Configuration", ...registrationPlaceholders };
 
 export const FP_MANAGE_LOOKUPS: FunctionalPermissionSelectType = { functionalPermissionName: FunctionalPermissionNames.FP_MANAGE_LOOKUPS, description: "Create, edit, enable, or disable lookup tables and their values. Requires FP_DO_CONFIGURATION alongside this permission.", group: "Configuration", ...registrationPlaceholders };
+
+export const FP_EXPORT_CONSUMABLES: FunctionalPermissionSelectType = { functionalPermissionName: FunctionalPermissionNames.FP_EXPORT_CONSUMABLES, description: "Export consumable values to an XLSX file.", group: "Configuration", ...registrationPlaceholders };
+
+export const FP_EXPORT_LOOKUPS: FunctionalPermissionSelectType = { functionalPermissionName: FunctionalPermissionNames.FP_EXPORT_LOOKUPS, description: "Export lookup values to an XLSX file.", group: "Configuration", ...registrationPlaceholders };
 
 export const FP_VIEW_PRODUCTS: FunctionalPermissionSelectType = { functionalPermissionName: FunctionalPermissionNames.FP_VIEW_PRODUCTS, description: "Search for and view products and their detailed field values. Also view product change requests and their details.", group: "General", ...registrationPlaceholders };
 
@@ -79,6 +83,8 @@ export const applicationFunctionalPermissions: FunctionalPermissionSelectType[] 
     FP_MANAGE_CONSUMABLES,
     FP_VIEW_LOOKUPS,
     FP_MANAGE_LOOKUPS,
+    FP_EXPORT_CONSUMABLES,
+    FP_EXPORT_LOOKUPS,
     FP_VIEW_PRODUCTS,
     FP_CREATE_PRODUCT,
     FP_UPDATE_PRODUCT,

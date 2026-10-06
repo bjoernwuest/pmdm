@@ -18,6 +18,8 @@ export const FunctionalPermissionNames = {
     FP_MANAGE_CONSUMABLES: "manage_consumables",
     FP_VIEW_LOOKUPS: "view_lookups",
     FP_MANAGE_LOOKUPS: "manage_lookups",
+    FP_EXPORT_CONSUMABLES: "export_consumables",
+    FP_EXPORT_LOOKUPS: "export_lookups",
     FP_VIEW_DATA_TYPES: "view_data_types",
     FP_MANAGE_DATA_TYPES: "manage_data_types",
     FP_VIEW_PRODUCTS: "view_products",
@@ -46,6 +48,8 @@ export const FP_VIEW_CONSUMABLES = { functionalPermissionName: FunctionalPermiss
 export const FP_MANAGE_CONSUMABLES = { functionalPermissionName: FunctionalPermissionNames.FP_MANAGE_CONSUMABLES } as const;
 export const FP_VIEW_LOOKUPS = { functionalPermissionName: FunctionalPermissionNames.FP_VIEW_LOOKUPS } as const;
 export const FP_MANAGE_LOOKUPS = { functionalPermissionName: FunctionalPermissionNames.FP_MANAGE_LOOKUPS } as const;
+export const FP_EXPORT_CONSUMABLES = { functionalPermissionName: FunctionalPermissionNames.FP_EXPORT_CONSUMABLES } as const;
+export const FP_EXPORT_LOOKUPS = { functionalPermissionName: FunctionalPermissionNames.FP_EXPORT_LOOKUPS } as const;
 export const FP_VIEW_DATA_TYPES = { functionalPermissionName: FunctionalPermissionNames.FP_VIEW_DATA_TYPES } as const;
 export const FP_MANAGE_DATA_TYPES = { functionalPermissionName: FunctionalPermissionNames.FP_MANAGE_DATA_TYPES } as const;
 export const FP_VIEW_PRODUCTS = { functionalPermissionName: FunctionalPermissionNames.FP_VIEW_PRODUCTS } as const;

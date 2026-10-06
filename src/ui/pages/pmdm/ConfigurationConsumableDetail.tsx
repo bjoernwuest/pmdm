@@ -21,7 +21,7 @@ import {
     updateConsumable,
     updateConsumableValue,
 } from "@/ui/api/Consumables.ts";
-import { FP_DO_CONFIGURATION, FP_MANAGE_CONSUMABLES, FP_VIEW_CONSUMABLES } from "@/ui/auth/functional_permissions.ts";
+import { FP_DO_CONFIGURATION, FP_EXPORT_CONSUMABLES, FP_MANAGE_CONSUMABLES, FP_VIEW_CONSUMABLES } from "@/ui/auth/functional_permissions.ts";
 import type { ConsumableEntity, ConsumableValue } from "@/types/ConfigurationTypes.ts";
 import type { UserSelectType } from "@/types/UserType.ts";
 import {
@@ -159,6 +159,7 @@ export function Component() {
     const pageSize = Number.isInteger(queryPageSize) && queryPageSize > 0 ? queryPageSize : 10;
 
     const canManage = viewerContext.permissionNames.includes(FP_MANAGE_CONSUMABLES.functionalPermissionName);
+    const canExport = viewerContext.permissionNames.includes(FP_EXPORT_CONSUMABLES.functionalPermissionName);
 
     const updateQuery = (patch: { page?: number; pageSize?: number; showDisabled?: boolean; showUsed?: boolean }) => {
         const next = new URLSearchParams(searchParams);
@@ -727,7 +728,7 @@ export function Component() {
 
                         <div className="admin-top-gap">
                             <div className="admin-top-gap" style={{ display: "flex", gap: "0.5rem", flexWrap: "wrap" }}>
-                                <Button label="Export" icon="pi pi-download" className="p-button-outlined" onClick={() => { void handleExport(); }} />
+                                {canExport ? <Button label="Export" icon="pi pi-download" className="p-button-outlined" onClick={() => { void handleExport(); }} /> : null}
                                 <Button label="Export template" icon="pi pi-download" className="p-button-outlined" onClick={() => { void handleExportTemplate(); }} />
                                 {canManage ? <Button label="Import" icon="pi pi-upload" className="p-button-outlined" onClick={() => setShowImportDialog(true)} /> : null}
                             </div>

@@ -11,7 +11,7 @@ import {
     UnauthenticatedErrorResponseSchema,
 } from "@/types/ApiType.ts";
 import { getLoggedinUserObject, requirePermissions } from "@/services/Auth.ts";
-import { FP_DO_CONFIGURATION, FP_MANAGE_LOOKUPS, FP_VIEW_LOOKUPS, FP_READ_PRODUCT_FILTER } from "@/services/auth/ApplicationDefinedFunctionalPermissions.ts";
+import { FP_DO_CONFIGURATION, FP_EXPORT_LOOKUPS, FP_MANAGE_LOOKUPS, FP_VIEW_LOOKUPS, FP_READ_PRODUCT_FILTER } from "@/services/auth/ApplicationDefinedFunctionalPermissions.ts";
 import { runInTransaction } from "@/services/DatabaseDriver.ts";
 import { getUserListPageSizes } from "@/services/ui_config.ts";
 import {
@@ -257,7 +257,7 @@ export default function register(app: ApiInstance) {
 
     app.get("/lookups/:lookupid/export", async (context) => {
         const claims = context.session?.idTokenClaims ?? context.tokenClaims ?? {};
-        const permissionCheck = await requirePermissions(context.dbClient, claims, [FP_DO_CONFIGURATION, FP_VIEW_LOOKUPS]);
+        const permissionCheck = await requirePermissions(context.dbClient, claims, [FP_EXPORT_LOOKUPS]);
         if (!permissionCheck.ok) return permissionCheck.denial;
 
         const lookup = await LookupRepo.getByIdentifier(context.dbClient, context.params.lookupid, true);
@@ -276,7 +276,7 @@ export default function register(app: ApiInstance) {
         detail: {
             tags: ["Lookup"],
             summary: "Export lookup values to XLSX",
-            description: "Downloads all values of a lookup as an XLSX spreadsheet. Requires FP_DO_CONFIGURATION AND FP_VIEW_LOOKUPS.",
+            description: "Downloads all values of a lookup as an XLSX spreadsheet. Requires FP_EXPORT_LOOKUPS.",
             parameters: [
                 { name: "X-API-Key", in: "header", description: "API key used for authentication.", schema: { type: "string", example: "your-api-key" }, required: false },
                 {

@@ -11,7 +11,7 @@ import {
     UnauthenticatedErrorResponseSchema,
 } from "@/types/ApiType.ts";
 import { getLoggedinUserObject, requirePermissions } from "@/services/Auth.ts";
-import { FP_DO_CONFIGURATION, FP_MANAGE_CONSUMABLES, FP_VIEW_CONSUMABLES, FP_READ_PRODUCT_FILTER } from "@/services/auth/ApplicationDefinedFunctionalPermissions.ts";
+import { FP_DO_CONFIGURATION, FP_EXPORT_CONSUMABLES, FP_MANAGE_CONSUMABLES, FP_VIEW_CONSUMABLES, FP_READ_PRODUCT_FILTER } from "@/services/auth/ApplicationDefinedFunctionalPermissions.ts";
 import { runInTransaction } from "@/services/DatabaseDriver.ts";
 import { getUserListPageSizes } from "@/services/ui_config.ts";
 import {
@@ -247,7 +247,7 @@ export default function register(app: ApiInstance) {
 
     app.get("/consumables/:consumableid/export", async (context) => {
         const claims = context.session?.idTokenClaims ?? context.tokenClaims ?? {};
-        const permissionCheck = await requirePermissions(context.dbClient, claims, [FP_DO_CONFIGURATION, FP_VIEW_CONSUMABLES]);
+        const permissionCheck = await requirePermissions(context.dbClient, claims, [FP_EXPORT_CONSUMABLES]);
         if (!permissionCheck.ok) return permissionCheck.denial;
 
         const consumable = await ConsumableRepo.getByIdentifier(context.dbClient, context.params.consumableid, true);
@@ -266,7 +266,7 @@ export default function register(app: ApiInstance) {
         detail: {
             tags: ["Consumable"],
             summary: "Export consumable values to XLSX",
-            description: "Downloads all values of a consumable as an XLSX spreadsheet. Requires FP_DO_CONFIGURATION AND FP_VIEW_CONSUMABLES.",
+            description: "Downloads all values of a consumable as an XLSX spreadsheet. Requires FP_EXPORT_CONSUMABLES.",
             parameters: [
                 { name: "X-API-Key", in: "header", description: "API key used for authentication.", schema: { type: "string", example: "your-api-key" }, required: false },
                 {

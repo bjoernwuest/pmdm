@@ -1,6 +1,6 @@
 import type { ApiInstance } from "@/apps/api.ts";
 import { status, t } from "elysia";
-import { getLoggedinUserObject, requirePermissions } from "@/services/Auth.ts";
+import { getLoggedinUserObject, requireAnyPermission, requirePermissions } from "@/services/Auth.ts";
 import type { FunctionalPermissionSelectType } from "@/types/FunctionalPermissionType.ts";
 import { runInTransaction, type DBClient } from "@/services/DatabaseDriver.ts";
 import { getUserListPageSizes } from "@/services/ui_config.ts";
@@ -106,21 +106,23 @@ export type RegisterConfigurationEntityRoutesOptions<
     /** Functional permission required to read rows. */
     viewPermission: FunctionalPermissionSelectType;
     /**
-     * Optional alternative permissions accepted for the list endpoint only.
+     * Optional alternative permissions accepted by the list endpoint.
      *
      * When provided, users holding any of these permissions can list rows
      * without needing the primary {@link viewPermission}. The detail endpoint
-     * still requires {@link viewPermission}.
+     * does not accept them; it accepts {@link viewPermission},
+     * {@link managePermission}, or {@link gatekeeperPermission}.
      */
     alternativeListViewPermissions?: FunctionalPermissionSelectType[];
     /** Functional permission required to mutate rows. */
     managePermission: FunctionalPermissionSelectType;
     /**
-     * Optional gatekeeper permission required alongside view/manage permissions.
+     * Optional gatekeeper permission for cross-cutting access control.
      *
-     * When present, every endpoint requires this permission IN ADDITION to the
-     * domain-specific view or manage permission (AND logic). Use this for
-     * cross-cutting access control like FP_DO_CONFIGURATION.
+     * Mutations (create, update, enable/disable) require this permission IN
+     * ADDITION to {@link managePermission} (AND logic). Reads accept it as an
+     * alternative to {@link viewPermission} or {@link managePermission} (OR
+     * logic). Use this for cross-cutting access control like FP_DO_CONFIGURATION.
      */
     gatekeeperPermission?: FunctionalPermissionSelectType;
     /** Repo implementation handling persistence and PubSub publication. */
@@ -188,21 +190,14 @@ export function registerConfigurationEntityRoutes<
 
     app.get(options.basePath, async (context) => {
         const claims = context.session?.idTokenClaims ?? context.tokenClaims ?? {};
-        const allListPerms = [options.viewPermission, ...(options.alternativeListViewPermissions ?? [])];
-        const permissionCheck = await requirePermissions(
-            context.dbClient,
-            claims,
-            options.gatekeeperPermission ? [options.gatekeeperPermission] : [],
-            allListPerms,
-        );
+        const readPermissions = [
+            options.viewPermission,
+            ...(options.alternativeListViewPermissions ?? []),
+            ...(options.gatekeeperPermission ? [options.gatekeeperPermission] : []),
+            options.managePermission,
+        ];
+        const permissionCheck = await requireAnyPermission(context.dbClient, claims, readPermissions);
         if (!permissionCheck.ok) return permissionCheck.denial;
-        if (options.gatekeeperPermission && !permissionCheck.authz.some((perm) => perm.identifier === options.gatekeeperPermission!.identifier)) {
-            return status(403, { error: `Permission denied. Required: ${options.gatekeeperPermission!.functionalPermissionName}` });
-        }
-        if (!permissionCheck.authz.some((perm) => allListPerms.some((ap) => ap.identifier === perm.identifier))) {
-            const requiredNames = allListPerms.map((p) => p.functionalPermissionName).join(" or ");
-            return status(403, { error: `Permission denied. Required: ${requiredNames}` });
-        }
 
         const availablePageSizes = await getUserListPageSizes(context.dbClient, typeof claims.oid === "string" ? claims.oid : undefined);
         const page = Math.max(0, Number(context.query.page ?? 0));
@@ -240,7 +235,7 @@ export function registerConfigurationEntityRoutes<
             detail: {
             tags: [singularLabel],
             summary: `Get paged ${pluralLabel}`,
-            description: `Returns ${pluralLabel} with pagination metadata and optional inclusion of disabled entries. Requires '${options.viewPermission.functionalPermissionName}'${options.alternativeListViewPermissions ? ' or ' + options.alternativeListViewPermissions.map(p => p.functionalPermissionName).join(' or ') : ''}${options.gatekeeperPermission ? '. Also requires \'' + options.gatekeeperPermission.functionalPermissionName + '\' gatekeeper permission.' : '.'}`,
+            description: `Returns ${pluralLabel} with pagination metadata and optional inclusion of disabled entries. Requires one of '${options.viewPermission.functionalPermissionName}'${options.alternativeListViewPermissions ? ', ' + options.alternativeListViewPermissions.map(p => `'${p.functionalPermissionName}'`).join(', ') : ''}${options.gatekeeperPermission ? `, '${options.gatekeeperPermission.functionalPermissionName}'` : ''} or '${options.managePermission.functionalPermissionName}'.`,
             parameters: [
                 { name: "X-API-Key", in: "header", description: "API key used for authentication.", schema: { type: "string", example: "your-api-key" }, required: false },
                 {
@@ -270,11 +265,12 @@ export function registerConfigurationEntityRoutes<
 
     app.get(`${options.basePath}/:${options.routeParam}`, async (context) => {
         const claims = context.session?.idTokenClaims ?? context.tokenClaims ?? {};
-        const permissionCheck = await requirePermissions(
-            context.dbClient,
-            claims,
-            options.gatekeeperPermission ? [options.gatekeeperPermission, options.viewPermission] : [options.viewPermission],
-        );
+        const readPermissions = [
+            options.viewPermission,
+            ...(options.gatekeeperPermission ? [options.gatekeeperPermission] : []),
+            options.managePermission,
+        ];
+        const permissionCheck = await requireAnyPermission(context.dbClient, claims, readPermissions);
         if (!permissionCheck.ok) return permissionCheck.denial;
 
         const identifier = context.params[options.routeParam] as string;
@@ -292,7 +288,7 @@ export function registerConfigurationEntityRoutes<
         detail: {
             tags: [singularLabel],
             summary: `Get ${options.entityLabel.toLowerCase()} by identifier`,
-            description: `Returns a single ${options.entityLabel.toLowerCase()} including disabled entries.${options.gatekeeperPermission ? ' Requires \'' + options.gatekeeperPermission.functionalPermissionName + '\' AND \'' + options.viewPermission.functionalPermissionName + '\'.' : ' Requires \'' + options.viewPermission.functionalPermissionName + '\'.'}`,
+            description: `Returns a single ${options.entityLabel.toLowerCase()} including disabled entries. Requires one of '${options.viewPermission.functionalPermissionName}'${options.gatekeeperPermission ? `, '${options.gatekeeperPermission.functionalPermissionName}'` : ''} or '${options.managePermission.functionalPermissionName}'.`,
             parameters: [
                 { name: "X-API-Key", in: "header", description: "API key used for authentication.", schema: { type: "string", example: "your-api-key" }, required: false },
                 {

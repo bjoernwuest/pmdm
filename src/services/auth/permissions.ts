@@ -179,3 +179,29 @@ export async function requirePermissions(
     }
     return { ok: true, authz };
 }
+
+/**
+ * Shared "resolve claims → authorize() → deny with 403" sequence for route handlers that
+ * accept any one of several permissions (OR logic).
+ *
+ * Authorizes against `permissions`; the check succeeds when at least one of them is granted.
+ * The granted subset is available in the result's `authz` for conditional response shaping.
+ *
+ * @return An `ok: true` result carrying the granted permissions, or an `ok: false` result
+ *         carrying a ready-to-return 403 response naming the accepted permissions.
+ */
+export async function requireAnyPermission(
+    dbClient: DBClient,
+    claims: Record<string, any>,
+    permissions: FunctionalPermissionSelectType[],
+): Promise<PermissionCheckResult> {
+    const authz = await authorize(dbClient, claims, permissions);
+    const granted = permissions.some((required) => authz.some((p) => p.identifier === required.identifier));
+    if (!granted) {
+        return {
+            ok: false,
+            denial: status(403, { error: `Permission denied. Required one of: ${permissions.map((p) => p.functionalPermissionName).join(", ")}` }),
+        };
+    }
+    return { ok: true, authz };
+}

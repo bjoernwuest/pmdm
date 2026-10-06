@@ -1,5 +1,5 @@
 import type { ApiInstance } from "@/apps/api.ts";
-import { getLoggedinUserObject, requirePermissions } from "@/services/Auth.ts";
+import { getLoggedinUserObject, requireAnyPermission, requirePermissions } from "@/services/Auth.ts";
 import { FP_DO_CONFIGURATION, FP_MANAGE_DATA_TYPES, FP_VIEW_DATA_TYPES } from "@/services/auth/ApplicationDefinedFunctionalPermissions.ts";
 import {
     DataTypeRepo,
@@ -97,7 +97,7 @@ export default function register(app: ApiInstance): void {
     // -----------------------------------------------------------------------
     app.get("/data_types/:datatypeid/permissions", async (context) => {
         const claims = context.session?.idTokenClaims ?? context.tokenClaims ?? {};
-        const permissionCheck = await requirePermissions(context.dbClient, claims, [FP_DO_CONFIGURATION, FP_VIEW_DATA_TYPES]);
+        const permissionCheck = await requireAnyPermission(context.dbClient, claims, [FP_VIEW_DATA_TYPES, FP_DO_CONFIGURATION, FP_MANAGE_DATA_TYPES]);
         if (!permissionCheck.ok) return permissionCheck.denial;
 
         const identifier = context.params.datatypeid as string;
@@ -111,7 +111,7 @@ export default function register(app: ApiInstance): void {
         detail: {
             tags: ["Data type"],
             summary: "Get data type permissions",
-            description: "Returns all group-role assignments for a data type, including group names. Requires FP_DO_CONFIGURATION AND FP_VIEW_DATA_TYPES.",
+            description: "Returns all group-role assignments for a data type, including group names. Requires FP_VIEW_DATA_TYPES, FP_DO_CONFIGURATION or FP_MANAGE_DATA_TYPES.",
             parameters: [
                 { name: "X-API-Key", in: "header", description: "API key used for authentication.", schema: { type: "string", example: "your-api-key" }, required: false },
                 {

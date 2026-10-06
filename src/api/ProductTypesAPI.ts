@@ -1,5 +1,5 @@
 import type { ApiInstance } from "@/apps/api.ts";
-import { getLoggedinUserObject, requirePermissions } from "@/services/Auth.ts";
+import { getLoggedinUserObject, requireAnyPermission, requirePermissions } from "@/services/Auth.ts";
 import { FP_DO_CONFIGURATION, FP_MANAGE_PRODUCT_TYPES, FP_VIEW_PRODUCT_TYPES } from "@/services/auth/ApplicationDefinedFunctionalPermissions.ts";
 import {
     message_CreateProductType,
@@ -104,7 +104,7 @@ export default function register(app: ApiInstance): void {
     // GET /product_types/:producttypeid/datatypes — List assigned DataTypes
     app.get("/product_types/:producttypeid/datatypes", async (context) => {
         const claims = context.session?.idTokenClaims ?? context.tokenClaims ?? {};
-        const permissionCheck = await requirePermissions(context.dbClient, claims, [FP_DO_CONFIGURATION, FP_VIEW_PRODUCT_TYPES]);
+        const permissionCheck = await requireAnyPermission(context.dbClient, claims, [FP_VIEW_PRODUCT_TYPES, FP_DO_CONFIGURATION, FP_MANAGE_PRODUCT_TYPES]);
         if (!permissionCheck.ok) return permissionCheck.denial;
 
         const productTypeIdentifier = context.params.producttypeid as string;
@@ -136,7 +136,7 @@ export default function register(app: ApiInstance): void {
         detail: {
             tags: ["Product type"],
             summary: "List assigned data types for a product type",
-            description: "Returns all DataType assignments for a product type, joined with DataType name/kind/description and owner BusinessDomain name. Requires FP_DO_CONFIGURATION AND FP_VIEW_PRODUCT_TYPES.",
+            description: "Returns all DataType assignments for a product type, joined with DataType name/kind/description and owner BusinessDomain name. Requires FP_VIEW_PRODUCT_TYPES, FP_DO_CONFIGURATION or FP_MANAGE_PRODUCT_TYPES.",
             parameters: [
                 { name: "X-API-Key", in: "header", description: "API key used for authentication.", schema: { type: "string", example: "your-api-key" }, required: false },
                 {
@@ -345,7 +345,7 @@ export default function register(app: ApiInstance): void {
     // GET /product_types/:producttypeid/datatypes/:datatypeassignmentid/targetsystems
     app.get("/product_types/:producttypeid/datatypes/:datatypeassignmentid/targetsystems", async (context) => {
         const claims = context.session?.idTokenClaims ?? context.tokenClaims ?? {};
-        const permissionCheck = await requirePermissions(context.dbClient, claims, [FP_DO_CONFIGURATION, FP_VIEW_PRODUCT_TYPES]);
+        const permissionCheck = await requireAnyPermission(context.dbClient, claims, [FP_VIEW_PRODUCT_TYPES, FP_DO_CONFIGURATION, FP_MANAGE_PRODUCT_TYPES]);
         if (!permissionCheck.ok) return permissionCheck.denial;
 
         const productTypeIdentifier = context.params.producttypeid as string;
@@ -380,7 +380,7 @@ export default function register(app: ApiInstance): void {
         detail: {
             tags: ["Product type"],
             summary: "List assigned target systems for a product type data type assignment",
-            description: "Returns all TargetSystem assignments for a ProductType+DataType pair, joined with TargetSystem name. Requires FP_DO_CONFIGURATION AND FP_VIEW_PRODUCT_TYPES.",
+            description: "Returns all TargetSystem assignments for a ProductType+DataType pair, joined with TargetSystem name. Requires FP_VIEW_PRODUCT_TYPES, FP_DO_CONFIGURATION or FP_MANAGE_PRODUCT_TYPES.",
             parameters: [
                 { name: "X-API-Key", in: "header", description: "API key used for authentication.", schema: { type: "string", example: "your-api-key" }, required: false },
                 {
@@ -630,7 +630,7 @@ export default function register(app: ApiInstance): void {
     // GET /product_types/:producttypeid/datatypes/:datatypeassignmentid/permissions
     app.get("/product_types/:producttypeid/datatypes/:datatypeassignmentid/permissions", async (context) => {
         const claims = context.session?.idTokenClaims ?? context.tokenClaims ?? {};
-        const permissionCheck = await requirePermissions(context.dbClient, claims, [FP_DO_CONFIGURATION, FP_VIEW_PRODUCT_TYPES]);
+        const permissionCheck = await requireAnyPermission(context.dbClient, claims, [FP_VIEW_PRODUCT_TYPES, FP_DO_CONFIGURATION, FP_MANAGE_PRODUCT_TYPES]);
         if (!permissionCheck.ok) return permissionCheck.denial;
 
         const productTypeIdentifier = context.params.producttypeid as string;
@@ -651,7 +651,7 @@ export default function register(app: ApiInstance): void {
         detail: {
             tags: ["Product type"],
             summary: "Get product type data type permissions",
-            description: "Returns all group-role assignments for a ProductType+DataType assignment, including group names. Requires FP_DO_CONFIGURATION AND FP_VIEW_PRODUCT_TYPES.",
+            description: "Returns all group-role assignments for a ProductType+DataType assignment, including group names. Requires FP_VIEW_PRODUCT_TYPES, FP_DO_CONFIGURATION or FP_MANAGE_PRODUCT_TYPES.",
             parameters: [
                 { name: "X-API-Key", in: "header", description: "API key used for authentication.", schema: { type: "string", example: "your-api-key" }, required: false },
                 {
@@ -901,7 +901,7 @@ export default function register(app: ApiInstance): void {
     // GET /product_types/:producttypeid/datatypes/:datatypeassignmentid/previous-approvals
     app.get("/product_types/:producttypeid/datatypes/:datatypeassignmentid/previous-approvals", async (context) => {
         const claims = context.session?.idTokenClaims ?? context.tokenClaims ?? {};
-        const permissionCheck = await requirePermissions(context.dbClient, claims, [FP_DO_CONFIGURATION, FP_VIEW_PRODUCT_TYPES]);
+        const permissionCheck = await requireAnyPermission(context.dbClient, claims, [FP_VIEW_PRODUCT_TYPES, FP_DO_CONFIGURATION, FP_MANAGE_PRODUCT_TYPES]);
         if (!permissionCheck.ok) return permissionCheck.denial;
 
         const productTypeIdentifier = context.params.producttypeid as string;
@@ -922,7 +922,7 @@ export default function register(app: ApiInstance): void {
         detail: {
             tags: ["Product type"],
             summary: "Get previous approval dependencies",
-            description: "Returns all previous-approval dependencies for a ProductType+DataType assignment, including depends-on data type names. Requires FP_DO_CONFIGURATION AND FP_VIEW_PRODUCT_TYPES.",
+            description: "Returns all previous-approval dependencies for a ProductType+DataType assignment, including depends-on data type names. Requires FP_VIEW_PRODUCT_TYPES, FP_DO_CONFIGURATION or FP_MANAGE_PRODUCT_TYPES.",
             parameters: [
                 { name: "X-API-Key", in: "header", description: "API key used for authentication.", schema: { type: "string", example: "your-api-key" }, required: false },
                 {
@@ -1075,7 +1075,7 @@ export default function register(app: ApiInstance): void {
     // GET /product_types/:producttypeid/permissions — List product-type-level permissions
     app.get("/product_types/:producttypeid/permissions", async (context) => {
         const claims = context.session?.idTokenClaims ?? context.tokenClaims ?? {};
-        const permissionCheck = await requirePermissions(context.dbClient, claims, [FP_DO_CONFIGURATION, FP_VIEW_PRODUCT_TYPES]);
+        const permissionCheck = await requireAnyPermission(context.dbClient, claims, [FP_VIEW_PRODUCT_TYPES, FP_DO_CONFIGURATION, FP_MANAGE_PRODUCT_TYPES]);
         if (!permissionCheck.ok) return permissionCheck.denial;
 
         const productTypeIdentifier = context.params.producttypeid as string;
@@ -1092,7 +1092,7 @@ export default function register(app: ApiInstance): void {
         detail: {
             tags: ["Product type"],
             summary: "Get product type permissions",
-            description: "Returns all group-role assignments for a product type, including group names. Requires FP_DO_CONFIGURATION AND FP_VIEW_PRODUCT_TYPES.",
+            description: "Returns all group-role assignments for a product type, including group names. Requires FP_VIEW_PRODUCT_TYPES, FP_DO_CONFIGURATION or FP_MANAGE_PRODUCT_TYPES.",
             parameters: [
                 { name: "X-API-Key", in: "header", description: "API key used for authentication.", schema: { type: "string", example: "your-api-key" }, required: false },
                 {
