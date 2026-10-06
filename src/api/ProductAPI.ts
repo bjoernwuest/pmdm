@@ -3,7 +3,7 @@ import { runInTransaction } from "@/services/DatabaseDriver.ts";
 import { getLoggedinUserObject, requirePermissions } from "@/services/Auth.ts";
 import {
     FP_VIEW_PRODUCTS,
-    FP_CREATE_PRODUCT,
+    FP_CREATE_AND_IMPORT_PRODUCTS,
     FP_UPDATE_PRODUCT,
     FP_DISABLE_PRODUCT,
     FP_REQUEST_PRODUCT_UPDATE,
@@ -200,7 +200,7 @@ export default function register(app: ApiInstance): void {
     // -----------------------------------------------------------------------
     app.get("/products/export-template/:productTypeIdentifier", async (context) => {
         const claims = context.session?.idTokenClaims ?? context.tokenClaims ?? {};
-        const permissionCheck = await requirePermissions(context.dbClient, claims, [FP_VIEW_PRODUCTS]);
+        const permissionCheck = await requirePermissions(context.dbClient, claims, [FP_CREATE_AND_IMPORT_PRODUCTS]);
         if (!permissionCheck.ok) return permissionCheck.denial;
 
         const productTypeIdentifier = context.params.productTypeIdentifier as string;
@@ -223,7 +223,7 @@ export default function register(app: ApiInstance): void {
         detail: {
             tags: ["Products"],
             summary: "Download product import template",
-            description: "Generates and downloads an XLSX template for importing products of the given product type. Requires FP_VIEW_PRODUCTS.",
+            description: "Generates and downloads an XLSX template for importing products of the given product type. Requires FP_CREATE_AND_IMPORT_PRODUCTS.",
             parameters: [
                 { name: "X-API-Key", in: "header", description: "API key used for authentication.", schema: { type: "string", example: "your-api-key" }, required: false },
                 {
@@ -249,7 +249,7 @@ export default function register(app: ApiInstance): void {
     // -----------------------------------------------------------------------
     app.post("/products/import", async (context) => {
         const claims = context.session?.idTokenClaims ?? context.tokenClaims ?? {};
-        const permissionCheck = await requirePermissions(context.dbClient, claims, [FP_CREATE_PRODUCT]);
+        const permissionCheck = await requirePermissions(context.dbClient, claims, [FP_CREATE_AND_IMPORT_PRODUCTS]);
         if (!permissionCheck.ok) return permissionCheck.denial;
 
         // Use standard Web API FormData for reliable multipart file extraction
@@ -312,7 +312,7 @@ export default function register(app: ApiInstance): void {
         detail: {
             tags: ["Products"],
             summary: "Import products from XLSX",
-            description: "Imports products from an uploaded XLSX file. Returns created count and errors. Requires FP_CREATE_PRODUCT.",
+            description: "Imports products from an uploaded XLSX file. Returns created count and errors. Requires FP_CREATE_AND_IMPORT_PRODUCTS.",
             parameters: [
                 { name: "X-API-Key", in: "header", description: "API key used for authentication.", schema: { type: "string", example: "your-api-key" }, required: false },
             ],
@@ -369,7 +369,7 @@ export default function register(app: ApiInstance): void {
     // -----------------------------------------------------------------------
     app.post("/products", async (context) => {
         const claims = context.session?.idTokenClaims ?? context.tokenClaims ?? {};
-        const permissionCheck = await requirePermissions(context.dbClient, claims, [FP_CREATE_PRODUCT]);
+        const permissionCheck = await requirePermissions(context.dbClient, claims, [FP_CREATE_AND_IMPORT_PRODUCTS]);
         if (!permissionCheck.ok) return permissionCheck.denial;
 
         const body = context.body as { productNumber: string; productTypeIdentifier: string; values?: Record<string, unknown> };
@@ -394,7 +394,7 @@ export default function register(app: ApiInstance): void {
         detail: {
             tags: ["Products"],
             summary: "Create product",
-            description: "Creates a new product with optional data type values. Requires FP_CREATE_PRODUCT.",
+            description: "Creates a new product with optional data type values. Requires FP_CREATE_AND_IMPORT_PRODUCTS.",
             parameters: [
                 { name: "X-API-Key", in: "header", description: "API key used for authentication.", schema: { type: "string", example: "your-api-key" }, required: false },
             ],

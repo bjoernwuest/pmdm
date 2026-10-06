@@ -4,7 +4,7 @@ import {
     FP_VIEW_PRODUCTS,
     FP_REQUEST_PRODUCT_UPDATE,
     FP_CREATE_PRODUCT_COPY,
-    FP_CREATE_PRODUCT,
+    FP_CREATE_AND_IMPORT_PRODUCTS,
     FP_READ_PRODUCT_FILTER,
 } from "@/ui/auth/functional_permissions.ts";
 import {
@@ -384,10 +384,12 @@ export function Component() {
                     {viewerContext.permissionNames.includes(FP_READ_PRODUCT_FILTER.functionalPermissionName) && hasFilter && (
                         <Button label="Clear Filter" icon="pi pi-times" className="p-button-outlined p-button-danger" onClick={handleClearFilter} />
                     )}
-                    <Button label="Export Template" icon="pi pi-download" className="p-button-outlined"
-                        onClick={() => { setExportTypeId(null); setShowExportDialog(true); }} />
-                    {viewerContext.permissionNames.includes(FP_CREATE_PRODUCT.functionalPermissionName) && (
-                        <Button label="Import" icon="pi pi-upload" className="p-button-outlined" onClick={() => setShowImportDialog(true)} />
+                    {viewerContext.permissionNames.includes(FP_CREATE_AND_IMPORT_PRODUCTS.functionalPermissionName) && (
+                        <>
+                            <Button label="Export Template" icon="pi pi-download" className="p-button-outlined"
+                                onClick={() => { setExportTypeId(null); setShowExportDialog(true); }} />
+                            <Button label="Import" icon="pi pi-upload" className="p-button-outlined" onClick={() => setShowImportDialog(true)} />
+                        </>
                     )}
                 </div>
             </div>

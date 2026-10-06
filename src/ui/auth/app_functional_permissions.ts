@@ -24,6 +24,7 @@ export const FunctionalPermissionNames = {
     FP_MANAGE_DATA_TYPES: "manage_data_types",
     FP_VIEW_PRODUCTS: "view_products",
     FP_CREATE_PRODUCT: "create_product",
+    FP_CREATE_AND_IMPORT_PRODUCTS: "create_and_import_products",
     FP_UPDATE_PRODUCT: "update_product",
     FP_DISABLE_PRODUCT: "disable_product",
     FP_REQUEST_PRODUCT_UPDATE: "request_product_update",
@@ -54,6 +55,7 @@ export const FP_VIEW_DATA_TYPES = { functionalPermissionName: FunctionalPermissi
 export const FP_MANAGE_DATA_TYPES = { functionalPermissionName: FunctionalPermissionNames.FP_MANAGE_DATA_TYPES } as const;
 export const FP_VIEW_PRODUCTS = { functionalPermissionName: FunctionalPermissionNames.FP_VIEW_PRODUCTS } as const;
 export const FP_CREATE_PRODUCT = { functionalPermissionName: FunctionalPermissionNames.FP_CREATE_PRODUCT } as const;
+export const FP_CREATE_AND_IMPORT_PRODUCTS = { functionalPermissionName: FunctionalPermissionNames.FP_CREATE_AND_IMPORT_PRODUCTS } as const;
 export const FP_UPDATE_PRODUCT = { functionalPermissionName: FunctionalPermissionNames.FP_UPDATE_PRODUCT } as const;
 export const FP_DISABLE_PRODUCT = { functionalPermissionName: FunctionalPermissionNames.FP_DISABLE_PRODUCT } as const;
 export const FP_REQUEST_PRODUCT_UPDATE = { functionalPermissionName: FunctionalPermissionNames.FP_REQUEST_PRODUCT_UPDATE } as const;

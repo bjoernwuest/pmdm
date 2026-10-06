@@ -46,7 +46,9 @@ export const FP_EXPORT_LOOKUPS: FunctionalPermissionSelectType = { functionalPer
 
 export const FP_VIEW_PRODUCTS: FunctionalPermissionSelectType = { functionalPermissionName: FunctionalPermissionNames.FP_VIEW_PRODUCTS, description: "Search for and view products and their detailed field values. Also view product change requests and their details.", group: "General", ...registrationPlaceholders };
 
-export const FP_CREATE_PRODUCT: FunctionalPermissionSelectType = { functionalPermissionName: FunctionalPermissionNames.FP_CREATE_PRODUCT, description: "Create brand-new products and import products from files (such as XLSX or CSV). Also create new product change requests.", group: "General", ...registrationPlaceholders };
+export const FP_CREATE_PRODUCT: FunctionalPermissionSelectType = { functionalPermissionName: FunctionalPermissionNames.FP_CREATE_PRODUCT, description: "Create new product change requests (for example to request a new product or a product update).", group: "General", ...registrationPlaceholders };
+
+export const FP_CREATE_AND_IMPORT_PRODUCTS: FunctionalPermissionSelectType = { functionalPermissionName: FunctionalPermissionNames.FP_CREATE_AND_IMPORT_PRODUCTS, description: "Create products directly and import products from files (such as XLSX).", group: "General", ...registrationPlaceholders };
 
 export const FP_UPDATE_PRODUCT: FunctionalPermissionSelectType = { functionalPermissionName: FunctionalPermissionNames.FP_UPDATE_PRODUCT, description: "Edit existing product data — modify field values on a product directly.", group: "General", ...registrationPlaceholders };
 
@@ -87,6 +89,7 @@ export const applicationFunctionalPermissions: FunctionalPermissionSelectType[] 
     FP_EXPORT_LOOKUPS,
     FP_VIEW_PRODUCTS,
     FP_CREATE_PRODUCT,
+    FP_CREATE_AND_IMPORT_PRODUCTS,
     FP_UPDATE_PRODUCT,
     FP_DISABLE_PRODUCT,
     FP_REQUEST_PRODUCT_UPDATE,

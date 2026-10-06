@@ -18,7 +18,7 @@ This specification covers the complete Product module: types/TypeBox schemas, re
 | 8 | ProductPage under "General" menu section (top-level), ProductDetailPage no menu entry. Both require `FP_VIEW_PRODUCTS`. Disabled products are hidden by default; visible only when actively filtered |
 | 9 | Three PubSub topics: `create.Product`, `update.Product`, `disable.Product` (the latter used for both disable and enable) |
 | 10 | Stub backend endpoints for request-update and copy, returning 200 with placeholder |
-| 11 | `FP_CREATE_PRODUCT` covers both direct creation and import — no separate `FP_IMPORT_PRODUCTS` permission |
+| 11 | `FP_CREATE_AND_IMPORT_PRODUCTS` covers direct creation, XLSX import, and import-template download. `FP_CREATE_PRODUCT` is scoped to the product-change-request workflow only (`POST /api/product_requests`, `mode=new`) |
 
 ---
 
@@ -117,13 +117,14 @@ export type EffectivePermissions = {
 | Constant | Name string | Description | Group |
 |----------|-------------|-------------|-------|
 | `FP_VIEW_PRODUCTS` | `view_products` | Permitted to view products | General |
-| `FP_CREATE_PRODUCT` | `create_product` | Permitted to create and import products | General |
+| `FP_CREATE_PRODUCT` | `create_product` | Permitted to create product change requests | General |
+| `FP_CREATE_AND_IMPORT_PRODUCTS` | `create_and_import_products` | Permitted to create products directly, import products from files, and download the import template | General |
 | `FP_UPDATE_PRODUCT` | `update_product` | Permitted to update products | General |
 | `FP_DISABLE_PRODUCT` | `disable_product` | Permitted to disable/enable products | General |
 | `FP_REQUEST_PRODUCT_UPDATE` | `request_product_update` | Permitted to request updates on products | General |
 | `FP_CREATE_PRODUCT_COPY` | `create_product_copy` | Permitted to create copies of products | General |
 
-**Note**: `FP_CREATE_PRODUCT` covers both direct product creation and bulk import. Anyone who can create can import, and vice versa.
+**Note**: `FP_CREATE_AND_IMPORT_PRODUCTS` covers direct product creation (`POST /api/products`), bulk import, and template download. `FP_CREATE_PRODUCT` is used only by the product-change-request workflow (`POST /api/product_requests`, `mode=new`).
 
 ### Registration locations
 
@@ -201,13 +202,13 @@ Custom API routes — **no factory usage** due to `productNumber`-based lookups.
 |--------|------|------|-------------|
 | `GET` | `/api/products` | `FP_VIEW_PRODUCTS` | Paginated product list. Query params: `page`, `pageSize`, `includeDisabled` (default `false` — disabled products hidden unless explicitly requested), plus optional filter params: `productNumberContains`, `productTypeIdentifier`, `disabled` (boolean, for quick filters), and `filter` (JSON-serialized `FilterPayload` for rule-builder conditions). Response includes `effectivePermissions` |
 | `GET` | `/api/products/:productNumber` | `FP_VIEW_PRODUCTS` | Product detail with viewer-filtered values (applied automatically by repo) |
-| `POST` | `/api/products` | `FP_CREATE_PRODUCT` | Create product with optional values. Body: `{ productNumber, productTypeIdentifier, values?: Record<string, unknown> }` |
+| `POST` | `/api/products` | `FP_CREATE_AND_IMPORT_PRODUCTS` | Create product with optional values. Body: `{ productNumber, productTypeIdentifier, values?: Record<string, unknown> }` |
 | `PUT` | `/api/products/:productNumber` | `FP_UPDATE_PRODUCT` | Update product fields and optionally values. Body: `{ productTypeIdentifier?, values?: Record<string, unknown>, knownUpdatedAt }` |
 | `PATCH` | `/api/products/:productNumber/disabled` | `FP_DISABLE_PRODUCT` | Toggle disabled. Body: `{ disabled, knownUpdatedAt }` |
 | `POST` | `/api/products/:productNumber/request-update` | `FP_REQUEST_PRODUCT_UPDATE` | **Stub** — returns `{ status: "not_implemented" }` with 200 |
 | `POST` | `/api/products/:productNumber/copy` | `FP_CREATE_PRODUCT_COPY` | **Stub** — returns `{ status: "not_implemented" }` with 200 |
-| `GET` | `/api/products/export-template/:productTypeIdentifier` | `FP_CREATE_PRODUCT` | Generate and download XLSX template. Header row 2 contains DataTypeSchema names (viewer-permitted only). Cell A1 = ProductType.identifier. Column A = productNumber |
-| `POST` | `/api/products/import` | `FP_CREATE_PRODUCT` | Import XLSX. Body: multipart form with `file` and `productTypeIdentifier`. Returns `ImportResult`. Runs in `runInTransaction`. The import validates rows, then calls `createProduct` for each valid row within the transaction |
+| `GET` | `/api/products/export-template/:productTypeIdentifier` | `FP_CREATE_AND_IMPORT_PRODUCTS` | Generate and download XLSX template. Header row 2 contains DataTypeSchema names (viewer-permitted only). Cell A1 = ProductType.identifier. Column A = productNumber |
+| `POST` | `/api/products/import` | `FP_CREATE_AND_IMPORT_PRODUCTS` | Import XLSX. Body: multipart form with `file` and `productTypeIdentifier`. Returns `ImportResult`. Runs in `runInTransaction`. The import validates rows, then calls `createProduct` for each valid row within the transaction |
 
 #### GET `/api/products` Response Shape
 
@@ -393,8 +394,8 @@ export const meta: PageMeta = {
 - **Row click** (excluding action buttons): navigates to `/products/:productNumber`
 - **Filter button**: Opens modal with full query builder (AND/OR groups). Filter config serialized to JSON and saved in a cookie (`pmdm_product_filter`). On page load, cookie is read and filter auto-applied
 - **Clear filter button**: Visible only when filter is active. Clears cookie and reloads list
-- **Export template**: Requires `FP_CREATE_PRODUCT`. Opens popup to select ProductType (dropdown from `/api/product_types`). On select, calls `exportTemplate()` which triggers browser download of XLSX
-- **Import**: Requires `FP_CREATE_PRODUCT`. Opens popup with file input (accepts `.xlsx`). On file select, calls `importProducts()`. Displays result summary of created count and errors. If errors exist, generates and downloads error report XLSX
+- **Export template**: Requires `FP_CREATE_AND_IMPORT_PRODUCTS`. Opens popup to select ProductType (dropdown from `/api/product_types`). On select, calls `exportTemplate()` which triggers browser download of XLSX
+- **Import**: Requires `FP_CREATE_AND_IMPORT_PRODUCTS`. Opens popup with file input (accepts `.xlsx`). On file select, calls `importProducts()`. Displays result summary of created count and errors. If errors exist, generates and downloads error report XLSX
 - **Viewer permissions**: Columns for DataTypes the user cannot view are not rendered (server already filters them from the response)
 - **PubSub**: List re-fetches on `create.Product`, `update.Product`, `disable.Product` events via the PubSub subscription system
 
