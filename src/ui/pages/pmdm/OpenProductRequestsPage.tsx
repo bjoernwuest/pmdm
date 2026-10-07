@@ -22,6 +22,7 @@ import { MultiSelect } from "primereact/multiselect";
 import { InputText } from "primereact/inputtext";
 import { Dialog } from "primereact/dialog";
 import { Toast } from "primereact/toast";
+import { Message } from "primereact/message";
 import { useNavigate } from "react-router-dom";
 import type { PubSubMessage } from "@/types/PubSubType.ts";
 import { subscribe, unsubscribe } from "@/ui/pubsub.ts";
@@ -98,6 +99,7 @@ export function Component() {
 
     // Product types for filter and create dialog
     const [productTypes, setProductTypes] = useState<Array<{ identifier: string; name: string; description: string | null }>>([]);
+    const [productTypesError, setProductTypesError] = useState<string | null>(null);
 
     // Create dialog state
     const [showCreateDialog, setShowCreateDialog] = useState(false);
@@ -145,7 +147,17 @@ export function Component() {
                     name: pt.name,
                     description: pt.description,
                 })));
-            } catch (_) { /* ignore */ }
+                setProductTypesError(null);
+            } catch (e: any) {
+                const msg = e?.message ?? "Failed to load product types";
+                setProductTypesError(msg);
+                toast.current?.show({
+                    severity: "error",
+                    summary: "Could not load product types",
+                    detail: msg,
+                    life: 5000,
+                });
+            }
         })();
     }, []);
 
@@ -342,6 +354,14 @@ export function Component() {
                 style={{ width: "450px" }}
             >
                 <div style={{ display: "flex", flexDirection: "column", gap: "1rem" }}>
+                    {productTypes.length === 0 && (
+                        <Message
+                            severity="warn"
+                            text={productTypesError
+                                ? "Product types could not be loaded."
+                                : "No product types available. You may be missing the 'view_product_types' permission."}
+                        />
+                    )}
                     <div>
                         <label style={{ display: "block", marginBottom: "0.25rem", fontWeight: 600 }}>
                             Product Type

@@ -155,7 +155,7 @@ Triggered by clicking "Create new product" button in the header.
 
 ### 4.2 Behavior
 
-1. **Product Type dropdown**: Searchable dropdown showing all enabled product types (from [`getProductTypes`](../src/ui/api/ProductTypes.ts)). The "Create" button is disabled until a product type is selected.
+1. **Product Type dropdown**: Searchable dropdown showing all enabled product types (from [`getProductTypes`](../src/ui/api/ProductTypes.ts)). The "Create" button is disabled until a product type is selected. The dropdown is populated via `GET /api/product_types`, which is readable by holders of `FP_CREATE_PRODUCT`, `FP_REQUEST_PRODUCT_UPDATE`, or `FP_CREATE_PRODUCT_COPY` (alternative list permissions) as well as the Configuration read permissions. If the list cannot be loaded, the dialog shows a warning instead of silently disabling the button.
 2. **Product Number input**: Optional text field. Placeholder: "e.g. 5000001-01" or "auto-generated if empty"
 3. **Create button** (pi-plus icon): 
    - Calls `createProductRequest({ mode: "new", productTypeIdentifier, productNumber })`
