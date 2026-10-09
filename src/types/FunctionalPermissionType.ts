@@ -10,12 +10,12 @@ export * from './_FunctionalPermissionType.ts';
 
 /** Body for assigning groups to a functional permission. */
 export const GroupIdentifiersBodySchema = Type.Object({
-    groupIdentifiers: Type.Array(Type.String({ format: "uuid" }), { description: "UUIDs of the groups to grant the functional permission to." }),
+    groupIdentifiers: Type.Array(Type.String({ format: "uuid" }), { minItems: 1, description: "UUIDs of the groups to grant the functional permission to." }),
 });
 export type GroupIdentifiersBody = Static<typeof GroupIdentifiersBodySchema>;
 
 /** Body for granting/revoking functional permissions on a group. */
 export const PermissionIdentifiersBodySchema = Type.Object({
-    permissionIdentifiers: Type.Array(Type.String({ format: "uuid" }), { description: "UUIDs of the functional permissions to grant to the group." }),
+    permissionIdentifiers: Type.Array(Type.String({ format: "uuid" }), { minItems: 1, description: "UUIDs of the functional permissions to grant to the group." }),
 });
 export type PermissionIdentifiersBody = Static<typeof PermissionIdentifiersBodySchema>;

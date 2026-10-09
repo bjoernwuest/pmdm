@@ -111,7 +111,8 @@ export default function register(app: ApiInstance) {
         if (!user) return status(404, { error: "User does not exists" });
 
         const includeInactive = parseBooleanQuery(context.query.includeInactive);
-        const groups = permissionCheck.authz.some(p => p.identifier === FP_READ_GROUPS.identifier) ? await getGroups(context.dbClient, (await getGroupIdsAssignedTo(context.dbClient, [{ identifier: user.identifier }])).get(user.identifier) ?? [], undefined, includeInactive) : [];
+        const userGroupIds = permissionCheck.authz.some(p => p.identifier === FP_READ_GROUPS.identifier) ? ((await getGroupIdsAssignedTo(context.dbClient, [{ identifier: user.identifier }])).get(user.identifier) ?? []) : [];
+        const groups = 0 < userGroupIds.length ? await getGroups(context.dbClient, userGroupIds, undefined, includeInactive) : [];
 
         const functionalPermissions = [FP_READ_GROUPS, FP_READ_FUNCTIONAL_PERMISSIONS].every(p => permissionCheck.authz.some(ap => ap.identifier === p.identifier))
             ? await (async () => {
