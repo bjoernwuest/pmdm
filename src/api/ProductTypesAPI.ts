@@ -1,6 +1,6 @@
 import type { ApiInstance } from "@/apps/api.ts";
 import { getLoggedinUserObject, requireAnyPermission, requirePermissions } from "@/services/Auth.ts";
-import { FP_DO_CONFIGURATION, FP_MANAGE_PRODUCT_TYPES, FP_VIEW_PRODUCT_TYPES, FP_CREATE_PRODUCT, FP_REQUEST_PRODUCT_UPDATE, FP_CREATE_PRODUCT_COPY } from "@/services/auth/ApplicationDefinedFunctionalPermissions.ts";
+import { FP_DO_CONFIGURATION, FP_MANAGE_PRODUCT_TYPES, FP_VIEW_PRODUCT_TYPES, FP_CREATE_PRODUCT, FP_REQUEST_PRODUCT_UPDATE, FP_CREATE_PRODUCT_COPY, FP_READ_PRODUCT_FILTER } from "@/services/auth/ApplicationDefinedFunctionalPermissions.ts";
 import {
     message_CreateProductType,
     message_DisableProductType,
@@ -80,6 +80,7 @@ export default function register(app: ApiInstance): void {
         entitySchema: ProductTypeSchema,
         viewPermission: FP_VIEW_PRODUCT_TYPES,
         alternativeListViewPermissions: [
+            FP_READ_PRODUCT_FILTER,
             FP_CREATE_PRODUCT,
             FP_REQUEST_PRODUCT_UPDATE,
             FP_CREATE_PRODUCT_COPY,
