@@ -11,7 +11,14 @@ import {
     message_CreateProductRequest,
     message_CancelProductRequest,
     message_ImportingProductRequest,
+    message_UpdateProductRequestValue,
 } from "@/types/ProductRequestType.ts";
+import {
+    message_UpdateDataType,
+} from "@/types/DataTypeType.ts";
+import {
+    message_UpdateProductTypeDataType,
+} from "@/types/ProductTypeType.ts";
 import React, { useEffect, useState, useCallback, useRef } from "react";
 import { DataTable } from "primereact/datatable";
 import { Column } from "primereact/column";
@@ -163,13 +170,35 @@ export function Component() {
 
     // PubSub subscriptions
     useEffect(() => {
-        const sub1 = subscribe({ and: message_CreateProductRequest }, (_msg: PubSubMessage) => { fetchRequests(); });
-        const sub2 = subscribe({ and: message_CancelProductRequest }, (_msg: PubSubMessage) => { fetchRequests(); });
-        const sub3 = subscribe({ and: message_ImportingProductRequest }, (_msg: PubSubMessage) => { fetchRequests(); });
+        // Value updates refresh the header columns. A short trailing debounce
+        // collapses bursts of saves/recalculations into one list refetch.
+        let debounceTimer: ReturnType<typeof setTimeout> | null = null;
+        const scheduleRefresh = () => {
+            if (debounceTimer !== null) clearTimeout(debounceTimer);
+            debounceTimer = setTimeout(() => {
+                debounceTimer = null;
+                fetchRequests();
+            }, 300);
+        };
+
+        // Flag changes (data type master flag, assignment override) can alter
+        // the column set/visibility, so refresh immediately.
+        const immediateRefresh = () => { fetchRequests(); };
+
+        const sub1 = subscribe({ and: message_CreateProductRequest }, (_msg: PubSubMessage) => { immediateRefresh(); });
+        const sub2 = subscribe({ and: message_CancelProductRequest }, (_msg: PubSubMessage) => { immediateRefresh(); });
+        const sub3 = subscribe({ and: message_ImportingProductRequest }, (_msg: PubSubMessage) => { immediateRefresh(); });
+        const sub4 = subscribe({ and: message_UpdateProductRequestValue }, (_msg: PubSubMessage) => { scheduleRefresh(); });
+        const sub5 = subscribe({ and: message_UpdateDataType }, (_msg: PubSubMessage) => { immediateRefresh(); });
+        const sub6 = subscribe({ and: message_UpdateProductTypeDataType }, (_msg: PubSubMessage) => { immediateRefresh(); });
         return () => {
+            if (debounceTimer !== null) clearTimeout(debounceTimer);
             if (sub1) unsubscribe(sub1);
             if (sub2) unsubscribe(sub2);
             if (sub3) unsubscribe(sub3);
+            if (sub4) unsubscribe(sub4);
+            if (sub5) unsubscribe(sub5);
+            if (sub6) unsubscribe(sub6);
         };
     }, [fetchRequests]);
 
@@ -337,6 +366,14 @@ export function Component() {
             >
                 <Column field="productNumber" header="Product #" sortable />
                 <Column field="productTypeName" header="Product Type" sortable />
+                {(data?.headerAttributes ?? []).map((attr) => (
+                    <Column
+                        key={attr.dataType}
+                        header={attr.name}
+                        body={(row: any) => row.headerValues?.[attr.dataType] ?? "—"}
+                        style={{ minWidth: "120px" }}
+                    />
+                ))}
                 <Column field="status" header="Status" body={statusBody} sortable />
                 <Column header="Action for you" body={actionBody} />
                 <Column field="createdByName" header="Created By" sortable />

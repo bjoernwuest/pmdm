@@ -109,13 +109,14 @@ async function getUserBooleanConfig(db: DBClient, userId: string, cfgEntry: Conf
 }
 
 function buildAwaitingTable(awaitingProvide: AwaitingItem[], awaitingApprove: AwaitingItem[], baseURL: string): string {
-    const rows: { productNumber: string; awaiting: string; link: string }[] = [];
+    const rows: { productNumber: string; awaiting: string; link: string; headerValues: Record<string, string> }[] = [];
 
     for (const item of awaitingProvide) {
         rows.push({
             productNumber: item.productNumber,
             awaiting: "Provide value",
             link: baseURL ? `<a href="${baseURL}/product-requests/${item.requestId}">Open request</a>` : "Open request",
+            headerValues: item.headerValues ?? {},
         });
     }
     for (const item of awaitingApprove) {
@@ -123,6 +124,7 @@ function buildAwaitingTable(awaitingProvide: AwaitingItem[], awaitingApprove: Aw
             productNumber: item.productNumber,
             awaiting: "Approve value",
             link: baseURL ? `<a href="${baseURL}/product-requests/${item.requestId}">Open request</a>` : "Open request",
+            headerValues: item.headerValues ?? {},
         });
     }
 
@@ -133,11 +135,22 @@ function buildAwaitingTable(awaitingProvide: AwaitingItem[], awaitingApprove: Aw
 
     if (rows.length === 0) return "<p>None</p>";
 
+    // Union of header attribute names across the awaiting rows, in first-seen
+    // order. Columns are rendered between "Product Number" and "Awaiting".
+    const headerNames: string[] = [];
+    for (const row of rows) {
+        for (const name of Object.keys(row.headerValues)) {
+            if (!headerNames.includes(name)) headerNames.push(name);
+        }
+    }
+
+    const headerCells = headerNames.map((name) => `<th>${name}</th>`).join("");
     let html = `<table border="1" cellpadding="5" cellspacing="0" style="border-collapse:collapse">
-  <thead><tr><th>Product Number</th><th>Awaiting</th><th>Link</th></tr></thead>
+  <thead><tr><th>Product Number</th>${headerCells}<th>Awaiting</th><th>Link</th></tr></thead>
   <tbody>`;
     for (const row of rows) {
-        html += `\n    <tr><td>${row.productNumber}</td><td>${row.awaiting}</td><td>${row.link}</td></tr>`;
+        const valueCells = headerNames.map((name) => `<td>${row.headerValues[name] ?? "—"}</td>`).join("");
+        html += `\n    <tr><td>${row.productNumber}</td>${valueCells}<td>${row.awaiting}</td><td>${row.link}</td></tr>`;
     }
     html += `\n  </tbody>\n</table>`;
     return html;

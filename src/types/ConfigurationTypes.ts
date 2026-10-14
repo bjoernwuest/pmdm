@@ -129,6 +129,7 @@ export type LookupValuesResponse = {
 export type DataTypeSummary = ConfigurationEntity & {
     kind: string;
     owner: string;
+    isHeader: boolean;
 };
 
 /** Data type detail shape including full config and owner name. */

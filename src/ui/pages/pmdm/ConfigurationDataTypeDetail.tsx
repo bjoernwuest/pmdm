@@ -43,6 +43,7 @@ import Toggle from "@/ui/components/Toggle.tsx";
 import { ScriptEditorPopup } from "@/ui/components/ScriptEditorPopup.tsx";
 import { ApiError } from "@/ui/api/errors.ts";
 import { InputText } from "primereact/inputtext";
+import { InputSwitch } from "primereact/inputswitch";
 import { Checkbox } from "primereact/checkbox";
 import type { FilterableDropdownOption } from "@/ui/components/FilterableDropdown.tsx";
 
@@ -488,6 +489,7 @@ export function Component() {
     const persistEdits = useCallback(async (overrides: {
         owner?: string;
         config?: Record<string, unknown>;
+        isHeader?: boolean;
     }) => {
         if (!detail || !datatypeid) return;
         setIsSaving(true);
@@ -907,8 +909,8 @@ export function Component() {
                     )}
                 </div>
 
-                {/* Row 2: Mandatory | Requestor can edit | Owner | Status */}
-                <div className="admin-detail-grid admin-top-gap" style={{ gridTemplateColumns: "repeat(4, 1fr)" }}>
+                {/* Row 2: Mandatory | Requestor can edit | Is Header | Owner | Status */}
+                <div className="admin-detail-grid admin-top-gap" style={{ gridTemplateColumns: "repeat(5, 1fr)" }}>
                    <div>
                        <strong>Mandatory:</strong>{" "}
                        {canManage ? (
@@ -995,6 +997,18 @@ export function Component() {
                             </div>
                         ) : (
                             <span>{chipValue(detail.requestorCanEdit) === "script" ? "Script" : detail.requestorCanEdit === true || detail.requestorCanEdit === "Yes" ? "Yes" : "No"}</span>
+                        )}
+                    </div>
+                    <div>
+                        <strong>Is Header:</strong>{" "}
+                        {canManage ? (
+                            <InputSwitch
+                                checked={detail.isHeader}
+                                onChange={(e: { value: boolean }) => void persistEdits({ isHeader: e.value })}
+                                disabled={!canManage}
+                            />
+                        ) : (
+                            <span>{detail.isHeader ? "Yes" : "No"}</span>
                         )}
                     </div>
                     <div>

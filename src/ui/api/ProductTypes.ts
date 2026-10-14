@@ -105,6 +105,7 @@ export type ProductTypeDataTypeAssignment = {
     dataType: string;
     mandatory: boolean | null;
     requestorCanEdit: boolean | null;
+    isHeader: boolean | null;
     editableOnUpdate: boolean;
     config: Record<string, unknown> | null;
     owner: string | null;
@@ -112,6 +113,7 @@ export type ProductTypeDataTypeAssignment = {
     dataTypeKind: string;
     dataTypeDescription: string | null;
     dataTypeConfig: unknown;
+    dataTypeIsHeader: boolean;
     ownerBusinessDomainName: string | null;
 };
 

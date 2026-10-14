@@ -159,6 +159,7 @@ Add to [`src/ui/types/ConfigurationTypes.ts`](../src/ui/types/ConfigurationTypes
 export type DataTypeSummary = ConfigurationEntity & {
     kind: string;
     owner: string;  // BusinessDomain identifier
+    isHeader: boolean;  // master "header attribute" flag
 };
 
 export type DataTypeEntity = DataTypeSummary & {
@@ -224,6 +225,7 @@ New file: [`../src/ui/pages/pmdm/ConfigurationDataTypeDetail.tsx`](../src/ui/pag
 - Kind (displayed as readonly badge; kind cannot be changed after creation)
 - Mandatory (InputSwitch)
 - requestorCanEdit (InputSwitch)
+- Is Header (InputSwitch) — master flag marking the data type as a header attribute (see [`product_request.md`](product_request.md) §1); overridable per product-type assignment
 - Owner (Dropdown of BusinessDomains by name)
 - Enabled/Disabled toggle button
 - Audit fields (created/updated timestamps and users)

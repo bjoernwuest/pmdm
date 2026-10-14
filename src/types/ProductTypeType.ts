@@ -47,6 +47,8 @@ export type ProductTypeDataTypeWithDetails = ProductTypesDataType & {
     dataTypeDescription: string | null;
     dataTypeConfig: unknown;
     ownerBusinessDomainName: string | null;
+    /** Master "is header" flag on the referenced data type. */
+    dataTypeIsHeader: boolean;
 };
 
 // PATCH body for ProductTypesDataTypes — all mutable fields, all optional

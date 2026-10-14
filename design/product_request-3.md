@@ -99,6 +99,7 @@ Uses PrimeReact [`DataTable`](https://primereact.org/datatable/) with lazy loadi
 |--------|-------|-------|
 | Product # | `productNumber` | Sortable. Click navigates to detail page |
 | Product Type | `productTypeName` | Sortable |
+| Header attributes | `row.headerValues[attr.dataType]` | Zero or more dynamic columns, one per entry in `headerAttributes`, inserted **directly after "Product Type"** and before "Status". See section 3.5 |
 | Status | `status` | Rendered as Tag: `open`=info, `importing`=warning, `done`=success, `cancelled`=danger |
 | Action for you | (computed) | See section 3.4 |
 | Created By | `createdByName` | |
@@ -130,6 +131,16 @@ For each product request, determine what actions the current user can take. This
 }
 ```
 per request row.
+
+### 3.5 Dynamic Header Attribute Columns
+
+Data types marked `isHeader` (directly or via a product-type assignment override) are surfaced as extra list columns showing the value's display string as summary context.
+
+- The list endpoint returns `headerAttributes: { dataType, name }[]` — the union of header data types across the returned page, filtered to the viewer's roles (a column is included only when the viewer holds at least one role on that data type in the request's product type). Disabled data types and data types where the viewer has no role are excluded.
+- Each row also carries `headerValues: Record<string, string>` keyed by data type identifier; the cell renders `row.headerValues[attr.dataType] ?? "—"`.
+- The display string mirrors the detail table row: the resolved value (`value`, falling back to `defaultValue`; `—` when both are empty). Lookup/consumable identifiers are resolved to names server-side (the list endpoint has no client option maps); product numbers, strings, and calculated values render as stored; booleans render `true`/`false`.
+- A page mixing product types shows the union of columns, with `—` for rows that lack the attribute.
+- Placement is after "Product Type"; one column per header attribute.
 
 ---
 
@@ -172,18 +183,11 @@ Triggered by clicking "Create new product" button in the header.
 
 Subscribe to topic updates to auto-refresh the list:
 
-```typescript
-useEffect(() => {
-    const sub1 = subscribe(message_CreateProductRequest, () => fetchRequests());
-    const sub2 = subscribe(message_CancelProductRequest, () => fetchRequests());
-    const sub3 = subscribe(message_ImportingProductRequest, () => fetchRequests());
-    return () => {
-        if (sub1) unsubscribe(sub1);
-        if (sub2) unsubscribe(sub2);
-        if (sub3) unsubscribe(sub3);
-    };
-}, [fetchRequests]);
-```
+- `message_CreateProductRequest`, `message_CancelProductRequest`, `message_ImportingProductRequest` → immediate `fetchRequests()`.
+- `message_UpdateProductRequestValue` → debounced (≈300 ms trailing) `fetchRequests()`, so header attribute values stay current (also covers recalculation of dependent values) without one refetch per saved value.
+- `message_UpdateDataType` and `message_UpdateProductTypeDataType` → immediate `fetchRequests()`, so the header column set/visibility refreshes when an `isHeader` flag changes.
+
+`fetchRequests` preserves the active page and filters.
 
 ---
 
@@ -204,4 +208,4 @@ Position before the Products page entry (or after AdministrationHomePage if that
 - **API**: [`getProductRequests`](../src/ui/api/ProductRequests.ts), [`createProductRequest`](../src/ui/api/ProductRequests.ts), [`getProductTypes`](../src/ui/api/ProductTypes.ts)
 - **Components**: PrimeReact `DataTable`, `Column`, `Button`, `Dialog`, `Dropdown`, `InputText`, `Tag`, `Toast`
 - **PubSub**: `subscribe`, `unsubscribe` from [`src/ui/pubsub.ts`](../src/ui/pubsub.ts)
-- **PubSub topics**: `message_CreateProductRequest`, `message_CancelProductRequest`, `message_ImportingProductRequest` from [`src/types/ProductRequestSchema.ts`](../src/types/ProductRequest.ts)
+- **PubSub topics**: `message_CreateProductRequest`, `message_CancelProductRequest`, `message_ImportingProductRequest`, `message_UpdateProductRequestValue` from [`src/types/ProductRequestType.ts`](../src/types/ProductRequestType.ts); `message_UpdateDataType` from [`src/types/DataTypeType.ts`](../src/types/DataTypeType.ts); `message_UpdateProductTypeDataType` from [`src/types/ProductTypeType.ts`](../src/types/ProductTypeType.ts)

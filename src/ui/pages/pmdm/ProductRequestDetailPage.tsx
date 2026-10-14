@@ -831,6 +831,24 @@ export function Component() {
         });
     }, [request?.values, showHidden, filterApplied, filterIds, lookupOptions, consumableOptions, productOptions, activeEditField]);
 
+    // Header attributes: `isHeader` values shown as summary context in the
+    // header block, independent of `showByDefault`. Names resolve from the same
+    // option maps as the detail table. Updates live via the existing
+    // message_UpdateProductRequestValue subscription.
+    const headerValues = useMemo(() => {
+        return (request?.values ?? [])
+            .filter((v: any) => v.isHeader)
+            .map((v: any) => {
+                const displayValue = v.value !== null
+                    ? v.value
+                    : (v.defaultValue !== null && v.defaultValue !== "null" ? v.defaultValue : null);
+                const display = displayValue === null
+                    ? "—"
+                    : resolveDisplayName(v, displayValue);
+                return { ...v, _headerDisplay: display };
+            });
+    }, [request?.values, resolveDisplayName]);
+
     // Filter popup – narrowed data types and their IDs for the checkbox list
     const filteredPopupValues = useMemo(() => {
         return (request?.values ?? []).filter((v: any) => {
@@ -1150,6 +1168,19 @@ export function Component() {
                                     {request.productToUpdate}
                                 </a>
                             </p>
+                        )}
+                        {headerValues.length > 0 && (
+                            <div style={{
+                                display: "flex", flexWrap: "wrap", columnGap: "1.25rem",
+                                rowGap: "0.25rem", marginTop: "0.5rem",
+                            }}>
+                                {headerValues.map((v: any) => (
+                                    <span key={v.dataType} style={{ fontSize: "0.9rem" }}>
+                                        <span style={{ color: "var(--text-color-secondary)" }}>{v.dataTypeName}:</span>{" "}
+                                        <span style={{ fontWeight: 600 }}>{v._headerDisplay}</span>
+                                    </span>
+                                ))}
+                            </div>
                         )}
                     </div>
                     <div style={{ display: "flex", gap: "0.5rem", flexWrap: "wrap", justifyContent: "flex-end" }}>

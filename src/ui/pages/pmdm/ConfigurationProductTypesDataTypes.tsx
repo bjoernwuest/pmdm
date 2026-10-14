@@ -136,6 +136,16 @@ function triStateNext(current: boolean | string | null): string | null {
     return "Yes";
 }
 
+/**
+ * Tri-state cycle for boolean-typed overrides (e.g. isHeader):
+ * inherit (null) → on (true) → off (false) → inherit.
+ */
+function triStateNextBool(current: boolean | null): boolean | null {
+    if (current === true) return false;
+    if (current === false) return null;
+    return true;
+}
+
 function triStateLabel(value: boolean | string | null, parentLabel?: string): string {
     if (value === true || value === "Yes") return "Yes";
     if (value === false || value === "No") return "No";
@@ -157,6 +167,7 @@ interface AssignmentLabelRefs {
     dataTypeKind: React.RefObject<LabelHandle | null>;
     owner: React.RefObject<LabelHandle | null>;
     mandatory: React.RefObject<LabelHandle | null>;
+    isHeader: React.RefObject<LabelHandle | null>;
     requestorCanEdit: React.RefObject<LabelHandle | null>;
     configMode: React.RefObject<LabelHandle | null>;
 }
@@ -412,6 +423,7 @@ export function Component() {
                     dataTypeKind: { current: null },
                     owner: { current: null },
                     mandatory: { current: null },
+                    isHeader: { current: null },
                     requestorCanEdit: { current: null },
                     configMode: { current: null },
                 };
@@ -423,6 +435,7 @@ export function Component() {
             refs.dataTypeKind.current?.setText(row.dataTypeKind, { assignmentId: id, field: "dataTypeKind" });
             refs.owner.current?.setText(row.ownerBusinessDomainName ?? row.owner ?? "(inherit)", { assignmentId: id, field: "owner" });
             refs.mandatory.current?.setText(triStateLabel(row.mandatory, "from DataType"), { assignmentId: id, field: "mandatory" });
+            refs.isHeader.current?.setText(triStateLabel(row.isHeader, "from DataType"), { assignmentId: id, field: "isHeader" });
             refs.requestorCanEdit.current?.setText(triStateLabel(row.requestorCanEdit, "from DataType"), { assignmentId: id, field: "requestorCanEdit" });
             const modeText = row.dataTypeKind !== DataTypeKind.Calculated
                 ? (row.config?.mode
@@ -1090,6 +1103,7 @@ export function Component() {
                                 <th>Kind</th>
                                 <th>Owner</th>
                                 <th>Mandatory</th>
+                                <th>Is Header</th>
                                 <th>Editable on Update</th>
                                 <th>Requestor Can Edit</th>
                                 <th>Default Mode</th>
@@ -1105,6 +1119,7 @@ export function Component() {
                                         dataTypeKind: { current: null },
                                         owner: { current: null },
                                         mandatory: { current: null },
+                                        isHeader: { current: null },
                                         requestorCanEdit: { current: null },
                                         configMode: { current: null },
                                     });
@@ -1157,6 +1172,25 @@ export function Component() {
                                             ) : (
                                                 <span style={triStateStyle(row.mandatory)}>
                                                     <Label ref={refs.mandatory} size="small" text={triStateLabel(row.mandatory, "from DataType")} />
+                                                </span>
+                                            )}
+                                        </td>
+                                        <td>
+                                            {canManage ? (
+                                                <button
+                                                    type="button"
+                                                    className="admin-config-value-button"
+                                                    style={triStateStyle(row.isHeader)}
+                                                    onClick={() => {
+                                                        const next = triStateNextBool(row.isHeader);
+                                                        void handleUpdateAssignment(row.identifier, { isHeader: next });
+                                                    }}
+                                                >
+                                                    <Label ref={refs.isHeader} size="small" text={triStateLabel(row.isHeader, "from DataType")} />
+                                                </button>
+                                            ) : (
+                                                <span style={triStateStyle(row.isHeader)}>
+                                                    <Label ref={refs.isHeader} size="small" text={triStateLabel(row.isHeader, "from DataType")} />
                                                 </span>
                                             )}
                                         </td>

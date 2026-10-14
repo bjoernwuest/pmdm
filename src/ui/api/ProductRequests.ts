@@ -3,6 +3,7 @@ import type {
     ProductRequestListRow,
     ProductRequestValueEnriched,
     ProductRequestDetail,
+    ProductRequestHeaderAttribute,
 } from "@/types/ProductRequestType.ts";
 import type { LookupValue, ConsumableValue } from "@/types/ConfigurationTypes.ts";
 
@@ -18,6 +19,7 @@ export type ProductRequestListResponse = {
     pageSize: number;
     total: number;
     availablePageSizes: number[];
+    headerAttributes: ProductRequestHeaderAttribute[];
 };
 
 export type ProductRequestDetailResponse = ProductRequestDetail;

@@ -3,12 +3,17 @@ import { ProductRequests, ProductRequestsValues } from "@/schema/ProductRequestS
 import { ProductTypes, ProductTypesDataTypes, ProductTypesDataTypePermission } from "@/schema/ProductTypeSchema.ts";
 import { DataTypeSchema, DataTypePermission } from "@/schema/DataTypeSchema.ts";
 import { User, UserGroup, Group } from "@/schema/UserSchema.ts";
+import { LookupsValues } from "@/schema/LookupsSchema.ts";
+import { ConsumablesValues } from "@/schema/ConsumableSchema.ts";
 import { eq, and, inArray, sql } from "drizzle-orm";
 
 import {
     isEmptyValue,
     resolveRequestorCanEdit,
     resolveMandatory,
+    resolveIsHeader,
+    resolveDisplayRawValue,
+    formatHeaderValue,
     canApproveProductRequestValue,
 } from "@/services/ProductRequestActions.ts";
 import * as ScriptEngine from "@/services/ScriptEngine.ts";
@@ -17,6 +22,12 @@ export type AwaitingItem = {
     requestId: string;
     productNumber: string;
     productTypeName: string;
+    /**
+     * Header attribute display strings visible to the recipient, keyed by data
+     * type name (names are globally unique). Empty when the request has no
+     * header attributes the recipient may see.
+     */
+    headerValues: Record<string, string>;
 };
 
 export type TransitionItem = {
@@ -101,9 +112,11 @@ export async function getAwaitingPerUser(
                 value: ProductRequestsValues.value,
                 defaultValue: ProductRequestsValues.defaultValue,
                 approvedBy: ProductRequestsValues.approvedBy,
+                dataTypeName: DataTypeSchema.name,
                 dataTypeKind: DataTypeSchema.kind,
                 dataTypeConfig: DataTypeSchema.config,
                 dataTypeDisabled: DataTypeSchema.disabled,
+                dataTypeIsHeader: DataTypeSchema.isHeader,
                 requestorCanEdit: DataTypeSchema.requestorCanEdit,
                 requestorCanEditScript: DataTypeSchema.requestorCanEdit_script,
                 dataTypeMandatory: DataTypeSchema.mandatory,
@@ -114,6 +127,7 @@ export async function getAwaitingPerUser(
                 ptEditableOnUpdate: ProductTypesDataTypes.editableOnUpdate,
                 ptMandatory: ProductTypesDataTypes.mandatory,
                 ptMandatoryScript: ProductTypesDataTypes.mandatory_script,
+                ptIsHeader: ProductTypesDataTypes.isHeader,
             })
             .from(ProductRequestsValues)
             .innerJoin(DataTypeSchema, eq(ProductRequestsValues.dataType, DataTypeSchema.identifier))
@@ -229,9 +243,71 @@ export async function getAwaitingPerUser(
                 }
             }
         }
+
+        // Header attributes: attach each visible header data type's display
+        // value to recipients who already have an awaiting item for this
+        // request. Visibility gate: data type enabled AND the recipient holds
+        // at least one role (viewer/writer/approver) on it.
+        for (const v of values) {
+            if (v.dataTypeDisabled) continue;
+            if (!resolveIsHeader(v.dataTypeIsHeader, v.ptIsHeader)) continue;
+            const dtId = v.dataType!;
+
+            const viewerUserIds = await resolveUsersWithRole(db, pr.productType!, dtId, "viewer");
+            const writerUserIds = await resolveUsersWithRole(db, pr.productType!, dtId, "writer");
+            const approverUserIds = await resolveUsersWithRole(db, pr.productType!, dtId, "approver");
+            const anyRoleUserIds = new Set([...viewerUserIds, ...writerUserIds, ...approverUserIds]);
+            if (anyRoleUserIds.size === 0) continue;
+
+            const display = await resolveHeaderDisplay(db, v.dataTypeKind!, v.value, v.defaultValue);
+            const name = v.dataTypeName ?? dtId;
+
+            for (const userId of anyRoleUserIds) {
+                const entry = result.get(userId);
+                if (!entry) continue;
+                for (const list of [entry.awaitingProvide, entry.awaitingApprove]) {
+                    for (const item of list) {
+                        if (item.requestId === pr.requestId) item.headerValues[name] = display;
+                    }
+                }
+            }
+        }
     }
 
     return result;
+}
+
+/**
+ * Renders a header attribute value to a display string for the digest,
+ * resolving lookup/consumable identifiers to their names.
+ */
+async function resolveHeaderDisplay(
+    db: DBClient,
+    kind: string,
+    value: unknown,
+    defaultValue: unknown,
+): Promise<string> {
+    if (kind === "lookup" || kind === "consumable") {
+        const raw = resolveDisplayRawValue(value, defaultValue);
+        const identifiers: string[] = raw === null
+            ? []
+            : (Array.isArray(raw) ? raw : [raw]).map((x) => String(x));
+        const names = new Map<string, string>();
+        if (identifiers.length > 0) {
+            const rows = kind === "lookup"
+                ? await db
+                    .select({ identifier: LookupsValues.identifier, name: LookupsValues.name })
+                    .from(LookupsValues)
+                    .where(inArray(LookupsValues.identifier, identifiers))
+                : await db
+                    .select({ identifier: ConsumablesValues.identifier, name: ConsumablesValues.name })
+                    .from(ConsumablesValues)
+                    .where(inArray(ConsumablesValues.identifier, identifiers));
+            for (const row of rows) names.set(row.identifier!, row.name ?? row.identifier!);
+        }
+        return formatHeaderValue({ value, defaultValue, kind, nameFor: (id) => names.get(id) });
+    }
+    return formatHeaderValue({ value, defaultValue, kind });
 }
 
 /**
@@ -298,7 +374,7 @@ function addToResult(
     map: Map<string, { awaitingProvide: AwaitingItem[]; awaitingApprove: AwaitingItem[] }>,
     userId: string,
     kind: "awaitingProvide" | "awaitingApprove",
-    item: AwaitingItem,
+    item: Omit<AwaitingItem, "headerValues">,
 ) {
     if (!map.has(userId)) {
         map.set(userId, { awaitingProvide: [], awaitingApprove: [] });
@@ -306,7 +382,7 @@ function addToResult(
     const entry = map.get(userId)!;
     const list = entry[kind];
     if (!list.some((e) => e.requestId === item.requestId)) {
-        list.push(item);
+        list.push({ ...item, headerValues: {} });
     }
 }
 

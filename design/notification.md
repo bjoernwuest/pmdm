@@ -297,12 +297,22 @@ The same `canEditProductRequestValue` / `canApproveProductRequestValue`
 predicates from `src/services/ProductRequestActions.ts` drive the list view,
 the detail view, and this digest, so the three paths cannot drift.
 
+**Header attributes:** after the awaiting pass for a PR, every data type whose resolved `isHeader` is `true` and is not disabled contributes its display value to the awaiting items of recipients who hold **any** role (viewer ∪ writer ∪ approver) on it. Values are only attached to items that already exist for that recipient (i.e. the recipient has a provide/approve row for that PR); viewer-only recipients are not added. The display string is produced by the same `formatHeaderValue` helper used by the list endpoint, resolving lookup/consumable identifiers to names.
+
 **Return type:**
 ```typescript
 type AwaitingPerUser = Map<string, {
-    awaitingProvide: { requestId: string; productNumber: string; productTypeName: string }[];
-    awaitingApprove: { requestId: string; productNumber: string; productTypeName: string }[];
+    awaitingProvide: AwaitingItem[];
+    awaitingApprove: AwaitingItem[];
 }>
+
+type AwaitingItem = {
+    requestId: string;
+    productNumber: string;
+    productTypeName: string;
+    // Header attribute display strings, keyed by data type name
+    headerValues: Record<string, string>;
+}
 ```
 
 #### 5.3 `getTransitionsPerUser(db, transitionEvents[], allUsers[]): Map<UserId, TransitionInfo>`
@@ -344,22 +354,28 @@ For **group simulation** (§4.4), a variant of `buildPermissionLookup()` is need
 ```html
 <table border="1" cellpadding="5" cellspacing="0" style="border-collapse:collapse">
   <thead>
-    <tr><th>Product Number</th><th>Awaiting</th><th>Link</th></tr>
+    <tr><th>Product Number</th><th>Color</th><th>Size</th><th>Awaiting</th><th>Link</th></tr>
   </thead>
   <tbody>
     <tr>
       <td>5000001-01</td>
+      <td>Red</td>
+      <td>L</td>
       <td>Provide value</td>
       <td><a href="{baseURL}/product-requests/{id}">Open request</a></td>
     </tr>
     <tr>
       <td>5000002-01</td>
+      <td>—</td>
+      <td>—</td>
       <td>Approve value</td>
       <td><a href="{baseURL}/product-requests/{id}">Open request</a></td>
     </tr>
   </tbody>
 </table>
 ```
+
+**Header attribute columns**: the union of header attribute names across the awaiting rows, in first-seen order, is rendered as additional columns between "Product Number" and "Awaiting". Each row reads its value from `AwaitingItem.headerValues[name]`, falling back to `—` when the request lacks that attribute. Columns are stable for the whole digest (union across all awaiting rows). Single-column behavior is unchanged when no header attributes are present.
 
 **Sorting**: primary by "Awaiting" column (`Provide value` before `Approve value`), secondary by `productNumber` ascending.
 

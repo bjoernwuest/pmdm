@@ -81,6 +81,7 @@ export async function getDataTypes(db: DBClient, productTypeIdentifier: UUIDType
             dataType: ProductTypesDataTypes.dataType,
             mandatory: ProductTypesDataTypes.mandatory,
             requestorCanEdit: ProductTypesDataTypes.requestorCanEdit,
+            isHeader: ProductTypesDataTypes.isHeader,
             editableOnUpdate: ProductTypesDataTypes.editableOnUpdate,
             config: ProductTypesDataTypes.config,
             owner: ProductTypesDataTypes.owner,
@@ -88,6 +89,7 @@ export async function getDataTypes(db: DBClient, productTypeIdentifier: UUIDType
             dataTypeKind: DataTypeSchema.kind,
             dataTypeDescription: DataTypeSchema.description,
             dataTypeConfig: DataTypeSchema.config,
+            dataTypeIsHeader: DataTypeSchema.isHeader,
             ownerBusinessDomainName: BusinessDomains.name,
         })
         .from(ProductTypesDataTypes)

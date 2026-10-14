@@ -46,6 +46,7 @@ export async function createDataType(data: {
     description?: string;
     mandatory?: boolean | string;
     requestorCanEdit?: boolean | string;
+    isHeader?: boolean;
 }): Promise<DataTypeDetailResponse> {
     return apiPost<DataTypeDetailResponse>(BASE, data);
 }
@@ -66,6 +67,7 @@ export async function updateDataType(
         mandatory_script: string | null;
         requestorCanEdit: boolean | string;
         requestorCanEdit_script: string | null;
+        isHeader: boolean;
         owner: string;
         config: Record<string, unknown>;
     }> & ConfigurationEntityKnownUpdatedAt,

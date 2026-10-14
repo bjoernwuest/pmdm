@@ -77,6 +77,7 @@ export default function register(app: ApiInstance): void {
             mandatory_script: body.mandatory_script,
             requestorCanEdit: typeof body.requestorCanEdit === "boolean" ? (body.requestorCanEdit ? "Yes" : "No") : (body.requestorCanEdit ?? "Yes"),
             requestorCanEdit_script: body.requestorCanEdit_script,
+            isHeader: body.isHeader ?? false,
         }),
         mapUpdateBody: (body) => {
             const input: Record<string, unknown> = {};
@@ -86,6 +87,7 @@ export default function register(app: ApiInstance): void {
             if (body.requestorCanEdit !== undefined) input.requestorCanEdit = typeof body.requestorCanEdit === "boolean" ? (body.requestorCanEdit ? "Yes" : "No") : body.requestorCanEdit;
             if (body.mandatory_script !== undefined) input.mandatory_script = body.mandatory_script;
             if (body.requestorCanEdit_script !== undefined) input.requestorCanEdit_script = body.requestorCanEdit_script;
+            if (body.isHeader !== undefined) input.isHeader = body.isHeader;
             if (body.owner !== undefined) input.owner = String(body.owner);
             if (body.config !== undefined) input.config = body.config;
             return { input, knownUpdatedAt: body.knownUpdatedAt };

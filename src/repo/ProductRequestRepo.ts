@@ -6,6 +6,8 @@ import { DataTypeKind, type ConfigString, type ConfigBoolean, type ConfigLookup,
 import { BusinessDomains } from "@/schema/BusinessDomainSchema.ts";
 import {Group, User, UserGroup} from "@/schema/UserSchema.ts";
 import { Products, ProductsValues } from "@/schema/ProductSchema.ts";
+import { LookupsValues } from "@/schema/LookupsSchema.ts";
+import { ConsumablesValues } from "@/schema/ConsumableSchema.ts";
 import { markValuesAsUsed, markValuesAsUnused, ConsumableRepo, getValue as getConsumableValueRows } from "@/repo/ConsumableRepo.ts";
 import { LookupRepo, getValue as getLookupValueRows } from "@/repo/LookupRepo.ts";
 import { getPreviousApprovals, getDependants } from "@/repo/ProductTypeRepo.ts";
@@ -21,6 +23,7 @@ import {
     type ProductRequestListRow,
     type ProductRequestDetail,
     type ProductRequestValueEnriched,
+    type ProductRequestHeaderAttribute,
 } from "@/types/ProductRequestType.ts";
 import type { ProductRequestsSelectType as ProductRequestType } from "@/types/_ProductRequestType.ts";
 import type { ProductRequestsValuesInsertType as ProductRequestsValuesInsert } from "@/types/_ProductRequestType.ts";
@@ -39,6 +42,9 @@ import {
     resolveConfig,
     resolveMandatory,
     resolveRequestorCanEdit,
+    resolveIsHeader,
+    resolveDisplayRawValue,
+    formatHeaderValue,
     isApprovableValuePresent,
     canEditProductRequestValue,
     canProvideProductRequestValue,
@@ -946,11 +952,13 @@ export async function getProductRequest(
             dataTypeRequestorCanEditScript: DataTypeSchema.requestorCanEdit_script,
             dataTypeOwner: DataTypeSchema.owner,
             dataTypeDisabled: DataTypeSchema.disabled,
+            dataTypeIsHeader: DataTypeSchema.isHeader,
             // ProductTypesDataTypes fields
             ptMandatory: ProductTypesDataTypes.mandatory,
             ptMandatoryScript: ProductTypesDataTypes.mandatory_script,
             ptRequestorCanEdit: ProductTypesDataTypes.requestorCanEdit,
             ptRequestorCanEditScript: ProductTypesDataTypes.requestorCanEdit_script,
+            ptIsHeader: ProductTypesDataTypes.isHeader,
             ptEditableOnUpdate: ProductTypesDataTypes.editableOnUpdate,
             ptConfig: ProductTypesDataTypes.config,
             ptOwnerOverride: ProductTypesDataTypes.owner,
@@ -1091,6 +1099,7 @@ export async function getProductRequest(
             dataTypeConfig: resolvedConfig,
             mandatory,
             requestorCanEdit,
+            isHeader: resolveIsHeader(v.dataTypeIsHeader, v.ptIsHeader),
             editableOnUpdate,
             businessDomainName,
             userRoles: perms.roles,
@@ -1144,10 +1153,15 @@ export async function listProductRequests(
     },
     page: number = 0,
     pageSize: number = 20,
-): Promise<{ requests: ProductRequestListRow[]; total: number; availablePageSizes: number[] }> {
+): Promise<{
+    requests: ProductRequestListRow[];
+    total: number;
+    availablePageSizes: number[];
+    headerAttributes: ProductRequestHeaderAttribute[];
+}> {
     const user = await getLoggedinUserObject(db, claims);
     if (!user) {
-        return { requests: [], total: 0, availablePageSizes: [10, 20, 50, 100] };
+        return { requests: [], total: 0, availablePageSizes: [10, 20, 50, 100], headerAttributes: [] };
     }
 
     // Build WHERE conditions
@@ -1237,9 +1251,15 @@ export async function listProductRequests(
             productTypeName: row.productTypeName!,
             createdByName: row.createdByName as string,
             actionableSummary: summary,
+            headerValues: {},
         } as ProductRequestListRow);
     }
 
+    // Determine the final page of rows and the total count. The action filter
+    // must be applied before pagination (it depends on per-request summaries),
+    // so its slice happens here; without it the bounded page already is final.
+    let finalRows: ProductRequestListRow[];
+    let total: number;
     if (filters.actionFilter) {
         // Action filters only apply to "open" requests — non-open statuses
         // always pass through.
@@ -1256,19 +1276,133 @@ export async function listProductRequests(
                     return true;
             }
         });
+        finalRows = filtered.slice(page * pageSize, page * pageSize + pageSize);
+        total = filtered.length;
+    } else {
+        finalRows = enrichedRows;
+        total = countResult![0]?.count ?? 0;
+    }
 
-        return {
-            requests: filtered.slice(page * pageSize, page * pageSize + pageSize),
-            total: filtered.length,
-            availablePageSizes: [10, 20, 50, 100],
-        };
+    // Header attributes are computed on the rows actually returned to the
+    // client, so the column union always matches the visible page.
+    const productTypeByRequest = new Map(rows.map((r) => [r.identifier, r.productType!]));
+    const header = await buildHeaderAttributes(
+        db,
+        finalRows.map((r) => r.identifier),
+        valuesByRequest,
+        productTypeByRequest,
+        getPerms,
+    );
+    for (const row of finalRows) {
+        row.headerValues = header.valuesByRequest.get(row.identifier) ?? {};
     }
 
     return {
-        requests: enrichedRows,
-        total: countResult![0]?.count ?? 0,
+        requests: finalRows,
+        total,
         availablePageSizes: [10, 20, 50, 100],
+        headerAttributes: header.attributes,
     };
+}
+
+/**
+ * Loads display names for lookup and consumable value identifiers used by
+ * header attributes. One query per master table, keyed by value identifier.
+ */
+async function loadHeaderNameMaps(
+    db: DBClient,
+    ids: { lookup: Set<string>; consumable: Set<string> },
+): Promise<{ lookup: Map<string, string>; consumable: Map<string, string> }> {
+    const lookup = new Map<string, string>();
+    const consumable = new Map<string, string>();
+
+    if (ids.lookup.size > 0) {
+        const rows = await db
+            .select({ identifier: LookupsValues.identifier, name: LookupsValues.name })
+            .from(LookupsValues)
+            .where(inArray(LookupsValues.identifier, [...ids.lookup]));
+        for (const row of rows) lookup.set(row.identifier!, row.name ?? row.identifier!);
+    }
+
+    if (ids.consumable.size > 0) {
+        const rows = await db
+            .select({ identifier: ConsumablesValues.identifier, name: ConsumablesValues.name })
+            .from(ConsumablesValues)
+            .where(inArray(ConsumablesValues.identifier, [...ids.consumable]));
+        for (const row of rows) consumable.set(row.identifier!, row.name ?? row.identifier!);
+    }
+
+    return { lookup, consumable };
+}
+
+/**
+ * Builds header-attribute display strings for the given product requests.
+ *
+ * A value contributes a header attribute when its effective `isHeader` is true,
+ * its data type is enabled, and the viewer holds at least one role on it in the
+ * request's product type. The returned `attributes` is the union across all
+ * requests (keyed by data type identifier); `valuesByRequest` maps each request
+ * identifier to its resolved display strings keyed by data type identifier.
+ */
+async function buildHeaderAttributes(
+    db: DBClient,
+    requestIds: string[],
+    valuesByRequest: Map<string, ActionableValueRow[]>,
+    productTypeByRequest: Map<string, string>,
+    getPerms: PermissionLookup,
+): Promise<{
+    attributes: ProductRequestHeaderAttribute[];
+    valuesByRequest: Map<string, Record<string, string>>;
+}> {
+    const attributes = new Map<string, ProductRequestHeaderAttribute>();
+    const lookupIds = new Set<string>();
+    const consumableIds = new Set<string>();
+    const entriesByRequest = new Map<string, { dataType: string; kind: string; value: unknown; defaultValue: unknown }[]>();
+
+    for (const requestId of requestIds) {
+        const productType = productTypeByRequest.get(requestId);
+        const entries: { dataType: string; kind: string; value: unknown; defaultValue: unknown }[] = [];
+        for (const v of valuesByRequest.get(requestId) ?? []) {
+            if (v.dataTypeDisabled) continue;
+            const dataType = v.dataType!;
+            if (getPerms(productType!, dataType).roles.length === 0) continue;
+            if (!resolveIsHeader(v.dataTypeIsHeader, v.ptIsHeader)) continue;
+
+            const kind = v.dataTypeKind!;
+            attributes.set(dataType, { dataType, name: v.dataTypeName ?? dataType });
+            entries.push({ dataType, kind, value: v.value, defaultValue: v.defaultValue });
+
+            const raw = resolveDisplayRawValue(v.value, v.defaultValue);
+            if (raw === null) continue;
+            const rawIds = (Array.isArray(raw) ? raw : [raw]).map((x) => String(x));
+            if (kind === DataTypeKind.Lookup) for (const id of rawIds) lookupIds.add(id);
+            if (kind === DataTypeKind.Consumable) for (const id of rawIds) consumableIds.add(id);
+        }
+        entriesByRequest.set(requestId, entries);
+    }
+
+    const nameMaps = await loadHeaderNameMaps(db, { lookup: lookupIds, consumable: consumableIds });
+
+    const out = new Map<string, Record<string, string>>();
+    for (const requestId of requestIds) {
+        const record: Record<string, string> = {};
+        for (const entry of entriesByRequest.get(requestId) ?? []) {
+            const nameFor = entry.kind === DataTypeKind.Lookup
+                ? (id: string) => nameMaps.lookup.get(id)
+                : entry.kind === DataTypeKind.Consumable
+                    ? (id: string) => nameMaps.consumable.get(id)
+                    : undefined;
+            record[entry.dataType] = formatHeaderValue({
+                value: entry.value,
+                defaultValue: entry.defaultValue,
+                kind: entry.kind,
+                nameFor,
+            });
+        }
+        out.set(requestId, record);
+    }
+
+    return { attributes: [...attributes.values()], valuesByRequest: out };
 }
 
 /**
@@ -1287,6 +1421,8 @@ function selectActionableValuesForRequests(db: DBClient, requestIds: string[]) {
             dataTypeKind: DataTypeSchema.kind,
             dataTypeConfig: DataTypeSchema.config,
             dataTypeDisabled: DataTypeSchema.disabled,
+            dataTypeName: DataTypeSchema.name,
+            dataTypeIsHeader: DataTypeSchema.isHeader,
             requestorCanEdit: DataTypeSchema.requestorCanEdit,
             requestorCanEditScript: DataTypeSchema.requestorCanEdit_script,
             dataTypeMandatory: DataTypeSchema.mandatory,
@@ -1299,6 +1435,7 @@ function selectActionableValuesForRequests(db: DBClient, requestIds: string[]) {
             ptEditableOnUpdate: ProductTypesDataTypes.editableOnUpdate,
             ptMandatory: ProductTypesDataTypes.mandatory,
             ptMandatoryScript: ProductTypesDataTypes.mandatory_script,
+            ptIsHeader: ProductTypesDataTypes.isHeader,
         })
         .from(ProductRequestsValues)
         .innerJoin(ProductRequests, eq(ProductRequestsValues.productRequest, ProductRequests.identifier))

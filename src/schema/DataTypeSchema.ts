@@ -27,6 +27,8 @@ export const DataTypeSchema = pgTable(
         requestorCanEdit: text("requestor_can_edit").notNull().$type<YesNoScriptType>(),
         requestorCanEdit_script: text("requestor_can_edit_script"),
 //        requestorCanEdit: boolean("requestor_can_edit").notNull().default(true),
+        // Master "is header" flag. When set, the resolved value is surfaced as summary context (overview table, detail header block, notification digest). May be overridden per product-type assignment.
+        isHeader: boolean("is_header").notNull().default(false),
         config: jsonb("config").$type<ConfigCalculated | ConfigBoolean | ConfigString | ConfigLookup | ConfigConsumable | ConfigProduct>().notNull(),
         owner: identifierColumnType("owner").notNull().references(() => BusinessDomains.identifier, { onDelete: "restrict", onUpdate: "cascade" }),
     },

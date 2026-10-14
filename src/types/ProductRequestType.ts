@@ -57,6 +57,14 @@ export const message_ProductExportImported: Tag[] = ["ProductExport", "imported"
 // Enriched types for API responses
 // ---------------------------------------------------------------------------
 
+/** A header attribute column definition for the overview table. */
+export type ProductRequestHeaderAttribute = {
+    /** Data type identifier (column key). */
+    dataType: string;
+    /** Data type display name (column header). */
+    name: string;
+};
+
 /** Product request list row enriched with product type and creator name. */
 export type ProductRequestListRow = ProductRequestsSelectType & {
     productTypeName: string;
@@ -65,6 +73,8 @@ export type ProductRequestListRow = ProductRequestsSelectType & {
         needsValue: boolean;
         needsApproval: boolean;
     };
+    /** Resolved display strings for header attributes, keyed by data type identifier. */
+    headerValues: Record<string, string>;
 };
 
 /** Product request value enriched with data type metadata and resolved permissions. */
@@ -91,6 +101,8 @@ export type ProductRequestValueEnriched = ProductRequestsValuesSelectType & {
     // Server-computed actionability flags for the current user
     canEdit: boolean;
     canApprove: boolean;
+    /** Resolved "is header" flag (assignment override > data type flag > false). */
+    isHeader: boolean;
 };
 
 /** Product request detail enriched with product type name, creator name, and values. */

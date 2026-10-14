@@ -203,6 +203,7 @@ export default function register(app: ApiInstance): void {
             pageSize,
             total: result.total,
             availablePageSizes,
+            headerAttributes: result.headerAttributes,
         };
     }, {
         query: Type.Composite([
@@ -272,7 +273,11 @@ export default function register(app: ApiInstance): void {
                 pageSize: t.Number(),
                 total: t.Number(),
                 availablePageSizes: t.Array(t.Number()),
-            }, { description: "Paginated list of product requests with pagination metadata." }),
+                headerAttributes: t.Array(t.Object({
+                    dataType: t.String(),
+                    name: t.String(),
+                })),
+            }, { description: "Paginated list of product requests with pagination metadata and header attribute columns." }),
             401: UnauthenticatedErrorResponseSchema,
             403: ForbiddenErrorResponseSchema,
         },

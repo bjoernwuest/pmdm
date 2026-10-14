@@ -45,6 +45,7 @@ export const DataTypeSchemaSelectSchema = Type.Object({
   mandatory_script: Type.Optional(Nullable(Type.String())),
   requestorCanEdit: Type.String(),
   requestorCanEdit_script: Type.Optional(Nullable(Type.String())),
+  isHeader: Type.Boolean(),
   config: Type.Unknown(),
   owner: Type.String({ format: 'uuid' }),
 });
@@ -64,6 +65,7 @@ export const DataTypeSchemaInsertSchema = Type.Object({
   mandatory_script: Type.Optional(Nullable(Type.String())),
   requestorCanEdit: Type.String(),
   requestorCanEdit_script: Type.Optional(Nullable(Type.String())),
+  isHeader: Type.Optional(Type.Boolean()),
   config: Type.Unknown(),
   owner: Type.String({ format: 'uuid' }),
 });

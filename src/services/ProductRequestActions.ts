@@ -120,6 +120,63 @@ export async function resolveRequestorCanEdit(
     return ptBool ?? dtBool ?? true;
 }
 
+/**
+ * Resolves the effective "is header" flag for a data type in a product type:
+ * assignment override > data type master flag > false.
+ *
+ * `null`/`undefined` means "inherit from the next level down".
+ */
+export function resolveIsHeader(
+    dataTypeFlag: boolean | null | undefined,
+    assignmentOverride: boolean | null | undefined,
+): boolean {
+    return assignmentOverride ?? dataTypeFlag ?? false;
+}
+
+/**
+ * Picks the raw value used for display, mirroring the detail table: the stored
+ * value when present, otherwise the default value. The literal string `"null"`
+ * counts as absent. Returns `null` when neither carries a value.
+ */
+export function resolveDisplayRawValue(value: unknown, defaultValue: unknown): unknown {
+    if (value !== null && value !== undefined) return value;
+    if (defaultValue !== null && defaultValue !== undefined && defaultValue !== "null") return defaultValue;
+    return null;
+}
+
+/**
+ * Turns a resolved value into a display string for a header attribute.
+ *
+ * - `boolean` → `true` / `false`
+ * - `lookup` / `consumable` → resolved name(s); unresolved identifiers fall back to the raw id
+ * - `product` → product number(s) as stored
+ * - `string` / `calculated` / anything else → raw string
+ *
+ * Empty value falls back to the default value; both empty → `—`.
+ *
+ * @param nameFor Optional resolver mapping a lookup/consumable value identifier
+ *                to its display name. When omitted, raw identifiers are shown.
+ */
+export function formatHeaderValue(input: {
+    value: unknown;
+    defaultValue: unknown;
+    kind: string;
+    nameFor?: (identifier: string) => string | null | undefined;
+}): string {
+    const raw = resolveDisplayRawValue(input.value, input.defaultValue);
+    if (raw === null) return "—";
+    if (input.kind === DataTypeKind.Boolean) return raw ? "true" : "false";
+    if (input.kind === DataTypeKind.Lookup || input.kind === DataTypeKind.Consumable) {
+        const ids = (Array.isArray(raw) ? raw : [raw]).map((v) => String(v));
+        const names = ids.map((id) => input.nameFor?.(id) ?? id);
+        return names.join(", ");
+    }
+    if (typeof raw === "object") {
+        return Array.isArray(raw) ? raw.map((v) => String(v)).join(", ") : JSON.stringify(raw);
+    }
+    return String(raw);
+}
+
 // ---------------------------------------------------------------------------
 // Actionability predicates
 // ---------------------------------------------------------------------------

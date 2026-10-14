@@ -58,8 +58,11 @@ For product-request data types, permissions follow this precedence:
 | `requestorCanEdit` | [`ProductTypesDataTypes.requestorCanEdit`](../src/schema/ProductType.ts:44) > [`DataTypeSchema.requestorCanEdit`](../src/schema/DataType.ts:122) |
 | `config` | [`ProductTypesDataTypes.config`](../src/schema/ProductType.ts:45) > [`DataTypeSchema.config`](../src/schema/DataType.ts:123) |
 | `owner` (BusinessDomain) | [`ProductTypesDataTypes.owner`](../src/schema/ProductType.ts:46) > [`DataTypeSchema.owner`](../src/schema/DataType.ts:124) |
+| `isHeader` | [`ProductTypesDataTypes.isHeader`](../src/schema/ProductType.ts:49) > [`DataTypeSchema.isHeader`](../src/schema/DataType.ts:31) > `false` |
 
 Each field individually falls back to the DataTypeSchema-level value when the ProductTypesDataTypes value is `null`/`undefined`.
+
+`isHeader` is resolved by `resolveIsHeader(dataTypeFlag, assignmentOverride)` in [`src/services/ProductRequestActions.ts`](../src/services/ProductRequestActions.ts): the assignment override (`true` = force on, `false` = force off, `null` = inherit) wins over the data type master flag, which defaults to `false`. It is display-only metadata: it does not affect creation, mandatory evaluation, approval, or value persistence. When set on a data type (or its assignment), the resolved value is surfaced as summary context in the Open Requests overview table, the product-request detail header block, and the notification digest's awaiting table. Visibility is gated on the data type being enabled and the viewer holding at least one role on it; `showByDefault` is intentionally ignored for header attributes.
 
 ### 2. Data Type Visibility on Product Request Detail
 

@@ -45,6 +45,8 @@ export const ProductTypesDataTypes = pgTable(
 //        requestorCanEdit: boolean("requestor_can_edit"), // If 'null', use the information from the referenced data type
         requestorCanEdit: text("requestor_can_edit").$type<YesNoScriptType>(), // If 'null', use the information from the referenced data type
         requestorCanEdit_script: text("requestor_can_edit_script"),
+        // Tri-state override of DataType.isHeader: null = inherit, true = force on, false = force off.
+        isHeader: boolean("is_header"),
         config: jsonb("config").$type<ConfigCalculated | ConfigBoolean | ConfigString | ConfigLookup | ConfigConsumable | ConfigProduct>(), // If 'null', use the information from the referenced data type. If any config value is null, use the information from the referenced data type.
         owner: identifierColumnType("owner").references(() => BusinessDomains.identifier, { onDelete: "restrict", onUpdate: "cascade" }), // If 'null', use the information from the referenced data type
         editableOnUpdate: boolean("editable_on_update").notNull().default(true),

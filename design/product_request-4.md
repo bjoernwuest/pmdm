@@ -43,7 +43,7 @@ export const meta: PageMeta = {
 │  ┌──────────────────────────────────────────────────────────┐ │
 │  │ Product: 5000001-01  │  Widget (ProductType)             │ │
 │  │ [Open] Tag           │                                   │ │
-│  │                      │  [Filter] [Approve all] [Cancel]  │ │
+│  │ Color: Red  Size: L  │  [Filter] [Approve all] [Cancel]  │ │
 │  │ (if update: "Update of [5000000-01](link to product)" )  │ │
 │  └──────────────────────────────────────────────────────────┘ │
 ├──────────────────────────────────────────────────────────────┤
@@ -77,6 +77,8 @@ export const meta: PageMeta = {
 
 **For "update" requests** (`productToUpdate` is set):
 Show "Update of [productNumber](link)" — the product number is a clickable link to `/products/:productNumber`.
+
+**Header attributes**: below the status tag, render a compact row of `Name: value` pairs for every `request.values` entry whose resolved `isHeader` flag is `true` (see [`product_request.md`](product_request.md) §1). This is display-only summary context, independent of `showByDefault`; the "Show hidden" toggle does **not** hide these. Names and values resolve from the same option maps as the table rows (`resolveDisplayName`, value falling back to `defaultValue`, `—` when both empty). Updates arrive live via the existing `message_UpdateProductRequestValue` subscription, so a value save re-renders the header pair.
 
 ### 3.2 Right Side — Action Buttons
 

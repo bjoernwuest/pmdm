@@ -16,6 +16,7 @@
 | `dataType` | uuid (FK→DataTypeSchema) | NOT NULL | Which data type |
 | `mandatory` | boolean | **NULLABLE** | null=inherit from DataTypeSchema, true=override yes, false=override no |
 | `requestorCanEdit` | boolean | **NULLABLE** | null=inherit, true=override yes, false=override no |
+| `isHeader` | boolean | **NULLABLE** | null=inherit, true=force header, false=force not-header. Resolved by `resolveIsHeader` (`ProductTypesDataTypes.isHeader` > `DataTypeSchema.isHeader` > `false`) |
 | `editableOnUpdate` | boolean | NOT NULL (default true) | Two-state simple boolean |
 | `config` | jsonb | NULLABLE | null=inherit from DataTypeSchema; keys null=inherit per-key |
 | `owner` | uuid (FK→BusinessDomains) | NULLABLE | null=inherit from DataTypeSchema |
@@ -112,6 +113,8 @@ export type ProductTypeDataTypeWithDetails = ProductTypesDataType & {
     dataTypeName: string;
     dataTypeKind: string;
     dataTypeDescription: string | null;
+    dataTypeConfig: unknown;
+    dataTypeIsHeader: boolean;
     ownerBusinessDomainName: string | null;
 };
 
@@ -442,11 +445,12 @@ Columns:
 | DataTypeSchema Kind | `dataTypeKind` (joined) | No | Read-only |
 | Owner | `owner` | Yes | Dropdown of BusinessDomains, immediate save on change |
 | Mandatory | `mandatory` | Yes | Tri-state: click to cycle Yes → No → Parent, immediate save |
+| Is Header | `isHeader` | Yes | Tri-state: click to cycle Yes → No → Parent, immediate save |
 | Editable on Update | `editableOnUpdate` | Yes | Two-state `InputSwitch`, immediate save on toggle |
 | Requestor Can Edit | `requestorCanEdit` | Yes | Tri-state: click to cycle Yes → No → Parent, immediate save |
 | Action | — | Yes | Delete button (pi-trash icon), calls `unassignDataType()` |
 
-For tri-state columns (Mandatory, Requestor Can Edit):
+For tri-state columns (Mandatory, Is Header, Requestor Can Edit):
 - Render as: Yes (green chip) / No (red chip) / Parent (gray, italic "from DataTypeSchema")
 - **Click to cycle**: Yes → No → Parent → Yes (three states)
 - **On change: immediate PATCH** via `updateDataTypeAssignment()`
