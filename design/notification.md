@@ -324,13 +324,27 @@ For each transitioned PR (with productType PT):
     Resolve groups with **any** permission — viewer, writer, or approver
     (union of PT-level and DT-level grants, matching the permission concept's edit path)
     Map groups → users
-    Add PR to each identified user's transition list
+    Add a **per-user copy** of the transition to each identified user's list
+
+**Header attributes:** mirroring §5.2, every data type whose resolved `isHeader` is `true` and is not disabled contributes its display value to the transition copies of recipients who hold **any** role (viewer ∪ writer ∪ approver) on it. Because recipients differ in permissions, each user's list holds its own copy of the transition carrying only that user's visible header values; values are never shared between recipients. The display string is produced by the same `formatHeaderValue` helper as the awaiting path.
 
 **Return type:**
 ```typescript
-type TransitionsPerUser = Map<string, {
-    transitions: { requestId: string; productNumber: string; newStatus: string; productTypeName: string }[];
-}>
+type TransitionsPerUser = Map<string, TransitionDigestItem[]>
+
+type TransitionItem = {
+    requestId: string;
+    productNumber: string;
+    newStatus: string;
+    productType: string;
+    productTypeName: string;
+}
+
+type TransitionDigestItem = TransitionItem & {
+    // Header attribute display strings, keyed by data type name. Populated per
+    // recipient with the same role-based visibility gate as AwaitingItem.
+    headerValues: Record<string, string>;
+}
 ```
 
 #### 5.4 `getUsersWithRelevantGroups(db): User[]`
@@ -354,11 +368,12 @@ For **group simulation** (§4.4), a variant of `buildPermissionLookup()` is need
 ```html
 <table border="1" cellpadding="5" cellspacing="0" style="border-collapse:collapse">
   <thead>
-    <tr><th>Product Number</th><th>Color</th><th>Size</th><th>Awaiting</th><th>Link</th></tr>
+    <tr><th>Product Number</th><th>Product Type</th><th>Color</th><th>Size</th><th>Awaiting</th><th>Link</th></tr>
   </thead>
   <tbody>
     <tr>
       <td>5000001-01</td>
+      <td>Widget</td>
       <td>Red</td>
       <td>L</td>
       <td>Provide value</td>
@@ -368,6 +383,7 @@ For **group simulation** (§4.4), a variant of `buildPermissionLookup()` is need
       <td>5000002-01</td>
       <td>—</td>
       <td>—</td>
+      <td>—</td>
       <td>Approve value</td>
       <td><a href="{baseURL}/product-requests/{id}">Open request</a></td>
     </tr>
@@ -375,7 +391,9 @@ For **group simulation** (§4.4), a variant of `buildPermissionLookup()` is need
 </table>
 ```
 
-**Header attribute columns**: the union of header attribute names across the awaiting rows, in first-seen order, is rendered as additional columns between "Product Number" and "Awaiting". Each row reads its value from `AwaitingItem.headerValues[name]`, falling back to `—` when the request lacks that attribute. Columns are stable for the whole digest (union across all awaiting rows). Single-column behavior is unchanged when no header attributes are present.
+**Product Type column**: "Product Type" is always rendered immediately after "Product Number" and reads `AwaitingItem.productTypeName`, falling back to `—` when the name is empty or the request's product type is unknown.
+
+**Header attribute columns**: the union of header attribute names across the awaiting rows, in first-seen order, is rendered as additional columns between "Product Type" and "Awaiting". Each row reads its value from `AwaitingItem.headerValues[name]`, falling back to `—` when the request lacks that attribute or the recipient has no role on it. Columns are stable for the whole digest (union across all awaiting rows). When no header attributes are present only "Product Number", "Product Type", "Awaiting", and "Link" are rendered.
 
 **Sorting**: primary by "Awaiting" column (`Provide value` before `Approve value`), secondary by `productNumber` ascending.
 
@@ -384,27 +402,35 @@ For **group simulation** (§4.4), a variant of `buildPermissionLookup()` is need
 ```html
 <table border="1" cellpadding="5" cellspacing="0" style="border-collapse:collapse">
   <thead>
-    <tr><th>Product Number</th><th>New Status</th><th>Link</th></tr>
+    <tr><th>Product Number</th><th>Product Type</th><th>Color</th><th>New Status</th><th>Link</th></tr>
   </thead>
   <tbody>
     <tr>
       <td>5000003-01</td>
+      <td>Widget</td>
+      <td>Red</td>
       <td>importing</td>
       <td><a href="{baseURL}/product-requests/{id}">View request</a></td>
     </tr>
     <tr>
       <td>5000004-01</td>
+      <td>Widget</td>
+      <td>—</td>
       <td>done</td>
       <td><a href="{baseURL}/products/{productNumber}">View product</a></td>
     </tr>
     <tr>
       <td>5000005-01</td>
+      <td>—</td>
+      <td>—</td>
       <td>cancelled</td>
       <td><a href="{baseURL}/product-requests/{id}">View request</a></td>
     </tr>
   </tbody>
 </table>
 ```
+
+**Columns**: "Product Number" and "Product Type" are always rendered first (product type reads `TransitionItem.productTypeName`, falling back to `—`). The header attribute columns follow, using the union of header attribute names across all transition rows in first-seen order (same logic as the awaiting table), and "New Status" and "Link" close the row. A row whose recipient has no role on a given header data type renders `—` in that cell; header values are computed per recipient by `getTransitionsPerUser` with the same role-based visibility gate as `getAwaitingPerUser`, so values are never leaked between recipients.
 
 **Link logic**:
 - Status `importing` or `cancelled` → link to `/product-requests/{requestId}`

@@ -8,11 +8,11 @@ import {
     getUsersWithRelevantGroups,
     getUsersWithWriterOrApprover,
     type AwaitingItem,
-    type TransitionItem,
+    type TransitionDigestItem,
 } from "@/repo/NotificationRepo.ts";
 import { getGraphClient } from "@/services/EntraIDSync.ts";
 import { Cron } from "croner";
-import { type ConfigEntrySelectType, ConfigValueTypes } from "@/types/ConfigType.ts";
+import {type ConfigEntryInsertType, type ConfigEntrySelectType, ConfigValueTypes } from "@/types/ConfigType.ts";
 import { notificationsDebug } from "@/devmode.ts";
 
 function nlog(...args: unknown[]): void {
@@ -37,7 +37,7 @@ export const config = {
     cfgNotifyImporting: { domain: configDomain, key: "NotifyOnImporting",        description: "Include importing status transitions in the digest.", type: ConfigValueTypes.boolean, value: true, formatRegex: "", inputFormat: "", outputFormat: "", editInUI: true, mandatoryForStart: false, userProfile: true },
     cfgNotifyDone:      { domain: configDomain, key: "NotifyOnDone",             description: "Include done status transitions in the digest.", type: ConfigValueTypes.boolean, value: true, formatRegex: "", inputFormat: "", outputFormat: "", editInUI: true, mandatoryForStart: false, userProfile: true },
     cfgNotifyCancelled: { domain: configDomain, key: "NotifyOnCancelled",        description: "Include cancelled status transitions in the digest.", type: ConfigValueTypes.boolean, value: true, formatRegex: "", inputFormat: "", outputFormat: "", editInUI: true, mandatoryForStart: false, userProfile: true },
-} satisfies Record<string, ConfigEntrySelectType>;
+} satisfies Record<string, ConfigEntryInsertType>;
 
 let syncRunning = false;
 
@@ -87,7 +87,7 @@ function cronMatchesNow(expr: string): boolean {
     }
 }
 
-async function getUserConfigValue(db: DBClient, userId: string, cfgEntry: ConfigEntrySelectType): Promise<unknown> {
+async function getUserConfigValue(db: DBClient, userId: string, cfgEntry: ConfigEntryInsertType): Promise<unknown> {
     const override = await getUserProfileConfigEntry(db, userId, configDomain, cfgEntry.key);
     if (override && override.value !== null && override.value !== undefined) {
         if (cfgEntry.type === ConfigValueTypes.string) {
@@ -100,7 +100,7 @@ async function getUserConfigValue(db: DBClient, userId: string, cfgEntry: Config
     return cfgEntry.value;
 }
 
-async function getUserBooleanConfig(db: DBClient, userId: string, cfgEntry: ConfigEntrySelectType): Promise<boolean> {
+async function getUserBooleanConfig(db: DBClient, userId: string, cfgEntry: ConfigEntryInsertType): Promise<boolean> {
     const val = await getUserConfigValue(db, userId, cfgEntry);
     if (typeof val === "boolean") return val;
     if (val === "true") return true;
@@ -108,12 +108,13 @@ async function getUserBooleanConfig(db: DBClient, userId: string, cfgEntry: Conf
     return true;
 }
 
-function buildAwaitingTable(awaitingProvide: AwaitingItem[], awaitingApprove: AwaitingItem[], baseURL: string): string {
-    const rows: { productNumber: string; awaiting: string; link: string; headerValues: Record<string, string> }[] = [];
+export function buildAwaitingTable(awaitingProvide: AwaitingItem[], awaitingApprove: AwaitingItem[], baseURL: string): string {
+    const rows: { productNumber: string; productTypeName: string; awaiting: string; link: string; headerValues: Record<string, string> }[] = [];
 
     for (const item of awaitingProvide) {
         rows.push({
             productNumber: item.productNumber,
+            productTypeName: item.productTypeName ?? "",
             awaiting: "Provide value",
             link: baseURL ? `<a href="${baseURL}/product-requests/${item.requestId}">Open request</a>` : "Open request",
             headerValues: item.headerValues ?? {},
@@ -122,6 +123,7 @@ function buildAwaitingTable(awaitingProvide: AwaitingItem[], awaitingApprove: Aw
     for (const item of awaitingApprove) {
         rows.push({
             productNumber: item.productNumber,
+            productTypeName: item.productTypeName ?? "",
             awaiting: "Approve value",
             link: baseURL ? `<a href="${baseURL}/product-requests/${item.requestId}">Open request</a>` : "Open request",
             headerValues: item.headerValues ?? {},
@@ -136,7 +138,7 @@ function buildAwaitingTable(awaitingProvide: AwaitingItem[], awaitingApprove: Aw
     if (rows.length === 0) return "<p>None</p>";
 
     // Union of header attribute names across the awaiting rows, in first-seen
-    // order. Columns are rendered between "Product Number" and "Awaiting".
+    // order. Columns are rendered between "Product Type" and "Awaiting".
     const headerNames: string[] = [];
     for (const row of rows) {
         for (const name of Object.keys(row.headerValues)) {
@@ -146,17 +148,17 @@ function buildAwaitingTable(awaitingProvide: AwaitingItem[], awaitingApprove: Aw
 
     const headerCells = headerNames.map((name) => `<th>${name}</th>`).join("");
     let html = `<table border="1" cellpadding="5" cellspacing="0" style="border-collapse:collapse">
-  <thead><tr><th>Product Number</th>${headerCells}<th>Awaiting</th><th>Link</th></tr></thead>
+  <thead><tr><th>Product Number</th><th>Product Type</th>${headerCells}<th>Awaiting</th><th>Link</th></tr></thead>
   <tbody>`;
     for (const row of rows) {
         const valueCells = headerNames.map((name) => `<td>${row.headerValues[name] ?? "—"}</td>`).join("");
-        html += `\n    <tr><td>${row.productNumber}</td>${valueCells}<td>${row.awaiting}</td><td>${row.link}</td></tr>`;
+        html += `\n    <tr><td>${row.productNumber}</td><td>${row.productTypeName || "—"}</td>${valueCells}<td>${row.awaiting}</td><td>${row.link}</td></tr>`;
     }
     html += `\n  </tbody>\n</table>`;
     return html;
 }
 
-function buildTransitionsTable(transitions: TransitionItem[], baseURL: string): string {
+export function buildTransitionsTable(transitions: TransitionDigestItem[], baseURL: string): string {
     const statusOrder: Record<string, number> = { importing: 0, done: 1, cancelled: 2 };
 
     const sorted = [...transitions].sort((a, b) => {
@@ -168,8 +170,18 @@ function buildTransitionsTable(transitions: TransitionItem[], baseURL: string): 
 
     if (sorted.length === 0) return "<p>None</p>";
 
+    // Union of header attribute names across the transition rows, in first-seen
+    // order. Columns are rendered between "Product Type" and "New Status".
+    const headerNames: string[] = [];
+    for (const row of sorted) {
+        for (const name of Object.keys(row.headerValues ?? {})) {
+            if (!headerNames.includes(name)) headerNames.push(name);
+        }
+    }
+
+    const headerCells = headerNames.map((name) => `<th>${name}</th>`).join("");
     let html = `<table border="1" cellpadding="5" cellspacing="0" style="border-collapse:collapse">
-  <thead><tr><th>Product Number</th><th>New Status</th><th>Link</th></tr></thead>
+  <thead><tr><th>Product Number</th><th>Product Type</th>${headerCells}<th>New Status</th><th>Link</th></tr></thead>
   <tbody>`;
     for (const row of sorted) {
         const isDone = row.newStatus === "done";
@@ -177,7 +189,8 @@ function buildTransitionsTable(transitions: TransitionItem[], baseURL: string): 
             ? `${baseURL}/products/${row.productNumber}`
             : `${baseURL}/product-requests/${row.requestId}`;
         const label = isDone ? "View product" : "View request";
-        html += `\n    <tr><td>${row.productNumber}</td><td>${row.newStatus}</td><td>${baseURL ? `<a href="${href}">${label}</a>` : label}</td></tr>`;
+        const valueCells = headerNames.map((name) => `<td>${row.headerValues?.[name] ?? "—"}</td>`).join("");
+        html += `\n    <tr><td>${row.productNumber}</td><td>${row.productTypeName || "—"}</td>${valueCells}<td>${row.newStatus}</td><td>${baseURL ? `<a href="${href}">${label}</a>` : label}</td></tr>`;
     }
     html += `\n  </tbody>\n</table>`;
     return html;
@@ -209,7 +222,7 @@ async function readConfig(db: DBClient) {
     return { enabled, cronExpr, fromEmail };
 }
 
-async function getGlobalStringConfig(db: DBClient, entry: ConfigEntrySelectType): Promise<string> {
+async function getGlobalStringConfig(db: DBClient, entry: ConfigEntryInsertType): Promise<string> {
     const row = (await getConfigEntriesByKey(db, configDomain, entry.key, { limit: 1 }))[0];
     return row?.value ? String(row.value) : (entry.value as string) || "";
 }
@@ -239,7 +252,7 @@ export async function sendDigest(db: DBClient) {
             : [];
         const transitionsPerUser = transitions.length > 0
             ? await getTransitionsPerUser(db, transitions)
-            : new Map<string, TransitionItem[]>();
+            : new Map<string, TransitionDigestItem[]>();
 
         const awaitingPerUser = await getAwaitingPerUser(db);
         const allUsers = await getUsersWithRelevantGroups(db);
@@ -360,7 +373,7 @@ export async function sendToUser(
         : [];
     const transitionsPerUser = transitions.length > 0
         ? await getTransitionsPerUser(db, transitions)
-        : new Map<string, TransitionItem[]>();
+        : new Map<string, TransitionDigestItem[]>();
     const awaitingPerUser = await getAwaitingPerUser(db);
     const allUsers = await getUsersWithRelevantGroups(db);
     const writerOrApproverUsers = await getUsersWithWriterOrApprover(db);
@@ -470,7 +483,7 @@ export async function simulateEmail(
         : [];
     const transitionsPerUser = transitions.length > 0
         ? await getTransitionsPerUser(db, transitions)
-        : new Map<string, TransitionItem[]>();
+        : new Map<string, TransitionDigestItem[]>();
     const awaitingPerUser = await getAwaitingPerUser(db);
 
     let simUserId: string;

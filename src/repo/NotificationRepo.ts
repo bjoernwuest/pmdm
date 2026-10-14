@@ -38,6 +38,15 @@ export type TransitionItem = {
     productTypeName: string;
 };
 
+export type TransitionDigestItem = TransitionItem & {
+    /**
+     * Header attribute display strings visible to the recipient, keyed by data
+     * type name (names are globally unique). Empty when the request has no
+     * header attributes the recipient may see.
+     */
+    headerValues: Record<string, string>;
+};
+
 /**
  * Queries product requests in importing/done/cancelled status that were updated since lastDigestAt.
  */
@@ -389,19 +398,39 @@ function addToResult(
 /**
  * Given transitioned PRs, determines which users should be notified about each.
  * Includes users with ANY permission (viewer, writer, or approver).
+ *
+ * Each recipient receives its own copy carrying that recipient's visible
+ * header attribute display strings (same role-based gate as the awaiting path).
  */
 export async function getTransitionsPerUser(
     db: DBClient,
     transitions: TransitionItem[],
-): Promise<Map<string, TransitionItem[]>> {
-    const result = new Map<string, TransitionItem[]>();
+): Promise<Map<string, TransitionDigestItem[]>> {
+    const result = new Map<string, TransitionDigestItem[]>();
 
     for (const t of transitions) {
         const values = await db
-            .select({ dataType: ProductRequestsValues.dataType })
+            .select({
+                dataType: ProductRequestsValues.dataType,
+                value: ProductRequestsValues.value,
+                defaultValue: ProductRequestsValues.defaultValue,
+                dataTypeName: DataTypeSchema.name,
+                dataTypeKind: DataTypeSchema.kind,
+                dataTypeDisabled: DataTypeSchema.disabled,
+                dataTypeIsHeader: DataTypeSchema.isHeader,
+                ptIsHeader: ProductTypesDataTypes.isHeader,
+            })
             .from(ProductRequestsValues)
+            .innerJoin(DataTypeSchema, eq(ProductRequestsValues.dataType, DataTypeSchema.identifier))
+            .leftJoin(ProductTypesDataTypes, and(
+                eq(ProductTypesDataTypes.productType, t.productType),
+                eq(ProductTypesDataTypes.dataType, ProductRequestsValues.dataType),
+            ))
             .where(eq(ProductRequestsValues.productRequest, t.requestId));
 
+        // First pass: resolve recipients (role union per data type) and push a
+        // per-user copy so header values cannot leak between recipients with
+        // different header-attribute permissions.
         for (const v of values) {
             const dtId = v.dataType!;
 
@@ -414,7 +443,34 @@ export async function getTransitionsPerUser(
                 if (!result.has(userId)) result.set(userId, []);
                 const list = result.get(userId)!;
                 if (!list.some((e) => e.requestId === t.requestId && e.newStatus === t.newStatus)) {
-                    list.push(t);
+                    list.push({ ...t, headerValues: {} });
+                }
+            }
+        }
+
+        // Second pass: attach each visible header data type's display value to
+        // recipients who hold at least one role on it (mirrors getAwaitingPerUser).
+        for (const v of values) {
+            if (v.dataTypeDisabled) continue;
+            if (!resolveIsHeader(v.dataTypeIsHeader, v.ptIsHeader)) continue;
+            const dtId = v.dataType!;
+
+            const viewerIds = await resolveUsersWithRole(db, t.productType, dtId, "viewer");
+            const writerIds = await resolveUsersWithRole(db, t.productType, dtId, "writer");
+            const approverIds = await resolveUsersWithRole(db, t.productType, dtId, "approver");
+            const anyRoleUserIds = new Set([...viewerIds, ...writerIds, ...approverIds]);
+            if (anyRoleUserIds.size === 0) continue;
+
+            const display = await resolveHeaderDisplay(db, v.dataTypeKind!, v.value, v.defaultValue);
+            const name = v.dataTypeName ?? dtId;
+
+            for (const userId of anyRoleUserIds) {
+                const list = result.get(userId);
+                if (!list) continue;
+                for (const item of list) {
+                    if (item.requestId === t.requestId && item.newStatus === t.newStatus) {
+                        item.headerValues[name] = display;
+                    }
                 }
             }
         }
