@@ -53,7 +53,6 @@ export type QueryBuilderProps = {
     onEnsureLookup: (refIdentifier: string, kind?: string) => void;
     onApply: (payload: FilterPayload | null, tree: QueryBuilderTree | null) => void;
     currentTree?: QueryBuilderTree | null;
-    currentPayload?: FilterPayload | null;
 };
 
 export type ApiCriterion = {
@@ -67,9 +66,6 @@ export type ApiCriterion = {
 export type FilterPayload = {
     criteria: ApiCriterion[];
     expression: string;
-    productNumberContains?: string;
-    productTypeIdentifier?: string;
-    disabled?: boolean;
 };
 
 // ---------------------------------------------------------------------------
@@ -176,17 +172,11 @@ const QueryBuilder: React.FC<QueryBuilderProps> = ({
     onEnsureLookup,
     onApply,
     currentTree,
-    currentPayload,
 }) => {
     const [tree, setTree] = useState<QueryBuilderTree>(() => {
         if (currentTree) return JSON.parse(JSON.stringify(currentTree));
         return createEmptyGroup();
     });
-    const [quickProductNumber, setQuickProductNumber] = useState(currentPayload?.productNumberContains ?? "");
-    const [quickProductType, setQuickProductType] = useState(currentPayload?.productTypeIdentifier ?? "any");
-    const [quickDisabled, setQuickDisabled] = useState<string>(
-        currentPayload?.disabled === true ? "disabled" : currentPayload?.disabled === false ? "active" : "any",
-    );
     const [validationErrors, setValidationErrors] = useState<Record<string, string>>({});
 
     const combinedOptions = buildCombinedOptions(dataTypes, productTypes);
@@ -198,14 +188,9 @@ const QueryBuilder: React.FC<QueryBuilderProps> = ({
             } else {
                 setTree(createEmptyGroup());
             }
-            setQuickProductNumber(currentPayload?.productNumberContains ?? "");
-            setQuickProductType(currentPayload?.productTypeIdentifier ?? "any");
-            setQuickDisabled(
-                currentPayload?.disabled === true ? "disabled" : currentPayload?.disabled === false ? "active" : "any",
-            );
             setValidationErrors({});
         }
-    }, [visible, currentTree, currentPayload]);
+    }, [visible, currentTree]);
 
     const updateNode = useCallback((nodeId: string, updater: (node: FilterNode) => FilterNode) => {
         setTree((prev) => {
@@ -269,10 +254,9 @@ const QueryBuilder: React.FC<QueryBuilderProps> = ({
     }, [tree]);
 
     const handleApply = useCallback(() => {
-        const hasQuickFilter = !!quickProductNumber || quickProductType !== "any" || quickDisabled !== "any";
         const ruleCount = countRules(tree);
 
-        if (!hasQuickFilter && ruleCount === 0) {
+        if (ruleCount === 0) {
             onApply(null, null);
             onHide();
             return;
@@ -308,20 +292,14 @@ const QueryBuilder: React.FC<QueryBuilderProps> = ({
         const payload: FilterPayload = {
             criteria,
             expression,
-            productNumberContains: quickProductNumber || undefined,
-            productTypeIdentifier: quickProductType !== "any" ? quickProductType : undefined,
-            disabled: quickDisabled === "disabled" ? true : quickDisabled === "active" ? false : undefined,
         };
 
         onApply(payload, tree);
         onHide();
-    }, [tree, quickProductNumber, quickProductType, quickDisabled, validate, onApply, onHide]);
+    }, [tree, validate, onApply, onHide]);
 
     const handleClear = useCallback(() => {
         setTree(createEmptyGroup());
-        setQuickProductNumber("");
-        setQuickProductType("");
-        setQuickDisabled("any");
         setValidationErrors({});
         onApply(null, null);
         onHide();
@@ -540,42 +518,6 @@ const QueryBuilder: React.FC<QueryBuilderProps> = ({
             style={{ width: "850px", maxWidth: "95vw" }}
             maximizable
         >
-            {/* Quick Filters */}
-            <div style={{ marginBottom: "1rem", padding: "0.75rem", border: "1px solid var(--surface-border)", borderRadius: "0.5rem" }}>
-                <h4 style={{ margin: "0 0 0.5rem 0", fontSize: "0.9rem" }}>Quick filters</h4>
-                <div style={{ display: "flex", gap: "0.75rem", flexWrap: "wrap", alignItems: "center" }}>
-                    <InputText
-                        value={quickProductNumber}
-                        onChange={(e) => setQuickProductNumber(e.target.value)}
-                        placeholder="Product Number contains..."
-                        style={{ minWidth: "200px" }}
-                    />
-                    <Dropdown
-                        value={quickProductType}
-                        options={[
-                            { label: "(Any)", value: "any" },
-                            ...productTypes.map((pt) => ({ label: pt.name, value: pt.identifier })),
-                        ]}
-                        onChange={(e) => setQuickProductType(typeof e.value === "string" ? e.value : "any")}
-                        placeholder="Product Type"
-                        style={{ minWidth: "180px" }}
-                        filter
-                        showClear
-                    />
-                    <Dropdown
-                        value={quickDisabled}
-                        options={[
-                            { label: "Any", value: "any" },
-                            { label: "Active only", value: "active" },
-                            { label: "Disabled only", value: "disabled" },
-                        ]}
-                        onChange={(e) => setQuickDisabled(e.value)}
-                        placeholder="Disabled"
-                        style={{ minWidth: "140px" }}
-                    />
-                </div>
-            </div>
-
             {/* Rule Builder */}
             <div style={{ marginBottom: "1rem" }}>
                 <h4 style={{ margin: "0 0 0.5rem 0", fontSize: "0.9rem" }}>Rule builder</h4>

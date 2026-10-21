@@ -523,7 +523,6 @@ export function Component() {
                 onEnsureLookup={handleEnsureLookup}
                 onApply={handleApplyFilter}
                 currentTree={filterTree}
-                currentPayload={filterPayload as any}
             />
 
             <Dialog

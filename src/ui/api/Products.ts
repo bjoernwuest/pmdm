@@ -29,9 +29,6 @@ export type FilterPayload = {
         values?: unknown[];
     }[];
     expression: string;
-    productNumberContains?: string;
-    productTypeIdentifier?: string;
-    disabled?: boolean;
 };
 
 export async function getProducts(
@@ -47,9 +44,6 @@ export async function getProducts(
     });
     if (filter) {
         params.set("filter", JSON.stringify(filter));
-        if (filter.productNumberContains) params.set("productNumberContains", filter.productNumberContains);
-        if (filter.productTypeIdentifier) params.set("productTypeIdentifier", filter.productTypeIdentifier);
-        if (filter.disabled !== undefined) params.set("disabled", String(filter.disabled));
     }
     return apiGet<ProductListResponse>(`${BASE}?${params.toString()}`);
 }

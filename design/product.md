@@ -200,7 +200,7 @@ Custom API routes — **no factory usage** due to `productNumber`-based lookups.
 
 | Method | Path | Auth | Description |
 |--------|------|------|-------------|
-| `GET` | `/api/products` | `FP_VIEW_PRODUCTS` | Paginated product list. Query params: `page`, `pageSize`, `includeDisabled` (default `false` — disabled products hidden unless explicitly requested), plus optional filter params: `productNumberContains`, `productTypeIdentifier`, `disabled` (boolean, for quick filters), and `filter` (JSON-serialized `FilterPayload` for rule-builder conditions). Response includes `headerAttributes` (resolved `isHeader` columns visible to the viewer, unioned across the returned page) and `effectivePermissions` |
+| `GET` | `/api/products` | `FP_VIEW_PRODUCTS` | Paginated product list. Query params: `page`, `pageSize`, `includeDisabled` (default `false` — disabled products hidden unless explicitly requested), plus optional API-level filter params: `productNumberContains`, `productTypeIdentifier`, `disabled` (boolean), and `filter` (JSON-serialized `FilterPayload` for rule-builder conditions). Response includes `headerAttributes` (resolved `isHeader` columns visible to the viewer, unioned across the returned page) and `effectivePermissions` |
 | `GET` | `/api/products/:productNumber` | `FP_VIEW_PRODUCTS` | Product detail with viewer-filtered values (applied automatically by repo) |
 | `POST` | `/api/products` | `FP_CREATE_AND_IMPORT_PRODUCTS` | Create product with optional values. Body: `{ productNumber, productTypeIdentifier, values?: Record<string, unknown> }` |
 | `PUT` | `/api/products/:productNumber` | `FP_UPDATE_PRODUCT` | Update product fields and optionally values. Body: `{ productTypeIdentifier?, values?: Record<string, unknown>, knownUpdatedAt }` |
@@ -229,7 +229,7 @@ Custom API routes — **no factory usage** due to `productNumber`-based lookups.
 
 #### Filter Parameters
 
-Quick filters are passed as individual query parameters:
+The following individual query parameters provide API-level filtering (the UI dialog does not send them; it only sends `filter`):
 
 | Param | Type | Description |
 |-------|------|-------------|
@@ -256,8 +256,6 @@ type FilterPayload = {
     expression: string;     // e.g. "1 AND 2", "1 OR (2 AND 3)", "NOT 1"
 };
 ```
-
-Quick filters and rule-builder conditions are combined with **AND** — a product must match all specified quick filters AND the rule-builder expression.
 
 The backend translates the `expression` + `criteria` into SQL `WHERE` conditions joined on `ProductsValues`, evaluating each criterion against the referenced DataTypeSchema's value for each product.
 
@@ -471,9 +469,6 @@ type RuleNode = {
 +------------------------------------------------------------------+
 | Filter products                                          [×]     |
 +------------------------------------------------------------------+
-| Quick filters                                                     |
-| [Product Number contains...]  [Product Type ▼]  [Disabled ▼]    |
-+------------------------------------------------------------------+
 | Rule builder                                                      |
 |                                                                    |
 | ┌ [NOT] [AND] [OR]                        [+ Condition] [+ Group] ┐
@@ -499,7 +494,7 @@ Groups are color-coded by nesting depth, cycling through: indigo → sky blue �
 When "Apply filter" is clicked:
 - Every rule must have a DataTypeSchema selected, an operator selected, and a value (unless value-less operator)
 - Rules with validation errors are highlighted with red border and error message
-- The "Apply filter" button is disabled only if there are zero active rules AND zero quick filters
+- The "Apply filter" button is disabled only if there are zero active rules
 
 ##### Filter Payload (sent to API as `?filter=` query param or POST body)
 
@@ -514,9 +509,6 @@ type ApiCriterion = {
 type FilterPayload = {
     criteria: ApiCriterion[];
     expression: string;          // e.g. "1 AND 2", "1 OR (2 AND 3)", "NOT 1"
-    productNumberContains?: string;
-    productTypeIdentifier?: string;
-    disabled?: boolean;          // undefined = any, true = disabled, false = active
 };
 ```
 
@@ -525,7 +517,7 @@ The `expression` string uses integer references (`1`, `2`, …) that map positio
 ##### Cookie Persistence
 
 - Filter state serialized as JSON, stored in cookie `pmdm_product_filter`
-- On page load, cookie is read and filter auto-applied via `includeDisabled`, `productNumberContains`, `productTypeIdentifier`, and the rule tree
+- On page load, cookie is read and filter auto-applied from the stored `FilterPayload` and rule tree; a payload without criteria or expression is discarded and the cookie deleted
 - The `QueryBuilderTree` is stored alongside the `FilterPayload` so the dialog can be re-populated exactly as the user left it
 - "Clear filter" button removes the cookie and resets to default (no filter, `includeDisabled=false`)
 
@@ -545,8 +537,6 @@ export type QueryBuilderProps = {
     onApply: (payload: FilterPayload | null, tree: QueryBuilderTree | null) => void;
     /** Previously applied tree (for re-opening the dialog pre-populated). */
     currentTree?: QueryBuilderTree | null;
-    /** Previously applied payload (for quick filter pre-population). */
-    currentPayload?: FilterPayload | null;
 };
 
 type DataTypeMeta = {

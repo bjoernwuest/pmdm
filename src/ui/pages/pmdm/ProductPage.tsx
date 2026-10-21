@@ -129,12 +129,19 @@ export function Component() {
     // Load cookie on mount
     useEffect(() => {
         const cookie = getCookie(COOKIE_NAME);
-        if (cookie) {
-            try {
-                const parsed = JSON.parse(cookie);
-                if (parsed.payload) setFilterPayload(parsed.payload);
+        if (!cookie) return;
+        try {
+            const parsed = JSON.parse(cookie);
+            const hasCriteria = Array.isArray(parsed.payload?.criteria) && parsed.payload.criteria.length > 0;
+            const hasExpression = typeof parsed.payload?.expression === "string" && parsed.payload.expression.length > 0;
+            if (hasCriteria && hasExpression) {
+                setFilterPayload(parsed.payload);
                 if (parsed.tree) setFilterTree(parsed.tree);
-            } catch (_) { /* ignore */ }
+            } else {
+                deleteCookie(COOKIE_NAME);
+            }
+        } catch (_) {
+            deleteCookie(COOKIE_NAME);
         }
     }, []);
 
@@ -452,7 +459,6 @@ export function Component() {
                 onEnsureLookup={handleEnsureLookup}
                 onApply={handleApplyFilter}
                 currentTree={filterTree}
-                currentPayload={filterPayload as any}
             />
 
             {/* Import Dialog */}
