@@ -9,6 +9,7 @@ import {
 } from "@/ui/auth/functional_permissions.ts";
 import {
     getProducts,
+    getFilterableDataTypes,
     importProducts,
     exportProductTemplate,
     requestProductUpdate,
@@ -17,7 +18,7 @@ import {
     type FilterPayload,
 } from "@/ui/api/Products.ts";
 import { findOpenRequestForProduct } from "@/ui/api/ProductRequests.ts";
-import { getProductTypes, getProductTypeDataTypes } from "@/ui/api/ProductTypes.ts";
+import { getProductTypes } from "@/ui/api/ProductTypes.ts";
 import { getLookupValues } from "@/ui/api/Lookups.ts";
 import { getConsumableValues } from "@/ui/api/Consumables.ts";
 import { message_CreateProduct, message_UpdateProduct, message_DisableProduct } from "@/types/ProductType.ts";
@@ -197,23 +198,10 @@ export function Component() {
     // Load DataTypes for QueryBuilder
     const loadDataTypes = useCallback(async () => {
         try {
-            const pts = await getProductTypes(0, 1000, false);
-            const allDataTypes: DataTypeMeta[] = [];
-            for (const pt of pts.productTypes) {
-                try {
-                    const assignments = await getProductTypeDataTypes(pt.identifier as string, 0, 1000);
-                    for (const a of assignments.dataTypeAssignments) {
-                        allDataTypes.push({
-                            identifier: a.dataType!,
-                            name: a.dataTypeName!,
-                            kind: a.dataTypeKind!,
-                            lookupTypeIdentifier: (a.dataTypeKind === "lookup" || a.dataTypeKind === "consumable") ? ((a.dataTypeConfig as { source?: string } | null)?.source ?? null) : null,
-                        });
-                    }
-                } catch (_) { /* ignore */ }
-            }
-            setDataTypes(allDataTypes);
-        } catch (_) { /* ignore */ }
+            setDataTypes(await getFilterableDataTypes());
+        } catch (e: any) {
+            toast.current?.show({ severity: "error", summary: "Error", detail: e.message || "Could not load data types for the filter", life: 5000 });
+        }
     }, []);
 
     // Load values for rule builder dropdowns (lookup, consumable, product references)

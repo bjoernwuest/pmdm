@@ -1,6 +1,6 @@
 import type { ApiInstance } from "@/apps/api.ts";
 import { runInTransaction } from "@/services/DatabaseDriver.ts";
-import { getLoggedinUserObject, requirePermissions } from "@/services/Auth.ts";
+import { getLoggedinUserObject, requireAnyPermission, requirePermissions } from "@/services/Auth.ts";
 import {
     FP_VIEW_PRODUCTS,
     FP_CREATE_AND_IMPORT_PRODUCTS,
@@ -8,6 +8,8 @@ import {
     FP_DISABLE_PRODUCT,
     FP_REQUEST_PRODUCT_UPDATE,
     FP_CREATE_PRODUCT_COPY,
+    FP_READ_PRODUCT_FILTER,
+    FP_VIEW_PRODUCT_EXPORTS,
 } from "@/services/auth/ApplicationDefinedFunctionalPermissions.ts";
 import {
     countProducts,
@@ -19,7 +21,9 @@ import {
     setProductDisabled,
     importProducts,
     getEffectiveViewerPermissions,
+    getViewableFilterDataTypes,
 } from "@/repo/ProductRepo.ts";
+import { FilterableDataTypesResponseSchema } from "@/types/DataTypeType.ts";
 import { createProductRequest } from "@/repo/ProductRequestRepo.ts";
 import { ProductTypeRepo } from "@/repo/ProductTypeRepo.ts";
 import { getSystemUser } from "@/repo/UserRepo.ts";
@@ -200,6 +204,40 @@ export default function register(app: ApiInstance): void {
             }, { description: "Paginated list of products with pagination metadata, header attribute columns, effective viewer permissions, and disabled-inclusion flag." }),
              401: UnauthenticatedErrorResponseSchema,
              403: ForbiddenErrorResponseSchema,
+        },
+    });
+
+    // -----------------------------------------------------------------------
+    // GET /api/products/filter_data_types — Data types usable by the filter
+    // (MUST be registered BEFORE /api/products/:productNumber)
+    // -----------------------------------------------------------------------
+    app.get("/products/filter_data_types", async (context) => {
+        const claims = context.session?.idTokenClaims ?? context.tokenClaims ?? {};
+        const permissionCheck = await requireAnyPermission(context.dbClient, claims, [
+            FP_VIEW_PRODUCTS,
+            FP_READ_PRODUCT_FILTER,
+            FP_VIEW_PRODUCT_EXPORTS,
+        ]);
+        if (!permissionCheck.ok) return permissionCheck.denial;
+
+        const user = await getLoggedinUserObject(context.dbClient, claims);
+        if (!user) return status(403, { error: "Permission denied. Required: authenticated user with product filter access." });
+
+        const dataTypes = await getViewableFilterDataTypes(context.dbClient, user);
+        return { dataTypes };
+    }, {
+        detail: {
+            tags: ["Products"],
+            summary: "List data types available to the product filter",
+            description: "Returns the enabled data types on which the current user holds at least one role (viewer, writer, or approver) in an enabled product type. Used to populate the product filter rule builder. Requires FP_VIEW_PRODUCTS, FP_READ_PRODUCT_FILTER or FP_VIEW_PRODUCT_EXPORTS.",
+            parameters: [
+                { name: "X-API-Key", in: "header", description: "API key used for authentication.", schema: { type: "string", example: "your-api-key" }, required: false },
+            ],
+        },
+        response: {
+            200: FilterableDataTypesResponseSchema,
+            401: UnauthenticatedErrorResponseSchema,
+            403: ForbiddenErrorResponseSchema,
         },
     });
 

@@ -163,7 +163,8 @@ Custom repository — **no factory usage** due to `productNumber` PK mismatch wi
 
 | Function | Signature | Description |
 |----------|-----------|-------------|
-| `getEffectiveViewerPermissions` | `(db, tokenClaims, productTypeIdentifier) → EffectivePermissions` | Returns DataTypeSchema identifiers the user has viewer role for, considering group memberships and `ProductTypesDataTypePermission` (ignoring `showByDefault`). Falls back to `DataTypePermission` if no ProductType-level permission exists. Called internally by `getProductByNumber` |
+| `getEffectiveViewerPermissions` | `(db, tokenClaims, productTypeIdentifier) → EffectivePermissions` | Returns DataTypeSchema identifiers the user holds at least one role on (`viewer`, `writer`, or `approver`), using the same per-assignment merge of `ProductTypesDataTypePermission` and `DataTypePermission` as `buildPermissionLookup` (ignoring `showByDefault`). Called internally by `getProductByNumber` |
+| `getViewableFilterDataTypes` | `(db, user) → FilterableDataType[]` | Returns enabled data types assigned to enabled product types on which the user holds at least one role (`viewer`, `writer`, or `approver`), deduplicated across product types and sorted by name. Used by the filter dialog |
 
 **Note**: ProductsValues are never mutated standalone. They are created/updated via `createProduct`/`updateProduct` and deleted automatically by FK cascades when a product or DataTypeSchema is removed. There is no `deleteProductValue` or standalone values CRUD in the repo.
 
@@ -200,6 +201,7 @@ Custom API routes — **no factory usage** due to `productNumber`-based lookups.
 
 | Method | Path | Auth | Description |
 |--------|------|------|-------------|
+| `GET` | `/api/products/filter_data_types` | `FP_VIEW_PRODUCTS`, `FP_READ_PRODUCT_FILTER` or `FP_VIEW_PRODUCT_EXPORTS` | Data types usable by the filter rule builder: enabled types assigned to enabled product types on which the current user holds at least one role (`viewer`, `writer`, or `approver`). Returns `{ dataTypes: { identifier, name, kind, lookupTypeIdentifier }[] }` |
 | `GET` | `/api/products` | `FP_VIEW_PRODUCTS` | Paginated product list. Query params: `page`, `pageSize`, `includeDisabled` (default `false` — disabled products hidden unless explicitly requested), plus optional API-level filter params: `productNumberContains`, `productTypeIdentifier`, `disabled` (boolean), and `filter` (JSON-serialized `FilterPayload` for rule-builder conditions). Response includes `headerAttributes` (resolved `isHeader` columns visible to the viewer, unioned across the returned page) and `effectivePermissions` |
 | `GET` | `/api/products/:productNumber` | `FP_VIEW_PRODUCTS` | Product detail with viewer-filtered values (applied automatically by repo) |
 | `POST` | `/api/products` | `FP_CREATE_AND_IMPORT_PRODUCTS` | Create product with optional values. Body: `{ productNumber, productTypeIdentifier, values?: Record<string, unknown> }` |
@@ -463,6 +465,8 @@ type RuleNode = {
 
 **Product value resolution**: For `product` DataTypes, a `ProductSelect` component allows searching/selecting existing product numbers.
 
+**Data Type availability**: The dropdown is populated from `GET /api/products/filter_data_types`. It lists enabled data types assigned to enabled product types on which the current user holds at least one role (`viewer`, `writer`, or `approver` at the product-type-assignment level or the data-type fallback level). The list is deduplicated across product types. Configuration permissions grant no implicit bypass; a user without a data-type role sees only the `Product Number` and `Product Type` pseudo rules.
+
 ##### UI Layout
 
 ```
@@ -527,7 +531,7 @@ The `expression` string uses integer references (`1`, `2`, …) that map positio
 export type QueryBuilderProps = {
     visible: boolean;
     onHide: () => void;
-    /** DataTypes assigned to the currently selected ProductType (or all if no ProductType filter). */
+    /** Data types the current user may filter on, as returned by `GET /api/products/filter_data_types`. */
     dataTypes: DataTypeMeta[];
     /** Lookup value options keyed by Lookup identifier, lazy-loaded on demand. */
     lookupOptionsByType: Record<string, Array<{ label: string; value: string }>>;
@@ -590,7 +594,7 @@ export const meta: PageMeta = {
 #### Behaviors
 
 - **Read-only**: No edit functionality
-- **Viewer permissions**: Only DataTypes the user has viewer permission for are shown (server-side filtered)
+- **Viewer permissions**: Only data types on which the user holds at least one role (`viewer`, `writer`, or `approver`) are shown (server-side filtered)
 - **Back navigation**: Button to return to `/products`
 
 ---

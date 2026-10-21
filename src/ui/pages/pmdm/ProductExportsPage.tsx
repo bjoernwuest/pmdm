@@ -12,8 +12,9 @@ import {
     markAsExported,
     markAsImported,
 } from "@/ui/api/ProductExports.ts";
-import { getProductTypes, getProductTypeDataTypes } from "@/ui/api/ProductTypes.ts";
+import { getProductTypes } from "@/ui/api/ProductTypes.ts";
 import { getLookupValues } from "@/ui/api/Lookups.ts";
+import { getConsumableValues } from "@/ui/api/Consumables.ts";
 import {
     message_ProductExportExported,
     message_ProductExportImported,
@@ -21,7 +22,7 @@ import {
     message_DoneProductRequest,
 } from "@/types/ProductRequestType.ts";
 import type { ProductExportsListResponse, ProductExportRequestRow, ProductExportRow } from "@/types/ProductExportType.ts";
-import type { FilterPayload } from "@/ui/api/Products.ts";
+import { getFilterableDataTypes, type FilterPayload } from "@/ui/api/Products.ts";
 import type { PubSubMessage } from "@/types/PubSubType.ts";
 import React, { useEffect, useState, useCallback, useRef } from "react";
 import { DataTable } from "primereact/datatable";
@@ -238,28 +239,24 @@ export function Component() {
 
     const loadDataTypes = useCallback(async () => {
         try {
-            const pts = await getProductTypes(0, 1000, false);
-            const allDataTypes: DataTypeMeta[] = [];
-            for (const pt of pts.productTypes) {
-                try {
-                    const assignments = await getProductTypeDataTypes(pt.identifier as string, 0, 1000);
-                    for (const a of assignments.dataTypeAssignments) {
-                        allDataTypes.push({
-                            identifier: a.dataType!,
-                            name: a.dataTypeName!,
-                            kind: a.dataTypeKind!,
-                            lookupTypeIdentifier: a.dataTypeKind === "lookup" ? ((a.dataTypeConfig as { source?: string } | null)?.source ?? null) : null,
-                        });
-                    }
-                } catch (_) { /* ignore */ }
-            }
-            setDataTypes(allDataTypes);
-        } catch (_) { /* ignore */ }
+            setDataTypes(await getFilterableDataTypes());
+        } catch (e: any) {
+            toast.current?.show({ severity: "error", summary: "Error", detail: e.message || "Could not load data types for the filter", life: 5000 });
+        }
     }, []);
 
-    const handleEnsureLookup = useCallback(async (lookupIdentifier: string) => {
+    const handleEnsureLookup = useCallback(async (lookupIdentifier: string, kind?: string) => {
         if (lookupOptions[lookupIdentifier]) return;
         try {
+            if (kind === "consumable") {
+                const response = await getConsumableValues(lookupIdentifier, 0, 1000, true, true);
+                const options = response.values.map((v: any) => ({
+                    label: v.name ?? v.value ?? v.identifier,
+                    value: v.name ?? v.value ?? v.identifier,
+                }));
+                setLookupOptions((prev) => ({ ...prev, [lookupIdentifier]: options }));
+                return;
+            }
             const response = await getLookupValues(lookupIdentifier, 0, 1000, true);
             const options = response.values.map((v: any) => ({
                 label: v.name ?? v.value ?? v.identifier,

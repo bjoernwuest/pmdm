@@ -186,6 +186,25 @@ export const DataTypeListEntitySchema = Type.Object({
 });
 export type DataTypeListEntityType = Static<typeof DataTypeListEntitySchema>;
 
+/** Metadata a data type needs to be offered in the product filter rule builder. */
+export type FilterableDataType = {
+    identifier: string;
+    name: string;
+    kind: DataTypeKind;
+    lookupTypeIdentifier: string | null;
+};
+
+export const FilterableDataTypeSchema = Type.Object({
+    identifier: Type.String({ description: "Data type identifier used as the filter criterion target." }),
+    name: Type.String({ description: "Data type display name shown in the rule builder." }),
+    kind: Type.String({ description: "Data type kind, which determines the available operators and value control." }),
+    lookupTypeIdentifier: Type.Union([Type.String(), Type.Null()], { description: "Source lookup or consumable identifier for value options, or null when not applicable." }),
+}, { description: "A data type the current user is allowed to filter on." });
+
+export const FilterableDataTypesResponseSchema = Type.Object({
+    dataTypes: Type.Array(FilterableDataTypeSchema, { description: "Data types the current user holds at least one role on, deduplicated across enabled product types." }),
+}, { description: "Data types available to the product filter rule builder." });
+
 export const DataTypeSchemaInsertSchema = Type.Composite([
     Type.Omit(_DataTypeSchemaInsertSchema, ['config', 'mandatory', 'requestorCanEdit']),
     Type.Object({

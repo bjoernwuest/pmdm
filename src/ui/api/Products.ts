@@ -1,5 +1,6 @@
 import { apiGet, apiPost, apiPatch } from "./index.ts";
 import type { ProductListRow, ProductDetail, EffectivePermissions, HeaderAttribute } from "@/types/ProductType.ts";
+import type { FilterableDataType } from "@/types/DataTypeType.ts";
 
 const BASE = "/api/products";
 
@@ -46,6 +47,11 @@ export async function getProducts(
         params.set("filter", JSON.stringify(filter));
     }
     return apiGet<ProductListResponse>(`${BASE}?${params.toString()}`);
+}
+
+export async function getFilterableDataTypes(): Promise<FilterableDataType[]> {
+    const response = await apiGet<{ dataTypes: FilterableDataType[] }>(`${BASE}/filter_data_types`);
+    return response.dataTypes;
 }
 
 export async function getProduct(productNumber: string): Promise<ProductDetailResponse> {

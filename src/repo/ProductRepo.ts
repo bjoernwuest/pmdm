@@ -2,10 +2,9 @@ import type { DBClient } from "@/services/DatabaseDriver.ts";
 import { Products, ProductsValues } from "@/schema/ProductSchema.ts";
 import { LookupsValues } from "@/schema/LookupsSchema.ts";
 import { ConsumablesValues } from "@/schema/ConsumableSchema.ts";
-import { ProductTypes, ProductTypesDataTypes, ProductTypesDataTypePermission } from "@/schema/ProductTypeSchema.ts";
-import { DataTypeSchema, DataTypePermission } from "@/schema/DataTypeSchema.ts";
+import { ProductTypes, ProductTypesDataTypes } from "@/schema/ProductTypeSchema.ts";
+import { DataTypeSchema } from "@/schema/DataTypeSchema.ts";
 import { BusinessDomains } from "@/schema/BusinessDomainSchema.ts";
-import { UserGroup } from "@/schema/UserSchema.ts";
 import {
     message_CreateProduct,
     message_UpdateProduct,
@@ -26,7 +25,7 @@ import { formatHeaderValue, resolveDisplayRawValue, resolveIsHeader } from "@/se
 import PubSub from "@/services/PubSub.ts";
 import { getLoggedinUserObject } from "@/services/Auth.ts";
 import type {UserSelectType} from "@/types/UserType.ts";
-import { DataTypeKind } from "@/types/DataTypeType.ts";
+import { DataTypeKind, type FilterableDataType } from "@/types/DataTypeType.ts";
 import { markValuesAsUsed } from "@/repo/ConsumableRepo.ts";
 
 // ---------------------------------------------------------------------------
@@ -814,74 +813,90 @@ function validateDataTypeValue(
 // ---------------------------------------------------------------------------
 
 /**
- * Returns DataType identifiers the user has viewer role for, considering group
- * memberships and ProductTypesDataTypePermission (ignoring showByDefault).
- * Falls back to DataTypePermission if no ProductType-level permission exists.
+ * Lists the data types a user may use in the product filter rule builder.
+ *
+ * Only enabled product types and enabled data types are considered. A data type
+ * is included when the user holds at least one role (viewer, writer, or
+ * approver) on the product-type assignment or on the data type itself. The
+ * result is deduplicated across product types and sorted by name.
+ */
+export async function getViewableFilterDataTypes(
+    db: DBClient,
+    user: UserSelectType,
+): Promise<FilterableDataType[]> {
+    const productTypeRows = await db
+        .select({ identifier: ProductTypes.identifier })
+        .from(ProductTypes)
+        .where(eq(ProductTypes.disabled, false));
+
+    const productTypeIdentifiers = productTypeRows.map((row) => row.identifier);
+    if (productTypeIdentifiers.length === 0) return [];
+
+    const permissionLookup = await buildPermissionLookup(db, user, productTypeIdentifiers);
+
+    const rows = await db
+        .select({
+            productType: ProductTypesDataTypes.productType,
+            identifier: DataTypeSchema.identifier,
+            name: DataTypeSchema.name,
+            kind: DataTypeSchema.kind,
+            config: DataTypeSchema.config,
+        })
+        .from(ProductTypesDataTypes)
+        .innerJoin(DataTypeSchema, eq(ProductTypesDataTypes.dataType, DataTypeSchema.identifier))
+        .where(and(
+            inArray(ProductTypesDataTypes.productType, productTypeIdentifiers),
+            eq(DataTypeSchema.disabled, false),
+        ))
+        .orderBy(asc(DataTypeSchema.name), asc(DataTypeSchema.identifier));
+
+    const visible = new Map<string, FilterableDataType>();
+    for (const row of rows) {
+        if (permissionLookup(row.productType, row.identifier).roles.length === 0) continue;
+        if (visible.has(row.identifier)) continue;
+
+        const kind = row.kind as FilterableDataType["kind"];
+        const lookupTypeIdentifier = kind === DataTypeKind.Lookup || kind === DataTypeKind.Consumable
+            ? (row.config as { source?: string } | null)?.source ?? null
+            : null;
+
+        visible.set(row.identifier, {
+            identifier: row.identifier,
+            name: row.name,
+            kind,
+            lookupTypeIdentifier,
+        });
+    }
+
+    return [...visible.values()];
+}
+
+/**
+ * Returns DataType identifiers the user can view in a product type. A data type
+ * is viewable when the user holds at least one role (viewer, writer, or
+ * approver), using the same per-assignment merge as the rest of the product
+ * request model. `showByDefault` is ignored.
  */
 export async function getEffectiveViewerPermissions(
     db: DBClient,
     tokenClaims: Record<string, any>,
     productTypeIdentifier: string,
 ): Promise<EffectivePermissions> {
-    // Get user
     const user = await getLoggedinUserObject(db, tokenClaims);
     if (!user) {
         return { viewableDataTypeIdentifiers: [] };
     }
 
-    // Get user's group memberships
-    const userGroups = await db
-        .select({ groupIdentifier: UserGroup.groupIdentifier })
-        .from(UserGroup)
-        .where(eq(UserGroup.userIdentifier, user.identifier));
-
-    const groupIds = userGroups.map((g) => g.groupIdentifier);
-    if (groupIds.length === 0) {
-        return { viewableDataTypeIdentifiers: [] };
-    }
-
-    // Check ProductTypesDataTypePermission for viewer role (ignoring showByDefault)
-    const ptPerms = await db
-        .select({
-            dataTypeIdentifier: ProductTypesDataTypes.dataType,
-            groupIdentifier: ProductTypesDataTypePermission.groupIdentifier,
-        })
-        .from(ProductTypesDataTypePermission)
-        .innerJoin(
-            ProductTypesDataTypes,
-            eq(ProductTypesDataTypePermission.productTypeDataTypeIdentifier, ProductTypesDataTypes.identifier),
-        )
-        .where(and(
-            eq(ProductTypesDataTypes.productType, productTypeIdentifier),
-            eq(ProductTypesDataTypePermission.role, "viewer"),
-            inArray(ProductTypesDataTypePermission.groupIdentifier, groupIds),
-        ));
-
-    if (ptPerms.length > 0) {
-        const viewableIds = [...new Set(ptPerms.map((p) => p.dataTypeIdentifier))];
-        return { viewableDataTypeIdentifiers: viewableIds };
-    }
-
-    // Fall back to DataTypePermission for viewer role
-    const dtPerms = await db
-        .select({ dataTypeIdentifier: DataTypePermission.dataTypeIdentifier })
-        .from(DataTypePermission)
-        .where(and(
-            eq(DataTypePermission.role, "viewer"),
-            inArray(DataTypePermission.groupIdentifier, groupIds),
-        ));
-
-    // Get all DataTypes assigned to this ProductType
+    const permissionLookup = await buildPermissionLookup(db, user, [productTypeIdentifier]);
     const assignedDataTypes = await db
         .select({ dataTypeIdentifier: ProductTypesDataTypes.dataType })
         .from(ProductTypesDataTypes)
         .where(eq(ProductTypesDataTypes.productType, productTypeIdentifier));
 
-    const assignedDtIds = new Set(assignedDataTypes.map((d) => d.dataTypeIdentifier));
     const viewableIds = [...new Set(
-        dtPerms
-            .filter((p) => assignedDtIds.has(p.dataTypeIdentifier))
-            .map((p) => p.dataTypeIdentifier),
+        assignedDataTypes
+            .filter((row) => permissionLookup(productTypeIdentifier, row.dataTypeIdentifier).roles.length > 0)
+            .map((row) => row.dataTypeIdentifier),
     )];
 
     return { viewableDataTypeIdentifiers: viewableIds };
