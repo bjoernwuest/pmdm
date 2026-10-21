@@ -14,9 +14,15 @@ import {
     type ProductDetail,
     type EffectivePermissions,
     type EnrichedProductValue, type ProductsSelectType, type ImportResult, type ImportError, type ImportRow,
+    type HeaderAttribute,
 } from "@/types/ProductType.ts";
 import { and, asc, desc, eq, inArray, sql, type SQL } from "drizzle-orm";
-import { clearValuesAndCascadeApprovals } from "@/repo/ProductRequestRepo.ts";
+import {
+    buildPermissionLookup,
+    clearValuesAndCascadeApprovals,
+    loadHeaderNameMaps,
+} from "@/repo/ProductRequestRepo.ts";
+import { formatHeaderValue, resolveDisplayRawValue, resolveIsHeader } from "@/services/ProductRequestActions.ts";
 import PubSub from "@/services/PubSub.ts";
 import { getLoggedinUserObject } from "@/services/Auth.ts";
 import type {UserSelectType} from "@/types/UserType.ts";
@@ -101,6 +107,102 @@ export async function getProducts(
         disabled: r.disabled,
         productTypeName: r.productTypeName,
     })) as ProductListRow[];
+}
+
+/**
+ * Attaches resolved header-attribute display values to a page of product list
+ * rows and returns the union of header attribute columns across that page.
+ *
+ * A value contributes a header attribute when its data type is enabled, its
+ * effective `isHeader` flag is true, and the viewer holds at least one role on
+ * it in the product's product type. Products have no default values, so only
+ * the stored value is used.
+ */
+export async function attachProductHeaderAttributes(
+    db: DBClient,
+    tokenClaims: Record<string, any>,
+    products: ProductListRow[],
+): Promise<{ products: ProductListRow[]; headerAttributes: HeaderAttribute[] }> {
+    if (products.length === 0) {
+        return { products, headerAttributes: [] };
+    }
+
+    const user = await getLoggedinUserObject(db, tokenClaims);
+    if (!user) {
+        return { products, headerAttributes: [] };
+    }
+
+    const productNumbers = [...new Set(products.map((p) => p.productNumber))];
+    const uniqueProductTypes = [...new Set(products.map((p) => p.productTypeIdentifier))];
+    const getPerms = await buildPermissionLookup(db, user, uniqueProductTypes);
+
+    const rows = await db
+        .select({
+            productNumber: ProductsValues.productNumber,
+            productType: Products.productTypeIdentifier,
+            dataType: ProductsValues.dataTypeIdentifier,
+            value: ProductsValues.value,
+            dataTypeName: DataTypeSchema.name,
+            dataTypeKind: DataTypeSchema.kind,
+            dataTypeDisabled: DataTypeSchema.disabled,
+            dataTypeIsHeader: DataTypeSchema.isHeader,
+            ptIsHeader: ProductTypesDataTypes.isHeader,
+        })
+        .from(ProductsValues)
+        .innerJoin(Products, eq(ProductsValues.productNumber, Products.productNumber))
+        .innerJoin(DataTypeSchema, eq(ProductsValues.dataTypeIdentifier, DataTypeSchema.identifier))
+        .leftJoin(ProductTypesDataTypes, and(
+            eq(ProductTypesDataTypes.productType, Products.productTypeIdentifier),
+            eq(ProductTypesDataTypes.dataType, ProductsValues.dataTypeIdentifier),
+        ))
+        .where(inArray(ProductsValues.productNumber, productNumbers))
+        .orderBy(asc(ProductsValues.productNumber), asc(ProductsValues.dataTypeIdentifier));
+
+    const attributes = new Map<string, HeaderAttribute>();
+    const lookupIds = new Set<string>();
+    const consumableIds = new Set<string>();
+    const entriesByProduct = new Map<string, { dataType: string; kind: string; value: unknown }[]>();
+
+    for (const row of rows) {
+        if (row.dataTypeDisabled) continue;
+        if (getPerms(row.productType, row.dataType).roles.length === 0) continue;
+        if (!resolveIsHeader(row.dataTypeIsHeader, row.ptIsHeader)) continue;
+
+        const kind = row.dataTypeKind;
+        attributes.set(row.dataType, { dataType: row.dataType, name: row.dataTypeName });
+
+        const entries = entriesByProduct.get(row.productNumber) ?? [];
+        entries.push({ dataType: row.dataType, kind, value: row.value });
+        entriesByProduct.set(row.productNumber, entries);
+
+        const raw = resolveDisplayRawValue(row.value, null);
+        if (raw === null) continue;
+        const rawIds = (Array.isArray(raw) ? raw : [raw]).map((v) => String(v));
+        if (kind === DataTypeKind.Lookup) for (const id of rawIds) lookupIds.add(id);
+        if (kind === DataTypeKind.Consumable) for (const id of rawIds) consumableIds.add(id);
+    }
+
+    const nameMaps = await loadHeaderNameMaps(db, { lookup: lookupIds, consumable: consumableIds });
+
+    const enriched = products.map((product) => {
+        const headerValues: Record<string, string> = {};
+        for (const entry of entriesByProduct.get(product.productNumber) ?? []) {
+            const nameFor = entry.kind === DataTypeKind.Lookup
+                ? (id: string) => nameMaps.lookup.get(id)
+                : entry.kind === DataTypeKind.Consumable
+                    ? (id: string) => nameMaps.consumable.get(id)
+                    : undefined;
+            headerValues[entry.dataType] = formatHeaderValue({
+                value: entry.value,
+                defaultValue: null,
+                kind: entry.kind,
+                nameFor,
+            });
+        }
+        return { ...product, headerValues };
+    });
+
+    return { products: enriched, headerAttributes: [...attributes.values()] };
 }
 
 /**

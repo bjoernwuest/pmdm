@@ -1,10 +1,11 @@
 import { apiGet, apiPost, apiPatch } from "./index.ts";
-import type { ProductListRow, ProductDetail, EffectivePermissions } from "@/types/ProductType.ts";
+import type { ProductListRow, ProductDetail, EffectivePermissions, HeaderAttribute } from "@/types/ProductType.ts";
 
 const BASE = "/api/products";
 
 export type ProductListResponse = {
     products: ProductListRow[];
+    headerAttributes: HeaderAttribute[];
     effectivePermissions: EffectivePermissions;
     page: number;
     pageSize: number;

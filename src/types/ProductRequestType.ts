@@ -4,6 +4,7 @@
 // overwrite or delete anything you add here afterwards.
 import type {DataTypeGroupRoles} from "@/types/_DataTypeType.ts";
 import type {ProductRequestsSelectType, ProductRequestsValuesSelectType} from "@/types/_ProductRequestType.ts";
+import type {HeaderAttribute} from "@/types/ProductType.ts";
 import {TAG_CREATE, TAG_UPDATE, type Tag} from "./PubSubType";
 
 export * from './_ProductRequestType.ts';
@@ -58,12 +59,7 @@ export const message_ProductExportImported: Tag[] = ["ProductExport", "imported"
 // ---------------------------------------------------------------------------
 
 /** A header attribute column definition for the overview table. */
-export type ProductRequestHeaderAttribute = {
-    /** Data type identifier (column key). */
-    dataType: string;
-    /** Data type display name (column header). */
-    name: string;
-};
+export type ProductRequestHeaderAttribute = HeaderAttribute;
 
 /** Product request list row enriched with product type and creator name. */
 export type ProductRequestListRow = ProductRequestsSelectType & {

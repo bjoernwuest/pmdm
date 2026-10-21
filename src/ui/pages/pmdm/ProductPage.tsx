@@ -21,6 +21,14 @@ import { getProductTypes, getProductTypeDataTypes } from "@/ui/api/ProductTypes.
 import { getLookupValues } from "@/ui/api/Lookups.ts";
 import { getConsumableValues } from "@/ui/api/Consumables.ts";
 import { message_CreateProduct, message_UpdateProduct, message_DisableProduct } from "@/types/ProductType.ts";
+import { message_DoneProductRequest } from "@/types/ProductRequestType.ts";
+import { message_UpdateDataType } from "@/types/DataTypeType.ts";
+import {
+    message_UpdateProductTypeDataType,
+    message_GrantProductTypeDataTypePermission,
+    message_RevokeProductTypeDataTypePermission,
+    message_UpdateProductTypeDataTypePermission,
+} from "@/types/ProductTypeType.ts";
 import type { PubSubMessage } from "@/types/PubSubType.ts";
 import React, { useEffect, useState, useCallback, useRef } from "react";
 import { DataTable } from "primereact/datatable";
@@ -149,13 +157,23 @@ export function Component() {
 
     // Subscribe to PubSub
     useEffect(() => {
-        const sub1 = subscribe({ and: message_CreateProduct }, (_msg: PubSubMessage) => { fetchProducts(); });
-        const sub2 = subscribe({ and: message_UpdateProduct }, (_msg: PubSubMessage) => { fetchProducts(); });
-        const sub3 = subscribe({ and: message_DisableProduct }, (_msg: PubSubMessage) => { fetchProducts(); });
+        const subscriptions = [
+            message_CreateProduct,
+            message_UpdateProduct,
+            message_DisableProduct,
+            // Completed requests write product values without publishing a product update.
+            message_DoneProductRequest,
+            // Configuration changes alter the header-attribute column set or visibility.
+            message_UpdateDataType,
+            message_UpdateProductTypeDataType,
+            message_GrantProductTypeDataTypePermission,
+            message_RevokeProductTypeDataTypePermission,
+            message_UpdateProductTypeDataTypePermission,
+        ].map((topic) => subscribe({ and: topic }, (_msg: PubSubMessage) => { fetchProducts(); }));
         return () => {
-            if (sub1) unsubscribe(sub1);
-            if (sub2) unsubscribe(sub2);
-            if (sub3) unsubscribe(sub3);
+            for (const sub of subscriptions) {
+                if (sub) unsubscribe(sub);
+            }
         };
     }, [fetchProducts]);
 
@@ -411,6 +429,14 @@ export function Component() {
             >
                 <Column field="productNumber" header="Product #" sortable />
                 <Column field="productTypeName" header="Product Type" sortable />
+                {(data?.headerAttributes ?? []).map((attr) => (
+                    <Column
+                        key={attr.dataType}
+                        header={attr.name}
+                        body={(row: any) => row.headerValues?.[attr.dataType] ?? "—"}
+                        style={{ minWidth: "120px" }}
+                    />
+                ))}
                 <Column field="updatedAt" header="Updated At" body={updatedAtBody} sortable />
                 <Column field="disabled" header="Inactive" body={disabledBody} sortable />
                 <Column header="Actions" body={actionsBody} style={{ width: "100px" }} />

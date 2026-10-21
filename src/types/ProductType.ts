@@ -34,9 +34,19 @@ export type EnrichedProductValue = ProductsValuesSelectType & {
     displayValue: string | null;
 };
 
+/** A header attribute column definition for an overview table. */
+export type HeaderAttribute = {
+    /** Data type identifier (column key). */
+    dataType: string;
+    /** Data type display name (column header). */
+    name: string;
+};
+
 /** Product list row enriched with ProductType name. */
 export type ProductListRow = ProductsSelectType & {
     productTypeName: string;
+    /** Resolved display strings for header attributes, keyed by data type identifier. */
+    headerValues?: Record<string, string>;
 };
 
 /** Product detail enriched with ProductType name and values. */

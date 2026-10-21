@@ -200,7 +200,7 @@ Custom API routes — **no factory usage** due to `productNumber`-based lookups.
 
 | Method | Path | Auth | Description |
 |--------|------|------|-------------|
-| `GET` | `/api/products` | `FP_VIEW_PRODUCTS` | Paginated product list. Query params: `page`, `pageSize`, `includeDisabled` (default `false` — disabled products hidden unless explicitly requested), plus optional filter params: `productNumberContains`, `productTypeIdentifier`, `disabled` (boolean, for quick filters), and `filter` (JSON-serialized `FilterPayload` for rule-builder conditions). Response includes `effectivePermissions` |
+| `GET` | `/api/products` | `FP_VIEW_PRODUCTS` | Paginated product list. Query params: `page`, `pageSize`, `includeDisabled` (default `false` — disabled products hidden unless explicitly requested), plus optional filter params: `productNumberContains`, `productTypeIdentifier`, `disabled` (boolean, for quick filters), and `filter` (JSON-serialized `FilterPayload` for rule-builder conditions). Response includes `headerAttributes` (resolved `isHeader` columns visible to the viewer, unioned across the returned page) and `effectivePermissions` |
 | `GET` | `/api/products/:productNumber` | `FP_VIEW_PRODUCTS` | Product detail with viewer-filtered values (applied automatically by repo) |
 | `POST` | `/api/products` | `FP_CREATE_AND_IMPORT_PRODUCTS` | Create product with optional values. Body: `{ productNumber, productTypeIdentifier, values?: Record<string, unknown> }` |
 | `PUT` | `/api/products/:productNumber` | `FP_UPDATE_PRODUCT` | Update product fields and optionally values. Body: `{ productTypeIdentifier?, values?: Record<string, unknown>, knownUpdatedAt }` |
@@ -214,7 +214,8 @@ Custom API routes — **no factory usage** due to `productNumber`-based lookups.
 
 ```typescript
 {
-    products: ProductListRow[];      // server-side viewer-filtered columns
+    products: ProductListRow[];      // server-side viewer-filtered columns; headerValues keyed by data type identifier
+    headerAttributes: { dataType: string; name: string }[]; // isHeader columns visible to the viewer, first-seen order
     effectivePermissions: {
         viewableDataTypeIdentifiers: string[];
     };
@@ -369,13 +370,16 @@ export const meta: PageMeta = {
 +------------------------------------------------------------------+
 | [Filter] [Clear Filter*]     [Export Template] [Import]           |
 | * visible only when filter is active                              |
-+----------+---------------+---------------+----------+-----+-----+
-| Product #| Product Type  | Updated At    | Disabled | Act | Act |
-+----------+---------------+---------------+----------+-----+-----+
-| PRD-001  | Hardware      | 2026-06-25    | Active   | [R] | [C] |
-| PRD-002  | Software      | 2026-06-24    | Disabled | [R] | [C] |
-+----------+---------------+---------------+----------+-----+-----+
++----------+---------------+---------------+---------------+----------+-----+-----+
+| Product #| Product Type  | <Header ...>  | Updated At    | Disabled | Act | Act |
++----------+---------------+---------------+---------------+----------+-----+-----+
+| PRD-001  | Hardware      | Router        | 2026-06-25    | Active   | [R] | [C] |
+| PRD-002  | Software      | —             | 2026-06-24    | Disabled | [R] | [C] |
++----------+---------------+---------------+---------------+----------+-----+-----+
 ```
+
+`<Header ...>` stands for zero or more dynamic columns, one per resolved header
+attribute visible to the viewer, inserted directly after "Product Type".
 
 #### Columns
 
@@ -383,6 +387,7 @@ export const meta: PageMeta = {
 |--------|--------|-------|
 | Product Number | `productNumber` | Primary column |
 | Product Type | `productTypeName` | From joined `ProductTypes.name` |
+| Header attributes (dynamic) | `headerValues[dataType]` | One non-sortable column per `headerAttributes` entry, after "Product Type"; missing/empty values render `—` |
 | Updated At | `updatedAt` | Formatted date |
 | Disabled | `disabled` | Chip/badge without action |
 | Request Update (action) | — | `pi-sync` icon, visible if `FP_REQUEST_PRODUCT_UPDATE`, calls stub API, shows toast "Not yet implemented" |
@@ -397,7 +402,8 @@ export const meta: PageMeta = {
 - **Export template**: Requires `FP_CREATE_AND_IMPORT_PRODUCTS`. Opens popup to select ProductType (dropdown from `/api/product_types`). On select, calls `exportTemplate()` which triggers browser download of XLSX
 - **Import**: Requires `FP_CREATE_AND_IMPORT_PRODUCTS`. Opens popup with file input (accepts `.xlsx`). On file select, calls `importProducts()`. Displays result summary of created count and errors. If errors exist, generates and downloads error report XLSX
 - **Viewer permissions**: Columns for DataTypes the user cannot view are not rendered (server already filters them from the response)
-- **PubSub**: List re-fetches on `create.Product`, `update.Product`, `disable.Product` events via the PubSub subscription system
+- **Header attribute columns**: Computed server-side per page as the union of enabled, `isHeader`-resolved data types on which the viewer holds at least one role (product-type assignment role or data-type role). `showByDefault` is ignored. Columns are inserted after "Product Type" in first-seen order; products of other types render `—`. Values come from stored `ProductsValues.value` only (products have no default values)
+- **PubSub**: List re-fetches on `create.Product`, `update.Product`, `disable.Product`, `done.ProductRequest` (completed requests write product values without a product update), and on configuration events that alter the column set/visibility (`update.DataType`, `update.ProductTypeDataType`, and product-type data-type permission grant/revoke/update)
 
 #### Filter Query Builder Modal
 

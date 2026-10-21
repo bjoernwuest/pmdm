@@ -1309,7 +1309,7 @@ export async function listProductRequests(
  * Loads display names for lookup and consumable value identifiers used by
  * header attributes. One query per master table, keyed by value identifier.
  */
-async function loadHeaderNameMaps(
+export async function loadHeaderNameMaps(
     db: DBClient,
     ids: { lookup: Set<string>; consumable: Set<string> },
 ): Promise<{ lookup: Map<string, string>; consumable: Map<string, string> }> {

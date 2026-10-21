@@ -12,6 +12,7 @@ import {
 import {
     countProducts,
     getProducts,
+    attachProductHeaderAttributes,
     getProductByNumber,
     createProduct,
     updateProduct,
@@ -93,7 +94,10 @@ export default function register(app: ApiInstance): void {
 
         const condition = conditions.length > 0 ? and(...conditions) : undefined;
         const total = await countProducts(context.dbClient, includeDisabled, condition);
-        const products = await getProducts(context.dbClient, includeDisabled, condition, page, pageSize);
+        const productRows = await getProducts(context.dbClient, includeDisabled, condition, page, pageSize);
+        const { products, headerAttributes } = await attachProductHeaderAttributes(
+            context.dbClient, claims, productRows,
+        );
 
         let effectivePermissions = { viewableDataTypeIdentifiers: [] as string[] };
         if (products.length > 0) {
@@ -104,6 +108,7 @@ export default function register(app: ApiInstance): void {
 
         return {
             products,
+            headerAttributes,
             effectivePermissions,
             page,
             pageSize,
@@ -182,13 +187,17 @@ export default function register(app: ApiInstance): void {
         response: {
             200: t.Object({
                 products: t.Array(t.Any()),
+                headerAttributes: t.Array(t.Object({
+                    dataType: t.String({ description: "Data type identifier used as the column key." }),
+                    name: t.String({ description: "Data type display name used as the column header." }),
+                }), { description: "Header attribute columns visible to the viewer, in first-seen order across the returned page." }),
                 effectivePermissions: t.Object({ viewableDataTypeIdentifiers: t.Array(t.String()) }),
                 page: t.Number(),
                 pageSize: t.Number(),
                 total: t.Number(),
                 availablePageSizes: t.Array(t.Number()),
                 includeDisabled: t.Boolean(),
-            }, { description: "Paginated list of products with pagination metadata, effective viewer permissions, and disabled-inclusion flag." }),
+            }, { description: "Paginated list of products with pagination metadata, header attribute columns, effective viewer permissions, and disabled-inclusion flag." }),
              401: UnauthenticatedErrorResponseSchema,
              403: ForbiddenErrorResponseSchema,
         },
