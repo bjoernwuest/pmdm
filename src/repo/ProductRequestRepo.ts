@@ -31,7 +31,7 @@ import type { ProductRequestsValuesSelectType as ProductRequestsValuesType } fro
 import type { UserSelectType as UserType } from "@/types/_UserType.ts";
 import type { UUIDType } from "@/types/helpers.ts";
 import { PermissionDeniedError, FilterScriptError } from "@/types/errors.ts";
-import { and, asc, desc, eq, getTableName, ilike, inArray, isNotNull, isNull, or, sql, type SQL } from "drizzle-orm";
+import { and, asc, desc, eq, getTableName, ilike, inArray, isNotNull, isNull, ne, or, sql, type SQL } from "drizzle-orm";
 import PubSub from "@/services/PubSub.ts";
 import { getLoggedinUserObject } from "@/services/Auth.ts";
 import { buildUserDisplaySql, createProductExportRows } from "@/repo/ProductExportRepo.ts";
@@ -323,6 +323,146 @@ export async function buildPermissionLookup(
 
         return { roles: mergedRoles, showByDefault };
     };
+}
+
+/** One matching open request value joined with a group role assignment. */
+export type PendingRequestRoleRow = {
+    requestIdentifier: string;
+    isUpdateRequest: boolean;
+    dataType: string;
+    kind: string;
+    dataTypeConfig: Record<string, unknown> | null;
+    productTypeConfig: Record<string, unknown> | null;
+    value: unknown;
+    defaultValue: unknown;
+    approvedBy: string | null;
+    editableOnUpdate: boolean | null;
+    groupIdentifier: string;
+    groupName: string;
+    role: string;
+};
+
+type PendingRequestRoleSelectRow = {
+    requestIdentifier: string;
+    productToUpdate: string | null;
+    dataType: string | null;
+    kind: string;
+    dataTypeConfig: unknown;
+    productTypeConfig: unknown;
+    value: unknown;
+    defaultValue: unknown;
+    approvedBy: string | null;
+    editableOnUpdate: boolean | null;
+    groupIdentifier: string;
+    groupName: string;
+    role: string;
+};
+
+function toPendingRequestRoleRow(row: PendingRequestRoleSelectRow): PendingRequestRoleRow {
+    return {
+        requestIdentifier: row.requestIdentifier!,
+        isUpdateRequest: row.productToUpdate !== null,
+        dataType: row.dataType!,
+        kind: row.kind,
+        dataTypeConfig: (row.dataTypeConfig as Record<string, unknown> | null) ?? null,
+        productTypeConfig: (row.productTypeConfig as Record<string, unknown> | null) ?? null,
+        value: row.value,
+        defaultValue: row.defaultValue,
+        approvedBy: row.approvedBy ?? null,
+        editableOnUpdate: row.editableOnUpdate ?? null,
+        groupIdentifier: row.groupIdentifier,
+        groupName: row.groupName,
+        role: row.role,
+    };
+}
+
+const pendingRequestRoleFilters = () => [
+    eq(ProductRequests.status, ProductRequestStatus.open),
+    eq(DataTypeSchema.disabled, false),
+    ne(DataTypeSchema.kind, DataTypeKind.Calculated),
+    eq(Group.disabled, false),
+    isNull(ProductRequestsValues.approvedBy),
+    inArray(DataTypePermission.role, ["writer", "approver"]),
+];
+
+/**
+ * Loads open product request values joined with their data-type-level group
+ * roles. Aggregation itself is finalized by the dashboard service.
+ */
+export async function listPendingRequestRowsFromDataTypeRoles(db: DBClient): Promise<PendingRequestRoleRow[]> {
+    const rows = await db
+        .select({
+            requestIdentifier: ProductRequests.identifier,
+            productToUpdate: ProductRequests.productToUpdate,
+            dataType: ProductRequestsValues.dataType,
+            kind: DataTypeSchema.kind,
+            dataTypeConfig: DataTypeSchema.config,
+            productTypeConfig: ProductTypesDataTypes.config,
+            value: ProductRequestsValues.value,
+            defaultValue: ProductRequestsValues.defaultValue,
+            approvedBy: ProductRequestsValues.approvedBy,
+            editableOnUpdate: ProductTypesDataTypes.editableOnUpdate,
+            groupIdentifier: DataTypePermission.groupIdentifier,
+            groupName: Group.groupName,
+            role: DataTypePermission.role,
+        })
+        .from(ProductRequests)
+        .innerJoin(ProductRequestsValues, eq(ProductRequestsValues.productRequest, ProductRequests.identifier))
+        .innerJoin(DataTypeSchema, eq(DataTypeSchema.identifier, ProductRequestsValues.dataType))
+        .leftJoin(ProductTypesDataTypes, and(
+            eq(ProductTypesDataTypes.productType, ProductRequests.productType),
+            eq(ProductTypesDataTypes.dataType, ProductRequestsValues.dataType),
+        ))
+        .innerJoin(DataTypePermission, eq(DataTypePermission.dataTypeIdentifier, ProductRequestsValues.dataType))
+        .innerJoin(Group, eq(Group.identifier, DataTypePermission.groupIdentifier))
+        .where(and(...pendingRequestRoleFilters()));
+
+    return rows.map(toPendingRequestRoleRow);
+}
+
+/**
+ * Loads open product request values joined with their product-type+data-type
+ * group roles. Aggregation itself is finalized by the dashboard service.
+ */
+export async function listPendingRequestRowsFromProductTypeRoles(db: DBClient): Promise<PendingRequestRoleRow[]> {
+    const rows = await db
+        .select({
+            requestIdentifier: ProductRequests.identifier,
+            productToUpdate: ProductRequests.productToUpdate,
+            dataType: ProductRequestsValues.dataType,
+            kind: DataTypeSchema.kind,
+            dataTypeConfig: DataTypeSchema.config,
+            productTypeConfig: ProductTypesDataTypes.config,
+            value: ProductRequestsValues.value,
+            defaultValue: ProductRequestsValues.defaultValue,
+            approvedBy: ProductRequestsValues.approvedBy,
+            editableOnUpdate: ProductTypesDataTypes.editableOnUpdate,
+            groupIdentifier: ProductTypesDataTypePermission.groupIdentifier,
+            groupName: Group.groupName,
+            role: ProductTypesDataTypePermission.role,
+        })
+        .from(ProductRequests)
+        .innerJoin(ProductRequestsValues, eq(ProductRequestsValues.productRequest, ProductRequests.identifier))
+        .innerJoin(DataTypeSchema, eq(DataTypeSchema.identifier, ProductRequestsValues.dataType))
+        .innerJoin(ProductTypesDataTypes, and(
+            eq(ProductTypesDataTypes.productType, ProductRequests.productType),
+            eq(ProductTypesDataTypes.dataType, ProductRequestsValues.dataType),
+        ))
+        .innerJoin(ProductTypesDataTypePermission, eq(
+            ProductTypesDataTypePermission.productTypeDataTypeIdentifier,
+            ProductTypesDataTypes.identifier,
+        ))
+        .innerJoin(Group, eq(Group.identifier, ProductTypesDataTypePermission.groupIdentifier))
+        .where(and(
+            eq(ProductRequests.status, ProductRequestStatus.open),
+            eq(DataTypeSchema.disabled, false),
+            ne(DataTypeSchema.kind, DataTypeKind.Calculated),
+            eq(Group.disabled, false),
+            isNull(ProductRequestsValues.approvedBy),
+            inArray(ProductTypesDataTypePermission.role, ["writer", "approver"]),
+        ));
+
+    return rows.map(toPendingRequestRoleRow);
 }
 
 /**

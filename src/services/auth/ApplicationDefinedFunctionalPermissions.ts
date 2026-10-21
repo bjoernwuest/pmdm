@@ -70,6 +70,8 @@ export const FP_NOTIFICATIONS: FunctionalPermissionSelectType = { functionalPerm
 
 export const FP_READ_PRODUCT_FILTER: FunctionalPermissionSelectType = { functionalPermissionName: FunctionalPermissionNames.FP_READ_PRODUCT_FILTER, description: "Use the product search filter to find products. Provides read-only access to reference data needed for filtering (lookup values, consumable values) without granting full access to the master data configuration area.", group: "General", ...registrationPlaceholders };
 
+export const FP_VIEW_DASHBOARD: FunctionalPermissionSelectType = { functionalPermissionName: FunctionalPermissionNames.FP_VIEW_DASHBOARD, description: "Access the dashboard and view aggregated pending product request workload.", group: "General", ...registrationPlaceholders };
+
 /** All application-defined permissions; populated with registered rows at startup. */
 export const applicationFunctionalPermissions: FunctionalPermissionSelectType[] = [
     FP_VIEW_DATA_TYPES,
@@ -100,6 +102,7 @@ export const applicationFunctionalPermissions: FunctionalPermissionSelectType[] 
     FP_EDIT_EXPORT_STATUS,
     FP_NOTIFICATIONS,
     FP_READ_PRODUCT_FILTER,
+    FP_VIEW_DASHBOARD,
 ];
 
 /** Pure insert-type definitions for the shared `registerFunctionalPermissions()` startup loop. */
