@@ -81,6 +81,16 @@ describe("computePendingRequestsByGroup", () => {
         expect(result[0]?.pendingDataEntry).toBe(0);
     });
 
+    it("does not count a default-backed empty value as pending data entry for writers", () => {
+        const result = computePendingRequestsByGroup([
+            row({ role: "writer", value: null, defaultValue: "Fallback" }),
+            row({ role: "writer", value: null, defaultValue: "null", requestIdentifier: "req-2" }),
+        ]);
+
+        expect(result[0]?.pendingApproval).toBe(0);
+        expect(result[0]?.pendingDataEntry).toBe(1);
+    });
+
     it("excludes entry when an update request is not editable on update", () => {
         const result = computePendingRequestsByGroup([
             row({ role: "writer", value: null, isUpdateRequest: true, editableOnUpdate: false, requestIdentifier: "req-false" }),
@@ -237,6 +247,58 @@ describe("assembleGapFields", () => {
         });
 
         expect(fields).toEqual([]);
+    });
+
+    it("omits an approved optional field with no value", () => {
+        const fields = assembleGapFields({
+            isUpdateRequest: false,
+            fields: [gapField({ value: null, approvedBy: "user-1" })],
+            previousApprovalsByDataType: noPreviousApprovals,
+            approvedSet: new Set(["dt-1"]),
+            roleGroups: noRoleGroups,
+        });
+
+        expect(fields).toEqual([]);
+    });
+
+    it("drops an approved default-backed field", () => {
+        const fields = assembleGapFields({
+            isUpdateRequest: false,
+            fields: [gapField({ value: null, defaultValue: "Fallback", approvedBy: "user-1" })],
+            previousApprovalsByDataType: noPreviousApprovals,
+            approvedSet: new Set(["dt-1"]),
+            roleGroups: noRoleGroups,
+        });
+
+        expect(fields).toEqual([]);
+    });
+
+    it("keeps an unapproved default-backed field as provided but pending approval", () => {
+        const fields = assembleGapFields({
+            isUpdateRequest: false,
+            fields: [gapField({ value: null, defaultValue: "Fallback" })],
+            previousApprovalsByDataType: noPreviousApprovals,
+            approvedSet: new Set(),
+            roleGroups: noRoleGroups,
+        });
+
+        expect(fields).toHaveLength(1);
+        expect(fields[0]!.valueMissing).toBe(false);
+        expect(fields[0]!.approvalState).toBe("pending");
+    });
+
+    it("keeps an unapproved optional empty field as missing and pending approval", () => {
+        const fields = assembleGapFields({
+            isUpdateRequest: false,
+            fields: [gapField({ value: null, defaultValue: "null" })],
+            previousApprovalsByDataType: noPreviousApprovals,
+            approvedSet: new Set(),
+            roleGroups: noRoleGroups,
+        });
+
+        expect(fields).toHaveLength(1);
+        expect(fields[0]!.valueMissing).toBe(true);
+        expect(fields[0]!.approvalState).toBe("pending");
     });
 
     it("does not report a missing value when an update request is not editable", () => {

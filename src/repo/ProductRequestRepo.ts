@@ -1673,7 +1673,8 @@ async function computeActionableSummaryFromValues(
         const hasApproverRole = perms.roles.includes("approver" as DataTypeGroupRoles);
         const requestorCanEdit = await resolveRequestorCanEdit(db, v.requestorCanEdit, v.requestorCanEditScript, v.ptRequestorCanEdit, v.ptRequestorCanEditScript, summaryCtx, v.dataType ?? undefined);
 
-        // "Provide value": the user may edit the value and it is empty.
+        // "Provide value": the user may edit the value, it is not approved yet,
+        // and it has no effective value.
         if (canProvideProductRequestValue({
             hasWriterRole,
             requestorCanEdit,
@@ -1682,6 +1683,8 @@ async function computeActionableSummaryFromValues(
             isUpdateRequest,
             editableOnUpdate,
             value: v.value,
+            defaultValue: v.defaultValue,
+            approvedBy: v.approvedBy ?? null,
             kind: v.dataTypeKind!,
             config: resolvedConfig,
         })) {

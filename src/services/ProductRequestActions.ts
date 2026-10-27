@@ -51,6 +51,27 @@ export function isEmptyValue(value: unknown, kind: string, config?: Record<strin
     return false;
 }
 
+/**
+ * Returns `true` when a field has an effective value: either the stored value
+ * is non-empty, or a usable default exists. The literal string `"null"` is the
+ * JSONB representation of an unset default and counts as absent.
+ *
+ * This intentionally mirrors the default-presence rule of the approval gate;
+ * it must not switch to {@link isEmptyValue} for defaults, because empty-string
+ * and empty-array defaults still count as present there.
+ */
+export function hasEffectiveValue(input: {
+    value: unknown;
+    defaultValue: unknown;
+    kind: string;
+    config?: Record<string, unknown> | null;
+}): boolean {
+    if (!isEmptyValue(input.value, input.kind, input.config)) return true;
+    return input.defaultValue !== null
+        && input.defaultValue !== undefined
+        && input.defaultValue !== "null";
+}
+
 // ---------------------------------------------------------------------------
 // Script resolvers (moved from ProductRequestRepo)
 // ---------------------------------------------------------------------------
@@ -200,6 +221,9 @@ export type CanEditInput = {
 /** Inputs required to decide whether the current user should provide a value. */
 export type CanProvideInput = CanEditInput & {
     value: unknown;
+    defaultValue: unknown;
+    /** Current approver identifier (null when not yet approved). */
+    approvedBy: string | null;
     kind: string;
     config?: Record<string, unknown> | null;
 };
@@ -237,21 +261,22 @@ export function canEditProductRequestValue(input: CanEditInput): boolean {
 }
 
 /**
- * `canProvide = canEdit && kind !== Calculated && isEmptyValue(value, kind, config)`
+ * `canProvide = canEdit && kind !== Calculated && approvedBy === null && !hasEffectiveValue(...)`
  *
- * A value needs to be provided only when the user may edit it, it is empty,
- * and it is not calculated (calculated values are derived automatically and
- * are never editable by a user).
+ * A value needs to be provided only when the user may edit it, it is not
+ * approved yet, it has no effective value (no stored value and no usable
+ * default), and it is not calculated. Editing an approved value remains
+ * possible through {@link canEditProductRequestValue}.
  */
 export function canProvideProductRequestValue(input: CanProvideInput): boolean {
-    return input.kind !== DataTypeKind.Calculated
-        && canEditProductRequestValue(input)
-        && isEmptyValue(input.value, input.kind, input.config);
+    if (input.kind === DataTypeKind.Calculated) return false;
+    if (input.approvedBy !== null) return false;
+    return canEditProductRequestValue(input) && !hasEffectiveValue(input);
 }
 
 /**
  * Whether a value counts as "present" for the approve gate. A mandatory field
- * is only approvable when it has a value or a non-null `"null"` default.
+ * is only approvable when it has an effective value.
  */
 export function isApprovableValuePresent(input: {
     mandatory: boolean;
@@ -260,9 +285,7 @@ export function isApprovableValuePresent(input: {
     kind: string;
     config?: Record<string, unknown> | null;
 }): boolean {
-    if (!input.mandatory) return true;
-    if (!isEmptyValue(input.value, input.kind, input.config)) return true;
-    return input.defaultValue !== null && input.defaultValue !== "null";
+    return !input.mandatory || hasEffectiveValue(input);
 }
 
 /**

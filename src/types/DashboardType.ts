@@ -5,7 +5,7 @@ export const PendingRequestsByGroupSchema = Type.Object({
     groupIdentifier: Type.String({ format: "uuid", description: "Identifier of the group." }),
     groupName: Type.String({ description: "Display name of the group." }),
     pendingApproval: Type.Integer({ minimum: 0, description: "Number of open product requests with at least one value awaiting approval by this group." }),
-    pendingDataEntry: Type.Integer({ minimum: 0, description: "Number of open product requests with at least one empty value this group is responsible to fill." }),
+    pendingDataEntry: Type.Integer({ minimum: 0, description: "Number of open product requests with at least one unapproved field that has no effective value and that this group is responsible to fill." }),
     total: Type.Integer({ minimum: 0, description: "Sum of pendingApproval and pendingDataEntry." }),
 }, { description: "Pending product request counts for one group." });
 export type PendingRequestsByGroup = Static<typeof PendingRequestsByGroupSchema>;
@@ -39,7 +39,7 @@ export type DashboardGroupRef = Static<typeof DashboardGroupRefSchema>;
 export const DashboardApprovalStateSchema = Type.Union([
     Type.Literal("pending", { description: "The value is ready and waiting for approval." }),
     Type.Literal("blocked", { description: "Approval is blocked by unmet previous-approval prerequisites." }),
-    Type.Literal("waiting_for_value", { description: "The recommended value is still missing for a mandatory field." }),
+    Type.Literal("waiting_for_value", { description: "The field is mandatory and has no stored value and no usable default." }),
 ], { description: "Approval state of a gap field." });
 export type DashboardApprovalState = Static<typeof DashboardApprovalStateSchema>;
 
@@ -49,7 +49,7 @@ export const DashboardGapFieldSchema = Type.Object({
     dataTypeName: Type.String({ description: "Name of the data type." }),
     dataTypeKind: Type.String({ description: "Kind of the data type (for example string, lookup, or boolean)." }),
     mandatory: Type.Boolean({ description: "Whether the field is mandatory for the dashboard viewer." }),
-    valueMissing: Type.Boolean({ description: "Whether the field still needs a value from the responsible writer." }),
+    valueMissing: Type.Boolean({ description: "Whether the field still needs a value from the responsible writer; false when a usable default exists or the value is approved (approved fields are not returned at all)." }),
     approvalState: Type.Optional(DashboardApprovalStateSchema),
     approvalBlockedBy: Type.Array(Type.String({ description: "Name of a prerequisite data type that is not approved yet." }), { description: "Previous-approval prerequisites that block this field." }),
     providerGroups: Type.Array(DashboardGroupRefSchema, { description: "Groups responsible for providing the value." }),
@@ -63,7 +63,7 @@ export const OpenProductRequestGapAnalysisSchema = Type.Object({
     productTypeName: Type.String({ description: "Name of the request's product type." }),
     createdByName: Type.String({ description: "Display name of the user who created the request." }),
     productToUpdate: Type.Union([Type.String({ description: "Product number being updated." }), Type.Null({ description: "Null when this is not an update request." })]),
-    fields: Type.Array(DashboardGapFieldSchema, { description: "Fields with missing values or missing approvals, ordered by data type name." }),
+    fields: Type.Array(DashboardGapFieldSchema, { description: "Fields awaiting approval or, if unapproved, lacking a value or default; approved fields are excluded. Ordered by data type name." }),
 }, { description: "Gap analysis for one open product request." });
 export type OpenProductRequestGapAnalysis = Static<typeof OpenProductRequestGapAnalysisSchema>;
 

@@ -12,8 +12,8 @@ The notification system sends **per-user digest emails** about product requests 
 
 | Type | Triggers when | Relevant users |
 |------|--------------|----------------|
-| **Awaiting "Provide value"** | PR is `open` AND user has `writer` role (or is the request creator with `requestorCanEdit` and at least one role on the data type) on a **non-disabled, non-calculated** data type whose value is `null` (not yet provided) | Users in groups with writer permission on affected data types, plus the request creator when the requestor-edit gate passes |
-| **Awaiting "Approve value"** | PR is `open` AND user has `approver` role on a **non-disabled, non-calculated** data type that is not yet approved (`approvedBy IS NULL`) AND every previous-approval prerequisite on the request is already approved; when the value is empty, the data type must not be mandatory (mandatory is evaluated per recipient) | Users in groups with approver permission on affected data types |
+| **Awaiting "Provide value"** | PR is `open` AND user has `writer` role (or is the request creator with `requestorCanEdit` and at least one role on the data type) on a **non-disabled, non-calculated**, not yet approved data type with **no effective value** (no stored value and no usable default) | Users in groups with writer permission on affected data types, plus the request creator when the requestor-edit gate passes |
+| **Awaiting "Approve value"** | PR is `open` AND user has `approver` role on a **non-disabled, non-calculated** data type that is not yet approved (`approvedBy IS NULL`) AND every previous-approval prerequisite on the request is already approved; when the value is empty and no usable default exists, the data type must not be mandatory (mandatory is evaluated per recipient) | Users in groups with approver permission on affected data types |
 | **Status transition** | PR is currently in status `importing`, `done`, or `cancelled` | Users in groups with **any** permission (viewer, writer, or approver) on the PR's data types |
 
 Each user receives a **single digest email** containing only the sections relevant to them. Users who have no awaiting items and no transitions since the last digest receive no email.
@@ -291,7 +291,8 @@ For each open PR (with productType PT):
        path — buildPermissionLookup/getEffectivePermissions), then map groups → users via user_groups
     
     For each writer-user:
-      Check: is value empty (needs value)?
+      Check: approvedBy is null AND the value has no effective value
+        (stored value empty AND no usable default)?
         AND (has writer role? OR (is the user the creator with requestorCanEdit
              AND holds at least one role on the data type — mirroring the edit-path gate))?
         AND (if update request) editableOnUpdate is true?
@@ -299,7 +300,8 @@ For each open PR (with productType PT):
     
     For each approver-user:
       Check: approvedBy is null AND data type is not Calculated
-        AND (value is non-empty OR the data type is not mandatory
+        AND (value has an effective value — stored value non-empty OR a
+             usable default — OR the data type is not mandatory
              for this recipient).
       Mandatory is resolved per candidate approver with a script context whose
       principal is that approver, and cached by (requestId, dataType, userId)

@@ -84,7 +84,7 @@ A data type value is **editable** by a user when:
 
 For "Request update" product requests: if `editableOnUpdate` is `false`, the data type is read-only (not editable) and automatically approved. It is visible only if the user has view permission.
 
-"Provide value" additionally requires the value to be empty (`isEmptyValue`). These decisions are computed server-side by `canEditProductRequestValue` / `canProvideProductRequestValue` in [`src/services/ProductRequestActions.ts`](../src/services/ProductRequestActions.ts); the UI only renders the returned flags.
+"Provide value" additionally requires no **effective value** — the stored value is empty **and** no usable default exists (`defaultValue` is not null/`"null"`) — and that the value is not yet approved (`approvedBy` IS NULL). These decisions are computed server-side by `canEditProductRequestValue` / `canProvideProductRequestValue` in [`src/services/ProductRequestActions.ts`](../src/services/ProductRequestActions.ts); the UI only renders the returned flags.
 
 ### 4. Approval Permissions
 

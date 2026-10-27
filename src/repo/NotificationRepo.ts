@@ -8,6 +8,7 @@ import { ConsumablesValues } from "@/schema/ConsumableSchema.ts";
 import { eq, and, inArray, sql } from "drizzle-orm";
 
 import {
+    hasEffectiveValue,
     isEmptyValue,
     resolveRequestorCanEdit,
     resolveMandatory,
@@ -200,6 +201,12 @@ export async function getAwaitingPerUser(
 
             const resolvedConfig = { ...((v.dataTypeConfig ?? {}) as Record<string, unknown>), ...((v.ptConfig ?? {}) as Record<string, unknown>) };
             const isEmpty = isEmptyValue(v.value, v.dataTypeKind!, resolvedConfig);
+            const hasValue = hasEffectiveValue({
+                value: v.value,
+                defaultValue: v.defaultValue,
+                kind: v.dataTypeKind!,
+                config: resolvedConfig,
+            });
             const editableOnUpdate = v.ptEditableOnUpdate ?? true;
 
             for (const userId of writerUserIds) {
@@ -211,6 +218,8 @@ export async function getAwaitingPerUser(
                     isUpdateRequest,
                     editableOnUpdate,
                     value: v.value,
+                    defaultValue: v.defaultValue,
+                    approvedBy: v.approvedBy ?? null,
                     kind: v.dataTypeKind!,
                     config: resolvedConfig,
                 })) {
@@ -225,7 +234,7 @@ export async function getAwaitingPerUser(
             // The request creator may provide values without writer role when
             // requestorCanEdit resolves to true and they hold at least one role
             // on the data type.
-            if (isEmpty && creatorCtx && pr.createdBy) {
+            if (!hasValue && creatorCtx && pr.createdBy) {
                 const viewerUserIds = await resolveUsersWithRole(db, pr.productType!, dtId, "viewer");
                 const creatorHasAnyRole = writerUserIds.includes(pr.createdBy)
                     || approverUserIds.includes(pr.createdBy)
@@ -244,6 +253,8 @@ export async function getAwaitingPerUser(
                     isUpdateRequest,
                     editableOnUpdate,
                     value: v.value,
+                    defaultValue: v.defaultValue,
+                    approvedBy: v.approvedBy ?? null,
                     kind: v.dataTypeKind!,
                     config: resolvedConfig,
                 })) {

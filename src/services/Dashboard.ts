@@ -1,6 +1,6 @@
 import type { DBClient } from "@/services/DatabaseDriver.ts";
 import {
-    isEmptyValue,
+    hasEffectiveValue,
     isApprovableValuePresent,
     resolveConfig,
     resolveMandatory,
@@ -37,10 +37,6 @@ type GroupCounts = {
     entryRequests: Set<string>;
 };
 
-function defaultIsPresent(defaultValue: unknown): boolean {
-    return defaultValue !== null && defaultValue !== undefined && defaultValue !== "null";
-}
-
 function addPendingRoleRow(counts: Map<string, GroupCounts>, row: PendingRequestRoleRow): void {
     if (row.approvedBy !== null) return;
     if (row.kind === DataTypeKind.Calculated) return;
@@ -56,13 +52,18 @@ function addPendingRoleRow(counts: Map<string, GroupCounts>, row: PendingRequest
     }
 
     const config = resolveConfig(row.dataTypeConfig, row.productTypeConfig);
-    const valueIsEmpty = isEmptyValue(row.value, row.kind, config);
+    const hasValue = hasEffectiveValue({
+        value: row.value,
+        defaultValue: row.defaultValue,
+        kind: row.kind,
+        config,
+    });
 
-    if (row.role === "approver" && (!valueIsEmpty || defaultIsPresent(row.defaultValue))) {
+    if (row.role === "approver" && hasValue) {
         group.approvalRequests.add(row.requestIdentifier);
     }
 
-    if (row.role === "writer" && valueIsEmpty && (!row.isUpdateRequest || row.editableOnUpdate !== false)) {
+    if (row.role === "writer" && !hasValue && (!row.isUpdateRequest || row.editableOnUpdate !== false)) {
         group.entryRequests.add(row.requestIdentifier);
     }
 }
@@ -178,32 +179,34 @@ export function assembleGapFields(input: GapAssemblyInput): DashboardGapField[] 
         if (field.dataTypeDisabled) continue;
         if (field.dataTypeKind === DataTypeKind.Calculated) continue;
 
-        const approved = field.approvedBy !== null;
-        const valueMissing = isEmptyValue(field.value, field.dataTypeKind, field.config)
-            && (!input.isUpdateRequest || (field.editableOnUpdate ?? true));
+        // An approved field is no longer a gap, regardless of the stored value.
+        if (field.approvedBy !== null) continue;
+
+        const valueMissing = !hasEffectiveValue({
+            value: field.value,
+            defaultValue: field.defaultValue,
+            kind: field.dataTypeKind,
+            config: field.config,
+        }) && (!input.isUpdateRequest || (field.editableOnUpdate ?? true));
 
         const dependencies = input.previousApprovalsByDataType.get(field.dataTypeIdentifier) ?? [];
         const blockedBy = dependencies.filter((dep) => !input.approvedSet.has(dep.dependsOnDataType));
         const depsMet = blockedBy.length === 0;
 
         let approvalState: DashboardGapField["approvalState"];
-        if (!approved) {
-            if (!depsMet) {
-                approvalState = "blocked";
-            } else if (!isApprovableValuePresent({
-                mandatory: field.mandatory,
-                value: field.value,
-                defaultValue: field.defaultValue,
-                kind: field.dataTypeKind,
-                config: field.config,
-            })) {
-                approvalState = "waiting_for_value";
-            } else {
-                approvalState = "pending";
-            }
+        if (!depsMet) {
+            approvalState = "blocked";
+        } else if (!isApprovableValuePresent({
+            mandatory: field.mandatory,
+            value: field.value,
+            defaultValue: field.defaultValue,
+            kind: field.dataTypeKind,
+            config: field.config,
+        })) {
+            approvalState = "waiting_for_value";
+        } else {
+            approvalState = "pending";
         }
-
-        if (approved && !valueMissing) continue;
 
         fields.push({
             dataTypeIdentifier: field.dataTypeIdentifier,
@@ -211,7 +214,7 @@ export function assembleGapFields(input: GapAssemblyInput): DashboardGapField[] 
             dataTypeKind: field.dataTypeKind,
             mandatory: field.mandatory,
             valueMissing,
-            ...(approvalState ? { approvalState } : {}),
+            approvalState,
             approvalBlockedBy: blockedBy.map((dep) => dep.dependsOnDataTypeName),
             providerGroups: groupsFor(input.roleGroups, field.dataTypeIdentifier, "writer"),
             approverGroups: groupsFor(input.roleGroups, field.dataTypeIdentifier, "approver"),

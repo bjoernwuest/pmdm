@@ -138,7 +138,7 @@ A row is **visible** when ALL of:
 - User has `Writer` role, OR (`requestorCanEdit` is `true` AND user is `createdBy` AND the user holds at least one role on the data type), AND
 - (for update requests only) `editableOnUpdate` is `true`
 
-**Read-only**: All other cases (including `editableOnUpdate: false` for update requests). "Provide value" additionally requires the value to be empty; both decisions come from `canEditProductRequestValue` / `canProvideProductRequestValue` in `src/services/ProductRequestActions.ts`.
+**Read-only**: All other cases (including `editableOnUpdate: false` for update requests). "Provide value" additionally requires no effective value (empty stored value **and** no usable default) and `approvedBy` to be null; both decisions come from `canEditProductRequestValue` / `canProvideProductRequestValue` in `src/services/ProductRequestActions.ts`.
 
 #### 4.3.1 Lookup / Consumable / Product Dropdowns
 

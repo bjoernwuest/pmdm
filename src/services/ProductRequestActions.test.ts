@@ -4,6 +4,7 @@ import {
     canEditProductRequestValue,
     canProvideProductRequestValue,
     formatHeaderValue,
+    hasEffectiveValue,
     isEmptyValue,
     isApprovableValuePresent,
     resolveConfig,
@@ -11,6 +12,7 @@ import {
     resolveIsHeader,
     type CanApproveInput,
     type CanEditInput,
+    type CanProvideInput,
 } from "@/services/ProductRequestActions.ts";
 
 function editInput(overrides: Partial<CanEditInput> = {}): CanEditInput {
@@ -33,6 +35,18 @@ function approveInput(overrides: Partial<CanApproveInput> = {}): CanApproveInput
         mandatory: false,
         value: "something",
         defaultValue: null,
+        config: null,
+        ...overrides,
+    };
+}
+
+function provideInput(overrides: Partial<CanProvideInput> = {}): CanProvideInput {
+    return {
+        ...editInput(),
+        value: null,
+        defaultValue: null,
+        approvedBy: null,
+        kind: "string",
         config: null,
         ...overrides,
     };
@@ -94,45 +108,84 @@ describe("canEditProductRequestValue", () => {
 
 describe("canProvideProductRequestValue", () => {
     it("is true for an empty value the user may edit", () => {
-        expect(canProvideProductRequestValue({ ...editInput({ hasWriterRole: true }), value: null, kind: "string" })).toBe(true);
+        expect(canProvideProductRequestValue(provideInput({ ...editInput({ hasWriterRole: true }) }))).toBe(true);
     });
 
     it("is true for an empty string the user may edit", () => {
         // isEmptyValue treats "" as empty, so "" still needs a value
-        expect(canProvideProductRequestValue({ ...editInput({ hasWriterRole: true }), value: "", kind: "string" })).toBe(true);
+        expect(canProvideProductRequestValue(provideInput({ ...editInput({ hasWriterRole: true }), value: "" }))).toBe(true);
     });
 
     it("is false for a non-empty value", () => {
-        expect(canProvideProductRequestValue({ ...editInput({ hasWriterRole: true }), value: "x", kind: "string" })).toBe(false);
+        expect(canProvideProductRequestValue(provideInput({ ...editInput({ hasWriterRole: true }), value: "x" }))).toBe(false);
     });
 
     it("is false for calculated values even when empty and writable", () => {
-        expect(canProvideProductRequestValue({ ...editInput({ hasWriterRole: true }), value: null, kind: "calculated" })).toBe(false);
+        expect(canProvideProductRequestValue(provideInput({ ...editInput({ hasWriterRole: true }), kind: "calculated" }))).toBe(false);
     });
 
     it("is false for an empty array", () => {
         expect(isEmptyValue([], "lookup", null)).toBe(true);
-        expect(canProvideProductRequestValue({ ...editInput({ hasWriterRole: true }), value: [], kind: "lookup" })).toBe(true);
+        expect(canProvideProductRequestValue(provideInput({ ...editInput({ hasWriterRole: true }), value: [], kind: "lookup" }))).toBe(true);
     });
 
     it("treats null as a valid value for permitEmpty booleans", () => {
         expect(isEmptyValue(null, "boolean", { permitEmpty: true })).toBe(false);
-        expect(canProvideProductRequestValue({
+        expect(canProvideProductRequestValue(provideInput({
             ...editInput({ hasWriterRole: true }),
-            value: null,
             kind: "boolean",
             config: { permitEmpty: true },
-        })).toBe(false);
-        expect(canProvideProductRequestValue({
+        }))).toBe(false);
+        expect(canProvideProductRequestValue(provideInput({
             ...editInput({ hasWriterRole: true }),
-            value: null,
             kind: "boolean",
             config: { permitEmpty: false },
-        })).toBe(true);
+        }))).toBe(true);
     });
 
     it("is false when the user cannot edit", () => {
-        expect(canProvideProductRequestValue({ ...editInput(), value: null, kind: "string" })).toBe(false);
+        expect(canProvideProductRequestValue(provideInput(editInput()))).toBe(false);
+    });
+
+    it("is false for an approved empty value", () => {
+        expect(canProvideProductRequestValue(provideInput({
+            ...editInput({ hasWriterRole: true }),
+            approvedBy: "user-1",
+        }))).toBe(false);
+    });
+
+    it("is false for an empty stored value with a usable default", () => {
+        expect(canProvideProductRequestValue(provideInput({
+            ...editInput({ hasWriterRole: true }),
+            defaultValue: "Fallback",
+        }))).toBe(false);
+    });
+
+    it("is true for an empty stored value whose default is the literal string 'null'", () => {
+        expect(canProvideProductRequestValue(provideInput({
+            ...editInput({ hasWriterRole: true }),
+            defaultValue: "null",
+        }))).toBe(true);
+    });
+});
+
+describe("hasEffectiveValue", () => {
+    it("is true when the stored value is present", () => {
+        expect(hasEffectiveValue({ value: "x", defaultValue: null, kind: "string" })).toBe(true);
+    });
+
+    it("is true when a usable default exists", () => {
+        expect(hasEffectiveValue({ value: null, defaultValue: "Fallback", kind: "string" })).toBe(true);
+        expect(hasEffectiveValue({ value: null, defaultValue: "", kind: "string" })).toBe(true);
+    });
+
+    it("is false when value and default are absent", () => {
+        expect(hasEffectiveValue({ value: null, defaultValue: null, kind: "string" })).toBe(false);
+        expect(hasEffectiveValue({ value: "", defaultValue: "null", kind: "string" })).toBe(false);
+    });
+
+    it("treats null as present for permitEmpty booleans", () => {
+        expect(hasEffectiveValue({ value: null, defaultValue: null, kind: "boolean", config: { permitEmpty: true } })).toBe(true);
     });
 });
 
