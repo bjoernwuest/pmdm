@@ -1,6 +1,6 @@
 import type { PageMeta } from "@/types/PageType.ts";
 import { PageTemplate, PageSection } from "@/ui/PageTemplate.tsx";
-import { FP_VIEW_PRODUCTS } from "@/ui/auth/functional_permissions.ts";
+import { FP_NOTIFY_INDIVIDUAL_OPEN_REQUEST, FP_VIEW_PRODUCTS } from "@/ui/auth/functional_permissions.ts";
 import {
     getProductRequest,
     updateProductRequestValue,
@@ -11,6 +11,8 @@ import {
     getProductRequestConsumableValues,
     getProductRequestProductValues,
 } from "@/ui/api/ProductRequests.ts";
+import { notifyOpenRequest } from "@/ui/api/Dashboard.ts";
+import { getViewerContext } from "@/ui/api/session.ts";
 import {
     message_UpdateProductRequestValue,
     message_ApproveProductRequestValue,
@@ -80,6 +82,18 @@ const KIND_LABELS_FULL: Record<string, string> = {
     consumable: "Consumable",
     product: "Product",
 };
+
+/** Formats a timestamp as local date + time; missing values render as "". */
+function formatDateTime(value: string | null | undefined): string {
+    if (!value) return "";
+    return new Date(value).toLocaleString([], {
+        year: "numeric",
+        month: "2-digit",
+        day: "2-digit",
+        hour: "2-digit",
+        minute: "2-digit",
+    });
+}
 
 // Human-readable "Value" constraints derived from the resolved data type config
 function describeValueConstraints(row: any): string[] {
@@ -154,6 +168,11 @@ export function Component() {
 
     // Confirm cancel dialog
     const [showCancelConfirm, setShowCancelConfirm] = useState(false);
+
+    // Request-scoped notification nudge
+    const [permissionNames, setPermissionNames] = useState<string[]>([]);
+    const [showNotifyConfirm, setShowNotifyConfirm] = useState(false);
+    const [notifyLoading, setNotifyLoading] = useState(false);
 
     // Active edit field tracking (Task 4: only one editor at a time for text/number/textarea)
     const [activeEditField, setActiveEditField] = useState<string | null>(null);
@@ -292,6 +311,12 @@ export function Component() {
     useEffect(() => {
         fetchDetail();
     }, [fetchDetail]);
+
+    useEffect(() => {
+        void getViewerContext()
+            .then((context) => setPermissionNames(Array.isArray(context.permissionNames) ? context.permissionNames : []))
+            .catch(() => setPermissionNames([]));
+    }, []);
 
     // Load dropdown data for lookup/consumable/product types
     const lookupDataTypesLoadingRef = useRef<Set<string>>(new Set());
@@ -722,6 +747,53 @@ export function Component() {
         }
     }, [id, navigate]);
 
+    const handleNotify = useCallback(async () => {
+        if (!id) return;
+        setShowNotifyConfirm(false);
+        setNotifyLoading(true);
+        try {
+            const result = await notifyOpenRequest(id);
+            if (result.sentTo > 0) {
+                toast.current?.show({
+                    severity: "success",
+                    summary: "Notification sent",
+                    detail: `Email sent to ${result.sentTo} recipient(s)`,
+                    life: 5000,
+                });
+            } else if (result.skippedReason === "notifications_disabled") {
+                toast.current?.show({
+                    severity: "warn",
+                    summary: "Notification not sent",
+                    detail: "Notifications are disabled. Enable them in the notification configuration.",
+                    life: 5000,
+                });
+            } else if (result.skippedReason === "missing_sender") {
+                toast.current?.show({
+                    severity: "warn",
+                    summary: "Notification not sent",
+                    detail: "The sender address (From) is missing in the notification configuration.",
+                    life: 5000,
+                });
+            } else {
+                toast.current?.show({
+                    severity: "info",
+                    summary: "Notification not sent",
+                    detail: "No actionable recipients for this request.",
+                    life: 5000,
+                });
+            }
+        } catch (e: any) {
+            toast.current?.show({
+                severity: "error",
+                summary: "Notification failed",
+                detail: e?.message ?? "Failed to send the notification.",
+                life: 5000,
+            });
+        } finally {
+            setNotifyLoading(false);
+        }
+    }, [id]);
+
     const openFilterDialog = useCallback(() => {
         setFilterPopupKind(null);
         setFilterPopupName("");
@@ -912,6 +984,9 @@ export function Component() {
     // Determine if user can cancel
     const canCancel = isOpen; // Server validates cancel role
 
+    // Request-scoped nudge is only offered to users with the dedicated permission.
+    const canNotify = isOpen && permissionNames.includes(FP_NOTIFY_INDIVIDUAL_OPEN_REQUEST.functionalPermissionName);
+
     // Whether the current user may edit the value of a row (server-computed)
     const canEditRow = (row: any): boolean => isOpen && row.canEdit === true;
 
@@ -1073,7 +1148,7 @@ export function Component() {
         if (row.dataTypeKind === "calculated") {
             return <span style={{ fontStyle: "italic", color: "var(--text-color-secondary)" }}>auto</span>;
         }
-        const updated = row.updatedAt ? new Date(row.updatedAt).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" }) : "";
+        const updated = formatDateTime(row.updatedAt);
         if (row.editorName) {
             const emailPart = row.editorEmail ? ` (${row.editorEmail})` : "";
             return <span>{row.editorName}{emailPart} · {updated}</span>;
@@ -1092,7 +1167,7 @@ export function Component() {
             if (isCalculated) {
                 return <span style={{ fontStyle: "italic", color: "var(--text-color-secondary)" }}>Auto-approved</span>;
             }
-            const approvedAt = row.approvedAt ? new Date(row.approvedAt).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" }) : "";
+            const approvedAt = formatDateTime(row.approvedAt);
             const nameDisplay = row.approverName
                 ? `${row.approverName}${row.approverEmail ? ` (${row.approverEmail})` : ""}`
                 : (row.approverEmail || "Approved");
@@ -1104,15 +1179,16 @@ export function Component() {
             );
         }
 
+        if (isOpen && !row.approvedBy && Array.isArray(row.userRoles) && row.userRoles.includes("approver") && row.previousApprovalDepsMet === false) {
+            return (
+                <span style={{ color: "var(--text-color-secondary)", fontStyle: "italic" }}>
+                    <i className="pi pi-clock" style={{ marginRight: "0.25rem" }} />
+                    Waiting for other approvals
+                </span>
+            );
+        }
+
         if (isOpen && row.canApprove === true) {
-            if (row.previousApprovalDepsMet === false) {
-                return (
-                    <span style={{ color: "var(--text-color-secondary)", fontStyle: "italic" }}>
-                        <i className="pi pi-clock" style={{ marginRight: "0.25rem" }} />
-                        Waiting for other approvals
-                    </span>
-                );
-            }
             return (
                 <Button
                     label="Approve"
@@ -1189,6 +1265,10 @@ export function Component() {
                         {hasApprovableValues && (
                             <Button label="Approve all" icon="pi pi-check-circle" className="p-button-outlined p-button-success"
                                 onClick={handleApproveAll} />
+                        )}
+                        {canNotify && (
+                            <Button label="Trigger people" icon="pi pi-send" className="p-button-outlined"
+                                onClick={() => setShowNotifyConfirm(true)} loading={notifyLoading} disabled={notifyLoading} />
                         )}
                         {canCancel && (
                             <Button label="Cancel" icon="pi pi-times-circle" className="p-button-outlined p-button-danger"
@@ -1467,6 +1547,30 @@ export function Component() {
                         onClick={handleFilterClear} />
                     <Button label="Apply" icon="pi pi-check" onClick={handleFilterApply} />
                 </div>
+            </Dialog>
+
+            {/* Trigger people Confirmation Dialog */}
+            <Dialog
+                header="Trigger people"
+                visible={showNotifyConfirm}
+                onHide={() => setShowNotifyConfirm(false)}
+                style={{ width: "440px" }}
+                footer={(
+                    <div style={{ display: "flex", justifyContent: "flex-end", gap: "0.5rem" }}>
+                        <Button label="Cancel" className="p-button-text"
+                            onClick={() => setShowNotifyConfirm(false)} disabled={notifyLoading} />
+                        <Button label="Send" icon="pi pi-send"
+                            onClick={() => void handleNotify()} loading={notifyLoading} />
+                    </div>
+                )}
+            >
+                <p>
+                    Send a notification email to all people with pending work on{" "}
+                    <strong>{request.productNumber}</strong>?
+                </p>
+                <p style={{ color: "var(--text-color-secondary)", fontSize: "0.9rem" }}>
+                    Users who already completed their part of this request will not receive an email.
+                </p>
             </Dialog>
 
             {/* Cancel Confirmation Dialog */}

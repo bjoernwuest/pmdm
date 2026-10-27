@@ -72,6 +72,8 @@ export const FP_READ_PRODUCT_FILTER: FunctionalPermissionSelectType = { function
 
 export const FP_VIEW_DASHBOARD: FunctionalPermissionSelectType = { functionalPermissionName: FunctionalPermissionNames.FP_VIEW_DASHBOARD, description: "Access the dashboard and view aggregated pending product request workload.", group: "General", ...registrationPlaceholders };
 
+export const FP_NOTIFY_INDIVIDUAL_OPEN_REQUEST: FunctionalPermissionSelectType = { functionalPermissionName: FunctionalPermissionNames.FP_NOTIFY_INDIVIDUAL_OPEN_REQUEST, description: "Send a notification email to the people responsible for providing or approving data on a single open product request from the dashboard.", group: "General", ...registrationPlaceholders };
+
 /** All application-defined permissions; populated with registered rows at startup. */
 export const applicationFunctionalPermissions: FunctionalPermissionSelectType[] = [
     FP_VIEW_DATA_TYPES,
@@ -103,6 +105,7 @@ export const applicationFunctionalPermissions: FunctionalPermissionSelectType[] 
     FP_NOTIFICATIONS,
     FP_READ_PRODUCT_FILTER,
     FP_VIEW_DASHBOARD,
+    FP_NOTIFY_INDIVIDUAL_OPEN_REQUEST,
 ];
 
 /** Pure insert-type definitions for the shared `registerFunctionalPermissions()` startup loop. */

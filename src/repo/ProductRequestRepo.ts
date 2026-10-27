@@ -1,6 +1,6 @@
 import type { DBClient } from "@/services/DatabaseDriver.ts";
 import { ProductRequests, ProductRequestsValues, ProductNumberState, ProductRequestStatus } from "@/schema/ProductRequestSchema.ts";
-import { ProductTypes, ProductTypesDataTypes, ProductTypesDataTypePermission, ProductTypesDataTypePreviousApproval, ProductTypesPermission } from "@/schema/ProductTypeSchema.ts";
+import { ProductTypes, ProductTypesDataTypes, ProductTypesDataTypePermission, ProductTypesPermission } from "@/schema/ProductTypeSchema.ts";
 import { DataTypeSchema, DataTypePermission, type DataTypeGroupRoles } from "@/schema/DataTypeSchema.ts";
 import { DataTypeKind, type ConfigString, type ConfigBoolean, type ConfigLookup, type ConfigConsumable, type ConfigProduct, CalculatedCalculationMode, DefaultValueCalculationMode, type ConfigCalculated } from "@/types/DataTypeType.ts";
 import { BusinessDomains } from "@/schema/BusinessDomainSchema.ts";
@@ -10,7 +10,7 @@ import { LookupsValues } from "@/schema/LookupsSchema.ts";
 import { ConsumablesValues } from "@/schema/ConsumableSchema.ts";
 import { markValuesAsUsed, markValuesAsUnused, ConsumableRepo, getValue as getConsumableValueRows } from "@/repo/ConsumableRepo.ts";
 import { LookupRepo, getValue as getLookupValueRows } from "@/repo/LookupRepo.ts";
-import { getPreviousApprovals, getDependants } from "@/repo/ProductTypeRepo.ts";
+import { getPreviousApprovals, getDependants, listPreviousApprovalsForProductTypes } from "@/repo/ProductTypeRepo.ts";
 import type { LookupsValuesSelectType } from "@/types/LookupsType.ts";
 import type { ConsumablesValuesSelectType } from "@/types/ConsumableType.ts";
 import {
@@ -1118,13 +1118,7 @@ export async function getProductRequest(
         .where(eq(ProductRequestsValues.productRequest, requestId));
 
     // Load previous-approval dependencies for this product type
-    const prevApprovalRows = await db
-        .select({
-            dataType: ProductTypesDataTypePreviousApproval.dataType,
-            dependsOnDataType: ProductTypesDataTypePreviousApproval.dependsOnDataType,
-        })
-        .from(ProductTypesDataTypePreviousApproval)
-        .where(eq(ProductTypesDataTypePreviousApproval.productType, row.productType!));
+    const prevApprovalRows = await listPreviousApprovalsForProductTypes(db, [row.productType!]);
 
     const depsMap = new Map<string, string[]>();
     for (const pa of prevApprovalRows) {
@@ -1211,6 +1205,9 @@ export async function getProductRequest(
             isUpdateRequest,
             editableOnUpdate,
         });
+        const deps = depsMap.get(v.dataType!) ?? [];
+        const unmetDeps = deps.filter(d => !approvedSet.has(d));
+        const previousApprovalDepsMet = unmetDeps.length === 0;
         const canApprove = canApproveProductRequestValue({
             hasApproverRole,
             approvedBy: v.approvedBy ?? null,
@@ -1219,6 +1216,7 @@ export async function getProductRequest(
             value: v.value,
             defaultValue: v.defaultValue,
             config: resolvedConfig,
+            previousApprovalDepsMet,
         });
 
         enrichedValues.push({
@@ -1250,14 +1248,8 @@ export async function getProductRequest(
             approverEmail: v.approverEmail,
             canEdit,
             canApprove,
-            ...(() => {
-                const deps = depsMap.get(v.dataType!) ?? [];
-                const unmetDeps = deps.filter(d => !approvedSet.has(d));
-                return {
-                    previousApprovalDepsMet: unmetDeps.length === 0,
-                    previousApprovalDepsWaiting: unmetDeps.map(d => dtNameMap.get(d) ?? d),
-                };
-            })(),
+            previousApprovalDepsMet,
+            previousApprovalDepsWaiting: unmetDeps.map(d => dtNameMap.get(d) ?? d),
         } as ProductRequestValueEnriched);
     }
 
@@ -1362,6 +1354,16 @@ export async function listProductRequests(
     const uniqueProductTypes = [...new Set(rows.map((r) => r.productType!))];
     const getPerms = await buildPermissionLookup(db, user, uniqueProductTypes);
 
+    // Load previous-approval dependencies once for all candidate product types.
+    const prevApprovalRows = await listPreviousApprovalsForProductTypes(db, uniqueProductTypes);
+    const previousApprovalsByKey = new Map<string, string[]>();
+    for (const dep of prevApprovalRows) {
+        const key = `${dep.productType}::${dep.dataType}`;
+        const deps = previousApprovalsByKey.get(key) ?? [];
+        deps.push(dep.dependsOnDataType);
+        previousApprovalsByKey.set(key, deps);
+    }
+
     // Load all values for the candidate rows in a single query.
     const valuesByRequest = await loadActionableValuesByRequest(db, rows.map((r) => r.identifier));
 
@@ -1377,6 +1379,7 @@ export async function listProductRequests(
             !!row.productToUpdate,
             valuesByRequest.get(row.identifier) ?? [],
             getPerms,
+            previousApprovalsByKey,
         );
         enrichedRows.push({
             identifier: row.identifier,
@@ -1634,6 +1637,7 @@ async function computeActionableSummaryFromValues(
     isUpdateRequest: boolean,
     values: ActionableValueRow[],
     getPerms?: PermissionLookup,
+    previousApprovalsByKey?: Map<string, string[]>,
 ): Promise<{ needsValue: boolean; needsApproval: boolean }> {
     let needsValue = false;
     let needsApproval = false;
@@ -1647,6 +1651,9 @@ async function computeActionableSummaryFromValues(
     });
 
     const isRequestCreator = requestCreatedBy !== null && requestCreatedBy === user.identifier;
+    const approvedSet = new Set<string>(
+        values.filter((v) => v.approvedBy != null && v.dataType).map((v) => v.dataType!),
+    );
 
     for (const v of values) {
         // Disabled data types never contribute action items (mirrors the detail
@@ -1681,9 +1688,11 @@ async function computeActionableSummaryFromValues(
             needsValue = true;
         }
 
-        // "Approve value": approver, not approved, non-calculated, and the
-        // mandatory/value-present gate passes.
+        // "Approve value": approver, not approved, non-calculated, previous
+        // approvals met, and the mandatory/value-present gate passes.
         const mandatory = await resolveMandatory(db, v.dataTypeMandatory, v.dataTypeMandatoryScript, v.ptMandatory, v.ptMandatoryScript, summaryCtx, v.dataType ?? undefined);
+        const deps = previousApprovalsByKey?.get(`${productTypeIdentifier}::${v.dataType}`) ?? [];
+        const previousApprovalDepsMet = deps.every((d) => approvedSet.has(d));
         if (canApproveProductRequestValue({
             hasApproverRole,
             approvedBy: v.approvedBy ?? null,
@@ -1692,6 +1701,7 @@ async function computeActionableSummaryFromValues(
             value: v.value,
             defaultValue: v.defaultValue,
             config: resolvedConfig,
+            previousApprovalDepsMet,
         })) {
             needsApproval = true;
         }
@@ -1753,6 +1763,7 @@ export async function updateProductRequestValue(
             requestorCanEditScript: DataTypeSchema.requestorCanEdit_script,
             kind: DataTypeSchema.kind,
             config: DataTypeSchema.config,
+            ptConfig: ProductTypesDataTypes.config,
             ptRequestorCanEdit: ProductTypesDataTypes.requestorCanEdit,
             ptRequestorCanEditScript: ProductTypesDataTypes.requestorCanEdit_script,
             ptEditableOnUpdate: ProductTypesDataTypes.editableOnUpdate,
@@ -1811,9 +1822,12 @@ export async function updateProductRequestValue(
         throw new PermissionDeniedError("Permission denied: you cannot edit this value");
     }
 
-    // Validate value based on data type kind and config
+    // Validate value based on data type kind and config (merged DT + PT).
     const kind = dataType[0]!.kind as string;
-    const config = dataType[0]!.config as Record<string, unknown> | null;
+    const config = resolveConfig(
+        dataType[0]!.config as Record<string, unknown> | null,
+        dataType[0]!.ptConfig as Record<string, unknown> | null,
+    ) as Record<string, unknown>;
 
     switch (kind) {
         case DataTypeKind.String: {
@@ -2458,6 +2472,7 @@ export async function approveProductRequestValue(
             updatedAt: ProductRequestsValues.updatedAt,
             dataTypeKind: DataTypeSchema.kind,
             dataTypeConfig: DataTypeSchema.config,
+            ptConfig: ProductTypesDataTypes.config,
             dataTypeMandatory: DataTypeSchema.mandatory,
             dataTypeMandatoryScript: DataTypeSchema.mandatory_script,
             ptMandatory: ProductTypesDataTypes.mandatory,
@@ -2497,7 +2512,10 @@ export async function approveProductRequestValue(
         value: row.value,
         defaultValue: row.defaultValue,
         kind: row.dataTypeKind,
-        config: row.dataTypeConfig as Record<string, unknown> | null,
+        config: resolveConfig(
+            row.dataTypeConfig as Record<string, unknown> | null,
+            row.ptConfig as Record<string, unknown> | null,
+        ),
     })) {
         throw new Error("Cannot approve: mandatory field has no value");
     }
@@ -2572,6 +2590,7 @@ export async function approveAllProductRequestValues(
             updatedAt: ProductRequestsValues.updatedAt,
             dataTypeKind: DataTypeSchema.kind,
             dataTypeConfig: DataTypeSchema.config,
+            ptConfig: ProductTypesDataTypes.config,
             dataTypeMandatory: DataTypeSchema.mandatory,
             dataTypeMandatoryScript: DataTypeSchema.mandatory_script,
             ptMandatory: ProductTypesDataTypes.mandatory,
@@ -2613,7 +2632,10 @@ export async function approveAllProductRequestValues(
             value: v.value,
             defaultValue: v.defaultValue,
             kind: v.dataTypeKind,
-            config: v.dataTypeConfig as Record<string, unknown> | null,
+            config: resolveConfig(
+                v.dataTypeConfig as Record<string, unknown> | null,
+                v.ptConfig as Record<string, unknown> | null,
+            ),
         })) {
             continue;
         }
@@ -3066,4 +3088,224 @@ export async function getRequestMetaForScript(
         productNumber: r.productNumber!,
         createdBy: r.createdBy ?? null,
     };
+}
+
+// ---------------------------------------------------------------------------
+// Dashboard gap analysis
+// ---------------------------------------------------------------------------
+
+/** Summary row for the dashboard's open-request dropdown. */
+export type OpenProductRequestOptionRow = {
+    identifier: string;
+    productNumber: string;
+    productTypeName: string;
+    createdByName: string;
+};
+
+/** Returns all open product requests with the header fields shown on the dashboard. */
+export async function listOpenProductRequests(db: DBClient): Promise<OpenProductRequestOptionRow[]> {
+    const rows = await db
+        .select({
+            identifier: ProductRequests.identifier,
+            productNumber: ProductRequests.productNumber,
+            productTypeName: ProductTypes.name,
+            createdByName: buildUserDisplaySql(getTableName(User)),
+        })
+        .from(ProductRequests)
+        .innerJoin(ProductTypes, eq(ProductRequests.productType, ProductTypes.identifier))
+        .innerJoin(User, eq(ProductRequests.createdBy, User.identifier))
+        .where(eq(ProductRequests.status, ProductRequestStatus.open))
+        .orderBy(asc(ProductRequests.productNumber));
+
+    return rows.map((row) => ({
+        identifier: row.identifier!,
+        productNumber: row.productNumber,
+        productTypeName: row.productTypeName ?? "",
+        createdByName: (row.createdByName as string) ?? "",
+    }));
+}
+
+/** Returns the status of a product request, or null when it does not exist. */
+export async function getProductRequestStatus(db: DBClient, requestIdentifier: string): Promise<string | null> {
+    const rows = await db
+        .select({ status: ProductRequests.status })
+        .from(ProductRequests)
+        .where(eq(ProductRequests.identifier, requestIdentifier))
+        .limit(1);
+    return rows[0]?.status ?? null;
+}
+
+/** One value row with everything the dashboard gap analysis needs to decide actionability. */
+export type ProductRequestGapValueRow = {
+    dataTypeIdentifier: string;
+    dataTypeName: string;
+    dataTypeKind: string;
+    dataTypeConfig: Record<string, unknown> | null;
+    productTypeConfig: Record<string, unknown> | null;
+    dataTypeDisabled: boolean;
+    dataTypeMandatory: string;
+    dataTypeMandatoryScript: string | null;
+    productTypeMandatory: string | null;
+    productTypeMandatoryScript: string | null;
+    editableOnUpdate: boolean | null;
+    value: unknown;
+    defaultValue: unknown;
+    approvedBy: string | null;
+};
+
+export type ProductRequestGapInputs = {
+    request: {
+        identifier: string;
+        productNumber: string;
+        productType: string;
+        productTypeName: string;
+        createdByName: string;
+        productToUpdate: string | null;
+        status: string;
+    };
+    values: ProductRequestGapValueRow[];
+};
+
+/**
+ * Loads the request header and all value rows (enabled and disabled) needed to
+ * build the dashboard gap analysis. Returns null when the request does not exist.
+ */
+export async function getProductRequestGapInputs(
+    db: DBClient,
+    requestIdentifier: string,
+): Promise<ProductRequestGapInputs | null> {
+    const headerRows = await db
+        .select({
+            identifier: ProductRequests.identifier,
+            productNumber: ProductRequests.productNumber,
+            productType: ProductRequests.productType,
+            productTypeName: ProductTypes.name,
+            createdByName: buildUserDisplaySql(getTableName(User)),
+            productToUpdate: ProductRequests.productToUpdate,
+            status: ProductRequests.status,
+        })
+        .from(ProductRequests)
+        .innerJoin(ProductTypes, eq(ProductRequests.productType, ProductTypes.identifier))
+        .innerJoin(User, eq(ProductRequests.createdBy, User.identifier))
+        .where(eq(ProductRequests.identifier, requestIdentifier))
+        .limit(1);
+
+    const header = headerRows[0];
+    if (!header) return null;
+
+    const rows = await db
+        .select({
+            dataTypeIdentifier: ProductRequestsValues.dataType,
+            dataTypeName: DataTypeSchema.name,
+            dataTypeKind: DataTypeSchema.kind,
+            dataTypeConfig: DataTypeSchema.config,
+            productTypeConfig: ProductTypesDataTypes.config,
+            dataTypeDisabled: DataTypeSchema.disabled,
+            dataTypeMandatory: DataTypeSchema.mandatory,
+            dataTypeMandatoryScript: DataTypeSchema.mandatory_script,
+            productTypeMandatory: ProductTypesDataTypes.mandatory,
+            productTypeMandatoryScript: ProductTypesDataTypes.mandatory_script,
+            editableOnUpdate: ProductTypesDataTypes.editableOnUpdate,
+            value: ProductRequestsValues.value,
+            defaultValue: ProductRequestsValues.defaultValue,
+            approvedBy: ProductRequestsValues.approvedBy,
+        })
+        .from(ProductRequestsValues)
+        .innerJoin(DataTypeSchema, eq(ProductRequestsValues.dataType, DataTypeSchema.identifier))
+        .leftJoin(ProductTypesDataTypes, and(
+            eq(ProductTypesDataTypes.productType, header.productType!),
+            eq(ProductTypesDataTypes.dataType, ProductRequestsValues.dataType),
+        ))
+        .where(eq(ProductRequestsValues.productRequest, requestIdentifier));
+
+    return {
+        request: {
+            identifier: header.identifier!,
+            productNumber: header.productNumber,
+            productType: header.productType!,
+            productTypeName: header.productTypeName ?? "",
+            createdByName: (header.createdByName as string) ?? "",
+            productToUpdate: header.productToUpdate ?? null,
+            status: header.status,
+        },
+        values: rows.map((row) => ({
+            dataTypeIdentifier: row.dataTypeIdentifier!,
+            dataTypeName: row.dataTypeName ?? row.dataTypeIdentifier!,
+            dataTypeKind: row.dataTypeKind as string,
+            dataTypeConfig: (row.dataTypeConfig as Record<string, unknown> | null) ?? null,
+            productTypeConfig: (row.productTypeConfig as Record<string, unknown> | null) ?? null,
+            dataTypeDisabled: row.dataTypeDisabled ?? false,
+            dataTypeMandatory: row.dataTypeMandatory ?? "No",
+            dataTypeMandatoryScript: row.dataTypeMandatoryScript ?? null,
+            productTypeMandatory: row.productTypeMandatory ?? null,
+            productTypeMandatoryScript: row.productTypeMandatoryScript ?? null,
+            editableOnUpdate: row.editableOnUpdate ?? null,
+            value: row.value,
+            defaultValue: row.defaultValue,
+            approvedBy: row.approvedBy ?? null,
+        })),
+    };
+}
+
+/** A writer/approver group assignment for one data type in a product type. */
+export type DataTypeRoleGroupRow = {
+    dataType: string;
+    role: string;
+    groupIdentifier: string;
+    groupName: string;
+};
+
+/**
+ * Returns writer/approver group assignments for every data type assigned to a
+ * product type, merging product-type-level and data-type-level grants and
+ * excluding disabled groups. Duplicate rows are left for the caller to dedupe.
+ */
+export async function listDataTypeRoleGroupsForProductType(
+    db: DBClient,
+    productTypeIdentifier: string,
+): Promise<DataTypeRoleGroupRow[]> {
+    const ptRows = await db
+        .select({
+            dataType: ProductTypesDataTypes.dataType,
+            role: ProductTypesDataTypePermission.role,
+            groupIdentifier: ProductTypesDataTypePermission.groupIdentifier,
+            groupName: Group.groupName,
+        })
+        .from(ProductTypesDataTypes)
+        .innerJoin(
+            ProductTypesDataTypePermission,
+            eq(
+                ProductTypesDataTypePermission.productTypeDataTypeIdentifier,
+                ProductTypesDataTypes.identifier,
+            ),
+        )
+        .innerJoin(Group, eq(ProductTypesDataTypePermission.groupIdentifier, Group.identifier))
+        .where(and(
+            eq(ProductTypesDataTypes.productType, productTypeIdentifier),
+            eq(Group.disabled, false),
+            inArray(ProductTypesDataTypePermission.role, ["writer", "approver"]),
+        ));
+
+    const dtRows = await db
+        .select({
+            dataType: ProductTypesDataTypes.dataType,
+            role: DataTypePermission.role,
+            groupIdentifier: DataTypePermission.groupIdentifier,
+            groupName: Group.groupName,
+        })
+        .from(ProductTypesDataTypes)
+        .innerJoin(DataTypePermission, eq(DataTypePermission.dataTypeIdentifier, ProductTypesDataTypes.dataType))
+        .innerJoin(Group, eq(DataTypePermission.groupIdentifier, Group.identifier))
+        .where(and(
+            eq(ProductTypesDataTypes.productType, productTypeIdentifier),
+            eq(Group.disabled, false),
+            inArray(DataTypePermission.role, ["writer", "approver"]),
+        ));
+
+    return [...ptRows, ...dtRows].map((row) => ({
+        dataType: row.dataType!,
+        role: row.role,
+        groupIdentifier: row.groupIdentifier,
+        groupName: row.groupName,
+    }));
 }

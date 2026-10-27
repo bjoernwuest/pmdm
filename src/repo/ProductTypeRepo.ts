@@ -43,7 +43,7 @@ import type {
 } from "@/types/ProductTypeType.ts";
 import type { DBClient } from "@/services/DatabaseDriver.ts";
 import type { UUIDType } from "@/types/helpers.ts";
-import { and, asc, eq, or, sql } from "drizzle-orm";
+import { and, asc, eq, inArray, or, sql } from "drizzle-orm";
 import PubSub from "@/services/PubSub.ts";
 import type { UserSelectType } from "@/types/UserType.ts";
 import { Group } from "@/schema/UserSchema.ts";
@@ -554,6 +554,42 @@ export async function revokeProductTypePermission(
 // ---------------------------------------------------------------------------
 // ProductTypesDataTypePreviousApproval CRUD
 // ---------------------------------------------------------------------------
+
+/** One previous-approval dependency joined with the prerequisite name. */
+export type PreviousApprovalDependency = {
+    productType: string;
+    dataType: string;
+    dependsOnDataType: string;
+    dependsOnDataTypeName: string;
+};
+
+/**
+ * Lists previous-approval dependencies for multiple product types in one query.
+ * Returns `dataType → dependsOnDataType` rows enriched with the prerequisite name.
+ */
+export async function listPreviousApprovalsForProductTypes(
+    db: DBClient,
+    productTypeIdentifiers: string[],
+): Promise<PreviousApprovalDependency[]> {
+    const uniqueProductTypes = [...new Set(productTypeIdentifiers)];
+    if (uniqueProductTypes.length === 0) return [];
+
+    const rows = await db
+        .select({
+            productType: ProductTypesDataTypePreviousApproval.productType,
+            dataType: ProductTypesDataTypePreviousApproval.dataType,
+            dependsOnDataType: ProductTypesDataTypePreviousApproval.dependsOnDataType,
+            dependsOnDataTypeName: DataTypeSchema.name,
+        })
+        .from(ProductTypesDataTypePreviousApproval)
+        .innerJoin(
+            DataTypeSchema,
+            eq(ProductTypesDataTypePreviousApproval.dependsOnDataType, DataTypeSchema.identifier),
+        )
+        .where(inArray(ProductTypesDataTypePreviousApproval.productType, uniqueProductTypes));
+
+    return rows as PreviousApprovalDependency[];
+}
 
 /**
  * Lists all previous-approval dependencies for a ProductType+DataType assignment,

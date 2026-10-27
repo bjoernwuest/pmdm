@@ -467,6 +467,93 @@ export async function sendToUser(
     return sentCount;
 }
 
+/** A candidate for a request-scoped manual reminder. */
+export type ReminderRecipient = {
+    identifier: string;
+    email: string | null;
+    firstName: string;
+    lastName: string;
+};
+
+/**
+ * Selects reminder recipients: every user with at least one actionable item on
+ * the request and an email address. Per-user notification preferences and
+ * schedules are deliberately not consulted (explicit manual nudge).
+ */
+export function selectReminderRecipients(
+    users: readonly ReminderRecipient[],
+    awaitingPerUser: ReadonlyMap<string, { awaitingProvide: AwaitingItem[]; awaitingApprove: AwaitingItem[] }>,
+): ReminderRecipient[] {
+    return users.filter((user) => {
+        if (!user.email) return false;
+        const awaiting = awaitingPerUser.get(user.identifier);
+        return !!awaiting && (awaiting.awaitingProvide.length > 0 || awaiting.awaitingApprove.length > 0);
+    });
+}
+
+export type SendProductRequestReminderResult = {
+    sentTo: number;
+    skippedReason?: "notifications_disabled" | "missing_sender" | "no_actionable_recipients";
+};
+
+/**
+ * Sends a request-scoped reminder email to every user with an actionable
+ * provide or approve item on the selected open product request. Unlike the cron
+ * digest this is a force-send: per-user preferences and schedules are ignored.
+ */
+export async function sendProductRequestReminder(
+    db: DBClient,
+    requestIdentifier: string,
+): Promise<SendProductRequestReminderResult> {
+    const { enabled, fromEmail } = await readConfig(db);
+    if (!enabled) {
+        nlog(`sendProductRequestReminder: skipped — notifications disabled`);
+        return { sentTo: 0, skippedReason: "notifications_disabled" };
+    }
+    if (!fromEmail) {
+        nlog(`sendProductRequestReminder: skipped — sender address missing`);
+        return { sentTo: 0, skippedReason: "missing_sender" };
+    }
+
+    const subject = await getGlobalStringConfig(db, config.cfgSubject);
+    const emailTemplate = await getGlobalStringConfig(db, config.cfgEmailTemplate);
+    const baseURL = await getGlobalStringConfig(db, config.cfgBaseURL);
+
+    const awaitingPerUser = await getAwaitingPerUser(db, { productRequestIdentifier: requestIdentifier });
+    const allUsers = await getUsersWithRelevantGroups(db);
+    const recipients = selectReminderRecipients(allUsers, awaitingPerUser);
+    nlog(`sendProductRequestReminder: request=${requestIdentifier} candidates=${allUsers.length} recipients=${recipients.length}`);
+
+    let sentCount = 0;
+    for (const user of recipients) {
+        const awaiting = awaitingPerUser.get(user.identifier)!;
+        const awaitingHtml = buildAwaitingTable(awaiting.awaitingProvide, awaiting.awaitingApprove, baseURL);
+        const transitionsHtml = buildTransitionsTable([], baseURL);
+
+        const body = emailTemplate
+            .replace(/\{User\.Firstname\}/g, user.firstName)
+            .replace(/\{User\.Lastname\}/g, user.lastName)
+            .replace(/\{awaiting\}/g, awaitingHtml)
+            .replace(/\{transitions\}/g, transitionsHtml);
+
+        const userSubject = subject
+            .replace(/\{User\.Firstname\}/g, user.firstName)
+            .replace(/\{User\.Lastname\}/g, user.lastName);
+
+        try {
+            await sendEmail(fromEmail, user.email!, userSubject, body, db);
+            sentCount++;
+        } catch (e) {
+            nwarn(`sendProductRequestReminder: failed to send to ${user.email}:`, e);
+        }
+    }
+
+    return {
+        sentTo: sentCount,
+        skippedReason: sentCount === 0 ? "no_actionable_recipients" : undefined,
+    };
+}
+
 export async function simulateEmail(
     db: DBClient,
     userId?: string,

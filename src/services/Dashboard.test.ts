@@ -1,5 +1,5 @@
 import { describe, expect, it } from "bun:test";
-import { computePendingRequestsByGroup } from "@/services/Dashboard.ts";
+import { assembleGapFields, computePendingRequestsByGroup } from "@/services/Dashboard.ts";
 import type { PendingRequestRoleRow } from "@/repo/ProductRequestRepo.ts";
 
 function row(overrides: Partial<PendingRequestRoleRow> = {}): PendingRequestRoleRow {
@@ -122,5 +122,132 @@ describe("computePendingRequestsByGroup", () => {
 
         expect(result.map((group) => group.groupIdentifier)).toEqual(["a", "b", "z"]);
         expect(result.map((group) => group.total)).toEqual([2, 1, 1]);
+    });
+});
+
+function gapField(overrides: Partial<import("@/services/Dashboard.ts").GapFieldValueInput> = {}) {
+    return {
+        dataTypeIdentifier: "dt-1",
+        dataTypeName: "Color",
+        dataTypeKind: "string",
+        dataTypeDisabled: false,
+        config: null,
+        mandatory: false,
+        value: null,
+        defaultValue: null,
+        approvedBy: null,
+        editableOnUpdate: true,
+        ...overrides,
+    };
+}
+
+const noPreviousApprovals = new Map();
+const noRoleGroups: { dataType: string; role: string; groupIdentifier: string; groupName: string }[] = [];
+
+describe("assembleGapFields", () => {
+    it("includes a missing value with its provider groups", () => {
+        const fields = assembleGapFields({
+            isUpdateRequest: false,
+            fields: [gapField()],
+            previousApprovalsByDataType: noPreviousApprovals,
+            approvedSet: new Set(),
+            roleGroups: [{ dataType: "dt-1", role: "writer", groupIdentifier: "g-1", groupName: "Writers" }],
+        });
+
+        expect(fields).toHaveLength(1);
+        expect(fields[0]!.valueMissing).toBe(true);
+        expect(fields[0]!.approvalState).toBe("pending");
+        expect(fields[0]!.providerGroups).toEqual([{ identifier: "g-1", name: "Writers" }]);
+    });
+
+    it("includes a pending approval for a present value", () => {
+        const fields = assembleGapFields({
+            isUpdateRequest: false,
+            fields: [gapField({ value: "Red" })],
+            previousApprovalsByDataType: noPreviousApprovals,
+            approvedSet: new Set(),
+            roleGroups: [{ dataType: "dt-1", role: "approver", groupIdentifier: "g-1", groupName: "Approvers" }],
+        });
+
+        expect(fields).toHaveLength(1);
+        expect(fields[0]!.valueMissing).toBe(false);
+        expect(fields[0]!.approvalState).toBe("pending");
+        expect(fields[0]!.approverGroups).toEqual([{ identifier: "g-1", name: "Approvers" }]);
+    });
+
+    it("marks approvals blocked by unmet previous approvals", () => {
+        const fields = assembleGapFields({
+            isUpdateRequest: false,
+            fields: [gapField({ value: "Red" })],
+            previousApprovalsByDataType: new Map([["dt-1", [{ dependsOnDataType: "dt-0", dependsOnDataTypeName: "Size" }]]]),
+            approvedSet: new Set(),
+            roleGroups: noRoleGroups,
+        });
+
+        expect(fields[0]!.approvalState).toBe("blocked");
+        expect(fields[0]!.approvalBlockedBy).toEqual(["Size"]);
+    });
+
+    it("waits for a value on a mandatory empty field after dependencies are met", () => {
+        const fields = assembleGapFields({
+            isUpdateRequest: false,
+            fields: [gapField({ mandatory: true, value: null })],
+            previousApprovalsByDataType: new Map([["dt-1", [{ dependsOnDataType: "dt-0", dependsOnDataTypeName: "Size" }]]]),
+            approvedSet: new Set(["dt-0"]),
+            roleGroups: noRoleGroups,
+        });
+
+        expect(fields[0]!.approvalState).toBe("waiting_for_value");
+    });
+
+    it("keeps the mandatory flag for the client-side mandatory filter", () => {
+        const fields = assembleGapFields({
+            isUpdateRequest: false,
+            fields: [gapField({ mandatory: true }), gapField({ dataTypeIdentifier: "dt-2", dataTypeName: "Size", mandatory: false })],
+            previousApprovalsByDataType: noPreviousApprovals,
+            approvedSet: new Set(),
+            roleGroups: noRoleGroups,
+        });
+
+        expect(fields.map((field) => field.mandatory)).toEqual([true, false]);
+    });
+
+    it("excludes calculated and disabled fields", () => {
+        const fields = assembleGapFields({
+            isUpdateRequest: false,
+            fields: [
+                gapField({ dataTypeKind: "calculated" }),
+                gapField({ dataTypeIdentifier: "dt-2", dataTypeDisabled: true }),
+            ],
+            previousApprovalsByDataType: noPreviousApprovals,
+            approvedSet: new Set(),
+            roleGroups: noRoleGroups,
+        });
+
+        expect(fields).toEqual([]);
+    });
+
+    it("drops fields that are approved and have a value", () => {
+        const fields = assembleGapFields({
+            isUpdateRequest: false,
+            fields: [gapField({ value: "Red", approvedBy: "user-1" })],
+            previousApprovalsByDataType: noPreviousApprovals,
+            approvedSet: new Set(["dt-1"]),
+            roleGroups: noRoleGroups,
+        });
+
+        expect(fields).toEqual([]);
+    });
+
+    it("does not report a missing value when an update request is not editable", () => {
+        const fields = assembleGapFields({
+            isUpdateRequest: true,
+            fields: [gapField({ editableOnUpdate: false, approvedBy: "user-1" })],
+            previousApprovalsByDataType: noPreviousApprovals,
+            approvedSet: new Set(["dt-1"]),
+            roleGroups: noRoleGroups,
+        });
+
+        expect(fields).toEqual([]);
     });
 });

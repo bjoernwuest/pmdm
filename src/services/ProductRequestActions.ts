@@ -216,6 +216,12 @@ export type CanApproveInput = {
     value: unknown;
     defaultValue: unknown;
     config?: Record<string, unknown> | null;
+    /**
+     * Whether every previous-approval prerequisite is already approved.
+     * `undefined` means "no known unmet dependency" and keeps older callers
+     * source-compatible; `false` blocks the approval.
+     */
+    previousApprovalDepsMet?: boolean;
 };
 
 /**
@@ -231,12 +237,15 @@ export function canEditProductRequestValue(input: CanEditInput): boolean {
 }
 
 /**
- * `canProvide = canEdit && isEmptyValue(value, kind, config)`
+ * `canProvide = canEdit && kind !== Calculated && isEmptyValue(value, kind, config)`
  *
- * A value needs to be provided only when the user may edit it and it is empty.
+ * A value needs to be provided only when the user may edit it, it is empty,
+ * and it is not calculated (calculated values are derived automatically and
+ * are never editable by a user).
  */
 export function canProvideProductRequestValue(input: CanProvideInput): boolean {
-    return canEditProductRequestValue(input)
+    return input.kind !== DataTypeKind.Calculated
+        && canEditProductRequestValue(input)
         && isEmptyValue(input.value, input.kind, input.config);
 }
 
@@ -258,7 +267,8 @@ export function isApprovableValuePresent(input: {
 
 /**
  * `canApprove = hasApproverRole && approvedBy === null && kind !== Calculated
- *               && (!mandatory || isApprovableValuePresent(...))`
+ *               && previousApprovalDepsMet !== false
+ *               && isApprovableValuePresent(...)`
  *
  * Mirrors the authoritative approve gate in `approveProductRequestValue`.
  */
@@ -266,6 +276,7 @@ export function canApproveProductRequestValue(input: CanApproveInput): boolean {
     if (!input.hasApproverRole) return false;
     if (input.approvedBy !== null) return false;
     if (input.kind === DataTypeKind.Calculated) return false;
+    if (input.previousApprovalDepsMet === false) return false;
     return isApprovableValuePresent({
         mandatory: input.mandatory,
         value: input.value,

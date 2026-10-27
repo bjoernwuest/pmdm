@@ -106,6 +106,10 @@ describe("canProvideProductRequestValue", () => {
         expect(canProvideProductRequestValue({ ...editInput({ hasWriterRole: true }), value: "x", kind: "string" })).toBe(false);
     });
 
+    it("is false for calculated values even when empty and writable", () => {
+        expect(canProvideProductRequestValue({ ...editInput({ hasWriterRole: true }), value: null, kind: "calculated" })).toBe(false);
+    });
+
     it("is false for an empty array", () => {
         expect(isEmptyValue([], "lookup", null)).toBe(true);
         expect(canProvideProductRequestValue({ ...editInput({ hasWriterRole: true }), value: [], kind: "lookup" })).toBe(true);
@@ -165,6 +169,14 @@ describe("canApproveProductRequestValue", () => {
 
     it("denies a calculated value", () => {
         expect(canApproveProductRequestValue(approveInput({ kind: "calculated" }))).toBe(false);
+    });
+
+    it("denies when previous-approval dependencies are unmet", () => {
+        expect(canApproveProductRequestValue(approveInput({ previousApprovalDepsMet: false }))).toBe(false);
+    });
+
+    it("allows when previous-approval dependencies are met", () => {
+        expect(canApproveProductRequestValue(approveInput({ previousApprovalDepsMet: true }))).toBe(true);
     });
 
     it("denies a mandatory empty value without default", () => {

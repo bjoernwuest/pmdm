@@ -12,8 +12,8 @@ The notification system sends **per-user digest emails** about product requests 
 
 | Type | Triggers when | Relevant users |
 |------|--------------|----------------|
-| **Awaiting "Provide value"** | PR is `open` AND user has `writer` role (or is the request creator with `requestorCanEdit` and at least one role on the data type) on a **non-disabled** data type whose value is `null` (not yet provided) | Users in groups with writer permission on affected data types, plus the request creator when the requestor-edit gate passes |
-| **Awaiting "Approve value"** | PR is `open` AND user has `approver` role on a **non-disabled** data type that is not yet approved (`approvedBy IS NULL`); when the value is empty, the data type must not be mandatory (mandatory is evaluated per recipient) | Users in groups with approver permission on affected data types |
+| **Awaiting "Provide value"** | PR is `open` AND user has `writer` role (or is the request creator with `requestorCanEdit` and at least one role on the data type) on a **non-disabled, non-calculated** data type whose value is `null` (not yet provided) | Users in groups with writer permission on affected data types, plus the request creator when the requestor-edit gate passes |
+| **Awaiting "Approve value"** | PR is `open` AND user has `approver` role on a **non-disabled, non-calculated** data type that is not yet approved (`approvedBy IS NULL`) AND every previous-approval prerequisite on the request is already approved; when the value is empty, the data type must not be mandatory (mandatory is evaluated per recipient) | Users in groups with approver permission on affected data types |
 | **Status transition** | PR is currently in status `importing`, `done`, or `cancelled` | Users in groups with **any** permission (viewer, writer, or approver) on the PR's data types |
 
 Each user receives a **single digest email** containing only the sections relevant to them. Users who have no awaiting items and no transitions since the last digest receive no email.
@@ -145,6 +145,10 @@ FP_NOTIFICATIONS = "FP_NOTIFICATIONS"
 
 The `AdminNotifications.tsx` page requires `FP_NOTIFICATIONS`. The backend CRON service runs without any user FP check (it's server-internal).
 
+### Permission: `notify_individual_open_request`
+
+The dashboard's request-scoped manual reminder requires `FP_NOTIFY_INDIVIDUAL_OPEN_REQUEST` (`notify_individual_open_request`, group `General`). It is registered at startup with the other application-defined functional permissions and intentionally has no database migration. Viewing the gap analysis still only requires `FP_VIEW_DASHBOARD`; only the send action is gated by this permission.
+
 ---
 
 ## 4. Service Architecture
@@ -229,6 +233,17 @@ Generates the digest email content for preview without sending.
 
 Returns the HTML content as a string so the UI can display a preview.
 
+#### 4.5 `sendProductRequestReminder(db, requestId)` — manual, scoped send
+
+The dashboard can send a reminder for a single product request (`POST /api/dashboard/open-product-requests/{id}/notify`). This is intentionally different from a scheduled digest:
+
+- **Scope**: only open items on the selected request; transitions render as `None`.
+- **Recipients**: only users with an actionable provide/approve item after the same actionability rules as the digest (no calculated fields, no unmet previous approvals, no update-locked fields).
+- **Force-send**: per-user `NotifyOn*` preferences and personal schedules are ignored. Users without an email address are skipped.
+- **Configuration**: if notifications are disabled or the sender address is missing, no email is sent and the service reports the skip reason.
+- **Failure isolation**: a failed send for one recipient does not abort the others.
+- **Permission**: requires `notify_individual_open_request`; viewing the gap analysis only requires `FP_VIEW_DASHBOARD`.
+
 ---
 
 ## 5. Repository
@@ -293,9 +308,16 @@ For each open PR (with productType PT):
       → If yes, add PR to user's "awaitingApprove"
 ```
 
-The same `canEditProductRequestValue` / `canApproveProductRequestValue`
-predicates from `src/services/ProductRequestActions.ts` drive the list view,
-the detail view, and this digest, so the three paths cannot drift.
+The same `canEditProductRequestValue` / `canProvideProductRequestValue` /
+`canApproveProductRequestValue` predicates from
+`src/services/ProductRequestActions.ts` drive the list view, the detail view,
+and this digest, so the three paths cannot drift. In particular:
+
+- **Calculated** data types never produce "Provide value" items (they are
+  derived automatically) and never produce "Approve value" items.
+- An approval item is only produced when every previous-approval prerequisite
+  configured for the data type is already approved on the request. Unmet
+  prerequisites block the item instead of notifying the approver.
 
 **Header attributes:** after the awaiting pass for a PR, every data type whose resolved `isHeader` is `true` and is not disabled contributes its display value to the awaiting items of recipients who hold **any** role (viewer ∪ writer ∪ approver) on it. Values are only attached to items that already exist for that recipient (i.e. the recipient has a provide/approve row for that PR); viewer-only recipients are not added. The display string is produced by the same `formatHeaderValue` helper used by the list endpoint, resolving lookup/consumable identifiers to names.
 
@@ -489,6 +511,12 @@ Body: `{ userId?: string, groupId?: string }` — exactly one of `userId` or `gr
 Returns `{ html: string, subject: string, simulatedFor: { type: "user" | "group", identifier: string, name: string } }` — the rendered email content ready for preview.
 
 When simulating for a group, `{User.Firstname}` in the template resolves to `"Member of <GroupName>"` and the `To:` field shows a placeholder address.
+
+### Dashboard routes (`src/api/DashboardAPI.ts`)
+
+- `GET /api/dashboard/open-product-requests` — open request options. Requires `FP_VIEW_DASHBOARD`.
+- `GET /api/dashboard/open-product-requests/:identifier/gap-analysis` — gap rows for one open request. Requires `FP_VIEW_DASHBOARD`.
+- `POST /api/dashboard/open-product-requests/:identifier/notify` — request-scoped force-send. Requires `notify_individual_open_request`; returns `{ sentTo, skippedReason? }` and `404` when the request is missing or no longer open.
 
 ---
 

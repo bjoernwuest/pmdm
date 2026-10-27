@@ -1,5 +1,5 @@
 import { describe, expect, it } from "bun:test";
-import { buildAwaitingTable, buildTransitionsTable } from "@/services/Notifications.ts";
+import { buildAwaitingTable, buildTransitionsTable, selectReminderRecipients } from "@/services/Notifications.ts";
 import type { AwaitingItem, TransitionDigestItem } from "@/repo/NotificationRepo.ts";
 
 function thNames(html: string): string[] {
@@ -159,5 +159,33 @@ describe("buildTransitionsTable", () => {
         expect(cells[0]![1]).toBe("—");
         expect(cells[0]![2]).toBe("—");
         expect(cells[1]![2]).toBe("Red");
+    });
+});
+
+describe("selectReminderRecipients", () => {
+    const users = [
+        { identifier: "user-provide", email: "provide@example.com", firstName: "Provide", lastName: "User" },
+        { identifier: "user-approve", email: "approve@example.com", firstName: "Approve", lastName: "User" },
+        { identifier: "user-idle", email: "idle@example.com", firstName: "Idle", lastName: "User" },
+        { identifier: "user-no-email", email: null, firstName: "No", lastName: "Email" },
+    ];
+
+    const awaitingByUser = new Map<string, { awaitingProvide: AwaitingItem[]; awaitingApprove: AwaitingItem[] }>([
+        ["user-provide", { awaitingProvide: [awaiting()], awaitingApprove: [] }],
+        ["user-approve", { awaitingProvide: [], awaitingApprove: [awaiting()] }],
+        ["user-no-email", { awaitingProvide: [awaiting()], awaitingApprove: [] }],
+    ]);
+
+    it("includes only users with actionable items and an email address", () => {
+        expect(selectReminderRecipients(users, awaitingByUser).map((user) => user.identifier)).toEqual([
+            "user-provide",
+            "user-approve",
+        ]);
+    });
+
+    it("is a force-send: per-user preferences are never consulted", () => {
+        const recipients = selectReminderRecipients(users, awaitingByUser);
+        expect(recipients.map((user) => user.identifier)).toContain("user-provide");
+        expect(recipients.map((user) => user.identifier)).toContain("user-approve");
     });
 });

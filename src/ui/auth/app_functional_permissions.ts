@@ -36,6 +36,7 @@ export const FunctionalPermissionNames = {
     FP_NOTIFICATIONS: "FP_NOTIFICATIONS",
     FP_READ_PRODUCT_FILTER: "read_product_filter",
     FP_VIEW_DASHBOARD: "view_dashboard",
+    FP_NOTIFY_INDIVIDUAL_OPEN_REQUEST: "notify_individual_open_request",
 } as const;
 
 
@@ -68,3 +69,4 @@ export const FP_EDIT_EXPORT_STATUS = { functionalPermissionName: FunctionalPermi
 export const FP_NOTIFICATIONS = { functionalPermissionName: FunctionalPermissionNames.FP_NOTIFICATIONS } as const;
 export const FP_READ_PRODUCT_FILTER = { functionalPermissionName: FunctionalPermissionNames.FP_READ_PRODUCT_FILTER } as const;
 export const FP_VIEW_DASHBOARD = { functionalPermissionName: FunctionalPermissionNames.FP_VIEW_DASHBOARD } as const;
+export const FP_NOTIFY_INDIVIDUAL_OPEN_REQUEST = { functionalPermissionName: FunctionalPermissionNames.FP_NOTIFY_INDIVIDUAL_OPEN_REQUEST } as const;

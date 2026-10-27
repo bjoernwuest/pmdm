@@ -14,8 +14,11 @@ import {
     resolveIsHeader,
     resolveDisplayRawValue,
     formatHeaderValue,
+    canProvideProductRequestValue,
     canApproveProductRequestValue,
 } from "@/services/ProductRequestActions.ts";
+import { listPreviousApprovalsForProductTypes } from "@/repo/ProductTypeRepo.ts";
+import { DataTypeKind } from "@/types/DataTypeType.ts";
 import * as ScriptEngine from "@/services/ScriptEngine.ts";
 
 export type AwaitingItem = {
@@ -84,11 +87,13 @@ export async function getTransitionedProductRequests(
 }
 
 /**
- * Returns a map from userId to their awaiting items.
- * Uses bulk group-based permission resolution for efficiency.
+ * Returns a map from user id to their awaiting items.
+ *
+ * @param options.productRequestIdentifier Restrict evaluation to one open product request.
  */
 export async function getAwaitingPerUser(
     db: DBClient,
+    options?: { productRequestIdentifier?: string },
 ): Promise<Map<string, { awaitingProvide: AwaitingItem[]; awaitingApprove: AwaitingItem[] }>> {
     const result = new Map<string, { awaitingProvide: AwaitingItem[]; awaitingApprove: AwaitingItem[] }>();
 
@@ -96,6 +101,10 @@ export async function getAwaitingPerUser(
     // keyed by `${requestId}:${dataType}:${userId}` (the script principal is
     // the candidate approver, so results differ per user).
     const mandatoryCache = new Map<string, boolean>();
+
+    // Per-run cache of previous-approval dependencies:
+    // productType -> dataType -> prerequisite data type identifiers.
+    const previousApprovalsCache = new Map<string, Map<string, string[]>>();
 
     const openPRs = await db
         .select({
@@ -110,7 +119,9 @@ export async function getAwaitingPerUser(
         .from(ProductRequests)
         .leftJoin(ProductTypes, eq(ProductRequests.productType, ProductTypes.identifier))
         .leftJoin(User, eq(ProductRequests.createdBy, User.identifier))
-        .where(eq(ProductRequests.status, "open"));
+        .where(options?.productRequestIdentifier
+            ? and(eq(ProductRequests.status, "open"), eq(ProductRequests.identifier, options.productRequestIdentifier))
+            : eq(ProductRequests.status, "open"));
 
     if (openPRs.length === 0) return result;
 
@@ -147,6 +158,21 @@ export async function getAwaitingPerUser(
             .where(eq(ProductRequestsValues.productRequest, pr.requestId!));
 
         const isUpdateRequest = !!pr.productToUpdate;
+        const approvedSet = new Set<string>(
+            values.filter((v) => v.approvedBy != null && v.dataType).map((v) => v.dataType!),
+        );
+
+        // Load previous-approval dependencies for this product type once per run.
+        if (pr.productType && !previousApprovalsCache.has(pr.productType)) {
+            const rows = await listPreviousApprovalsForProductTypes(db, [pr.productType]);
+            const byDataType = new Map<string, string[]>();
+            for (const row of rows) {
+                const deps = byDataType.get(row.dataType) ?? [];
+                deps.push(row.dependsOnDataType);
+                byDataType.set(row.dataType, deps);
+            }
+            previousApprovalsCache.set(pr.productType, byDataType);
+        }
 
         // Script context for requestorCanEdit evaluations of the request
         // creator (built once per PR; resolveRequestorCanEdit scopes per data type).
@@ -166,16 +192,28 @@ export async function getAwaitingPerUser(
             // list/detail filters).
             if (v.dataTypeDisabled) continue;
 
+            // Calculated values are derived automatically and never need user input.
+            if (v.dataTypeKind === DataTypeKind.Calculated) continue;
+
             const writerUserIds = await resolveUsersWithRole(db, pr.productType!, dtId, "writer");
             const approverUserIds = await resolveUsersWithRole(db, pr.productType!, dtId, "approver");
 
             const resolvedConfig = { ...((v.dataTypeConfig ?? {}) as Record<string, unknown>), ...((v.ptConfig ?? {}) as Record<string, unknown>) };
             const isEmpty = isEmptyValue(v.value, v.dataTypeKind!, resolvedConfig);
-            // For update requests, values not editable on update never need input
-            const provideGateOpen = !isUpdateRequest || (v.ptEditableOnUpdate ?? true);
+            const editableOnUpdate = v.ptEditableOnUpdate ?? true;
 
             for (const userId of writerUserIds) {
-                if (provideGateOpen && isEmpty) {
+                if (canProvideProductRequestValue({
+                    hasWriterRole: true,
+                    requestorCanEdit: false,
+                    isRequestCreator: false,
+                    userRoles: ["writer"],
+                    isUpdateRequest,
+                    editableOnUpdate,
+                    value: v.value,
+                    kind: v.dataTypeKind!,
+                    config: resolvedConfig,
+                })) {
                     addToResult(result, userId, "awaitingProvide", {
                         requestId: pr.requestId!,
                         productNumber: pr.productNumber,
@@ -186,10 +224,8 @@ export async function getAwaitingPerUser(
 
             // The request creator may provide values without writer role when
             // requestorCanEdit resolves to true and they hold at least one role
-            // on the data type. This is the `canEdit` clause of
-            // `canEditProductRequestValue` (hasWriterRole handled above;
-            // requestorCanEdit && isRequestCreator && userRoles.length > 0 here).
-            if (provideGateOpen && isEmpty && creatorCtx && pr.createdBy) {
+            // on the data type.
+            if (isEmpty && creatorCtx && pr.createdBy) {
                 const viewerUserIds = await resolveUsersWithRole(db, pr.productType!, dtId, "viewer");
                 const creatorHasAnyRole = writerUserIds.includes(pr.createdBy)
                     || approverUserIds.includes(pr.createdBy)
@@ -200,7 +236,17 @@ export async function getAwaitingPerUser(
                     v.ptRequestorCanEdit ?? null, v.ptRequestorCanEditScript ?? null,
                     creatorCtx, dtId,
                 );
-                if (reqEdit) {
+                if (canProvideProductRequestValue({
+                    hasWriterRole: false,
+                    requestorCanEdit: reqEdit,
+                    isRequestCreator: true,
+                    userRoles: creatorHasAnyRole ? ["viewer"] : [],
+                    isUpdateRequest,
+                    editableOnUpdate,
+                    value: v.value,
+                    kind: v.dataTypeKind!,
+                    config: resolvedConfig,
+                })) {
                     addToResult(result, pr.createdBy, "awaitingProvide", {
                         requestId: pr.requestId!,
                         productNumber: pr.productNumber,
@@ -235,6 +281,8 @@ export async function getAwaitingPerUser(
                         mandatoryCache.set(cacheKey, mandatory);
                     }
                 }
+                const deps = previousApprovalsCache.get(pr.productType!)?.get(dtId) ?? [];
+                const previousApprovalDepsMet = deps.every((dependency) => approvedSet.has(dependency));
                 if (canApproveProductRequestValue({
                     hasApproverRole: true,
                     approvedBy: v.approvedBy ?? null,
@@ -243,6 +291,7 @@ export async function getAwaitingPerUser(
                     value: v.value,
                     defaultValue: v.defaultValue,
                     config: resolvedConfig,
+                    previousApprovalDepsMet,
                 })) {
                     addToResult(result, userId, "awaitingApprove", {
                         requestId: pr.requestId!,
