@@ -7,6 +7,7 @@ import {
     hasEffectiveValue,
     isEmptyValue,
     isApprovableValuePresent,
+    isApprovedForDependency,
     resolveConfig,
     resolveDisplayRawValue,
     resolveIsHeader,
@@ -204,6 +205,21 @@ describe("isApprovableValuePresent", () => {
 
     it("is false when defaultValue is the literal string 'null'", () => {
         expect(isApprovableValuePresent({ mandatory: true, value: "", defaultValue: "null", kind: "string" })).toBe(false);
+    });
+});
+
+describe("isApprovedForDependency", () => {
+    it("is true for an approved row", () => {
+        expect(isApprovedForDependency({ approvedBy: "user-1", kind: "string" })).toBe(true);
+    });
+
+    it("is true for a calculated row without an approver", () => {
+        expect(isApprovedForDependency({ approvedBy: null, kind: "calculated" })).toBe(true);
+    });
+
+    it("is false for an unapproved non-calculated row", () => {
+        expect(isApprovedForDependency({ approvedBy: null, kind: "string" })).toBe(false);
+        expect(isApprovedForDependency({ approvedBy: null, kind: "lookup" })).toBe(false);
     });
 });
 

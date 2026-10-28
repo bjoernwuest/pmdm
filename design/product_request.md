@@ -93,6 +93,7 @@ A data type value can be **approved** by a user when:
 - The user has `DataTypeGroupRoles.Approver` assigned
 - AND `ProductRequestsValues.approvedBy` IS NULL (not yet approved)
 - "Calculated" data types are always considered approved (no approval action needed)
+- AND every configured previous-approval prerequisite is already approved on the request; a calculated prerequisite counts as approved
 - AND (when the data type is mandatory for the user) a value or default value is present — `ProductRequestsValues.value` is not empty, or `ProductRequestsValues.defaultValue` is not null/`"null"`
 
 This is computed server-side by `canApproveProductRequestValue` in [`src/services/ProductRequestActions.ts`](../src/services/ProductRequestActions.ts).

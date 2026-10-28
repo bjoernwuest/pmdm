@@ -1,6 +1,7 @@
 import type { DBClient } from "@/services/DatabaseDriver.ts";
 import {
     hasEffectiveValue,
+    isApprovedForDependency,
     isApprovableValuePresent,
     resolveConfig,
     resolveMandatory,
@@ -257,7 +258,9 @@ export async function getOpenRequestGapAnalysis(
     }
 
     const approvedSet = new Set<string>(
-        inputs.values.filter((value) => value.approvedBy !== null).map((value) => value.dataTypeIdentifier),
+        inputs.values
+            .filter((value) => isApprovedForDependency({ approvedBy: value.approvedBy ?? null, kind: value.dataTypeKind }))
+            .map((value) => value.dataTypeIdentifier),
     );
 
     const scriptContext = ScriptEngine.buildContext(db, {

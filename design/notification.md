@@ -319,7 +319,10 @@ and this digest, so the three paths cannot drift. In particular:
   derived automatically) and never produce "Approve value" items.
 - An approval item is only produced when every previous-approval prerequisite
   configured for the data type is already approved on the request. Unmet
-  prerequisites block the item instead of notifying the approver.
+  prerequisites block the item instead of notifying the approver. A **calculated**
+  prerequisite counts as approved (auto-approved, no `approvedBy` needed); the
+  shared rule is `isApprovedForDependency` in
+  `src/services/ProductRequestActions.ts`.
 
 **Header attributes:** after the awaiting pass for a PR, every data type whose resolved `isHeader` is `true` and is not disabled contributes its display value to the awaiting items of recipients who hold **any** role (viewer ∪ writer ∪ approver) on it. Values are only attached to items that already exist for that recipient (i.e. the recipient has a provide/approve row for that PR); viewer-only recipients are not added. The display string is produced by the same `formatHeaderValue` helper used by the list endpoint, resolving lookup/consumable identifiers to names.
 

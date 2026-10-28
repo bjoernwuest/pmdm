@@ -171,12 +171,18 @@ For each row, show:
 - User has `Approver` role on this data type
 - Value is not yet approved (`approvedBy` is null)
 - A value exists (`value` IS NOT NULL OR `defaultValue` IS NOT NULL — using the displayed value)
+- Every configured previous-approval prerequisite (product type assignment) is already approved on this request; a calculated prerequisite counts as approved because it is auto-approved and never carries an `approvedBy` value
 
-**Disabled when**: No value is set (no `value` and no `defaultValue`).
+**Disabled when**: No value is set (no `value` and no `defaultValue`), or a previous-approval prerequisite is still pending.
+
+**Waiting state**: When prerequisites are unmet, render "Waiting for other approvals" together with the prerequisite names instead of an enabled Approve button. The server returns `previousApprovalDepsMet` and `previousApprovalDepsWaiting` on each value; the UI must not recompute them.
 
 **On click**: Calls `approveProductRequestValue()`. On success:
 - If `allApproved` is `true`, show a toast "All values approved — request moved to importing"
-- Refresh the values
+- Refresh the whole request detail (silently, without a loading spinner) so dependants become approvable and server-resolved flags stay authoritative
+- `Approve all` retries in passes so a dependant that appears before its prerequisite in row order is still approved in the same call
+
+**Live updates**: Approval and cascade-clearing events trigger the same silent detail refresh (debounced for cascade bursts) instead of patching a single row locally.
 
 **Calculated data types**: Always show "Auto-approved" or similar.
 

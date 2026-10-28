@@ -292,21 +292,41 @@ export function Component() {
         pendingOwnActionTimeoutIds.current.set(dataType, id);
     }, []);
 
-    // Fetch detail
-    const fetchDetail = useCallback(async () => {
+    // Fetch detail. `silent` refreshes state without toggling the loading
+    // spinner or clearing the current request, so SSE-driven updates do not
+    // blank the table.
+    const fetchDetail = useCallback(async (options?: { silent?: boolean }) => {
         if (!id) return;
-        setLoading(true);
+        const silent = options?.silent === true;
+        if (!silent) setLoading(true);
         try {
             const result = await getProductRequest(id);
             setRequest(result);
             setError(null);
         } catch (e: any) {
-            setError(e.message);
-            setRequest(null);
+            if (!silent) {
+                setError(e.message);
+                setRequest(null);
+            }
         } finally {
-            setLoading(false);
+            if (!silent) setLoading(false);
         }
     }, [id]);
+
+    // Collapse approval bursts (cascade clearing publishes one event per
+    // dependant) into a single silent refresh.
+    const approvalRefreshTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+    const scheduleApprovalRefresh = useCallback(() => {
+        if (approvalRefreshTimeoutRef.current) clearTimeout(approvalRefreshTimeoutRef.current);
+        approvalRefreshTimeoutRef.current = setTimeout(() => {
+            approvalRefreshTimeoutRef.current = null;
+            void fetchDetail({ silent: true });
+        }, 200);
+    }, [fetchDetail]);
+
+    useEffect(() => () => {
+        if (approvalRefreshTimeoutRef.current) clearTimeout(approvalRefreshTimeoutRef.current);
+    }, [fetchDetail]);
 
     useEffect(() => {
         fetchDetail();
@@ -443,30 +463,14 @@ export function Component() {
                     reloadProductOptionsRef.current?.();
                     return;
                 }
+                // Refresh the whole detail so dependency flags, canApprove and
+                // approver names stay server-authoritative after an approval or
+                // a cascade that cleared one.
+                scheduleApprovalRefresh();
                 if (dt) {
-                    const cleared = data.cleared === true;
-                    setRequest((prev: any) => {
-                        if (!prev) return prev;
-                        return {
-                            ...prev,
-                            values: prev.values.map((v: any) =>
-                                v.dataType === dt
-                                    ? {
-                                        ...v,
-                                        approvedBy: cleared ? null : (data.approvedBy ?? null),
-                                        approvedAt: cleared ? null : (data.approvedAt ?? null),
-                                        approverName: cleared ? null : v.approverName,
-                                        approverEmail: cleared ? null : v.approverEmail,
-                                      }
-                                    : v
-                            ),
-                        };
-                    });
                     reloadConsumableOptionsRef.current?.(dt);
                     reloadProductOptionsRef.current?.();
-                    return;
                 }
-                fetchDetail();
                 return;
             }
 
@@ -507,7 +511,7 @@ export function Component() {
         return () => {
             [sub1, sub2, sub3, sub4, sub5].forEach((s) => { if (s) unsubscribe(s); });
         };
-    }, [id, fetchDetail, navigate]);
+    }, [id, fetchDetail, scheduleApprovalRefresh, navigate]);
 
     // Handlers
     const handleValueChange = useCallback(async (dataTypeIdentifier: string, newValue: unknown) => {
@@ -661,29 +665,15 @@ export function Component() {
                 fetchDetail();
             } else {
                 toast.current?.show({ severity: "success", summary: "Approved", detail: "Value approved", life: 2000 });
-                const respValue = result.value as any;
-                setRequest((prev: any) => {
-                    if (!prev) return prev;
-                    return {
-                        ...prev,
-                        values: (prev.values ?? []).map((v: any) =>
-                            v.dataType === dataTypeIdentifier
-                                ? {
-                                    ...v,
-                                    approvedAt: respValue.approvedAt,
-                                    approvedBy: respValue.approvedBy,
-                                    updatedAt: respValue.updatedAt,
-                                }
-                                : v,
-                        ),
-                    };
-                });
+                // Refresh the whole detail so dependants become approvable and
+                // server-resolved flags stay authoritative.
+                scheduleApprovalRefresh();
             }
         } catch (e: any) {
             pendingOwnActionRef.current.delete(dataTypeIdentifier);
             toast.current?.show({ severity: "error", summary: "Error", detail: e.message, life: 5000 });
         }
-    }, [id, fetchDetail]);
+    }, [id, fetchDetail, scheduleApprovalRefresh]);
 
     const handleApproveAll = useCallback(async () => {
         if (!id) return;
@@ -694,26 +684,13 @@ export function Component() {
             }
             const result = await approveAllProductRequestValues(id, knownValues);
             if (result.skippedDataTypeIdentifiers.length > 0) {
-                const skippedSet = new Set(result.skippedDataTypeIdentifiers);
                 toast.current?.show({
                     severity: "warn",
                     summary: "Partial approval",
                     detail: `Approved ${result.approvedCount} value(s), skipped ${result.skippedDataTypeIdentifiers.length} due to concurrent modifications`,
                     life: 5000,
                 });
-                const fresh = await getProductRequest(id);
-                setRequest((prev: any) => {
-                    if (!prev || !fresh) return fresh;
-                    return {
-                        ...fresh,
-                        values: (prev.values ?? []).map((v: any) =>
-                            skippedSet.has(v.dataType)
-                                ? (fresh.values ?? []).find((fv: any) => fv.dataType === v.dataType) ?? v
-                                : v,
-                        ),
-                    };
-                });
-                setError(null);
+                scheduleApprovalRefresh();
             } else if (result.allApproved) {
                 toast.current?.show({
                     severity: "success",
@@ -729,12 +706,12 @@ export function Component() {
                     detail: `Approved ${result.approvedCount} value(s)`,
                     life: 3000,
                 });
-                fetchDetail();
+                scheduleApprovalRefresh();
             }
         } catch (e: any) {
             toast.current?.show({ severity: "error", summary: "Error", detail: e.message, life: 5000 });
         }
-    }, [id, fetchDetail]);
+    }, [id, fetchDetail, scheduleApprovalRefresh]);
 
     const handleCancel = useCallback(async () => {
         if (!id) return;

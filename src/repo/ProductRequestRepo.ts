@@ -46,6 +46,7 @@ import {
     resolveDisplayRawValue,
     formatHeaderValue,
     isApprovableValuePresent,
+    isApprovedForDependency,
     canEditProductRequestValue,
     canProvideProductRequestValue,
     canApproveProductRequestValue,
@@ -1129,7 +1130,7 @@ export async function getProductRequest(
 
     const approvedSet = new Set<string>();
     for (const v of valueRows) {
-        if (v.approvedBy != null && v.dataType) {
+        if (v.dataType && isApprovedForDependency({ approvedBy: v.approvedBy ?? null, kind: v.dataTypeKind! })) {
             approvedSet.add(v.dataType);
         }
     }
@@ -1652,7 +1653,9 @@ async function computeActionableSummaryFromValues(
 
     const isRequestCreator = requestCreatedBy !== null && requestCreatedBy === user.identifier;
     const approvedSet = new Set<string>(
-        values.filter((v) => v.approvedBy != null && v.dataType).map((v) => v.dataType!),
+        values
+            .filter((v) => v.dataType && isApprovedForDependency({ approvedBy: v.approvedBy ?? null, kind: v.dataTypeKind! }))
+            .map((v) => v.dataType!),
     );
 
     for (const v of values) {
@@ -2609,6 +2612,7 @@ export async function approveAllProductRequestValues(
 
     let approvedCount = 0;
     const skippedDataTypeIdentifiers: string[] = [];
+    const skippedSet = new Set<string>();
 
     // Build a script context once for all mandatory script evaluations.
     const approveAllCtx = ScriptEngine.buildContext(tx, {
@@ -2617,68 +2621,103 @@ export async function approveAllProductRequestValues(
         principal: { userId: user.identifier ?? null, apiKeyIdentifier: null, isApiKey: false },
     });
 
-    for (const v of values) {
-        // Skip already approved
-        if (v.approvedBy !== null) continue;
-        // Skip calculated (auto-approved)
-        if (v.dataTypeKind === DataTypeKind.Calculated) continue;
-        // Resolve mandatory; only require a value for mandatory fields
-        const isMandatory = await resolveMandatory(
-            tx,
-            v.dataTypeMandatory, v.dataTypeMandatoryScript,
-            v.ptMandatory, v.ptMandatoryScript,
-            approveAllCtx,
-            v.dataType ?? undefined,
-        );
-        if (!isApprovableValuePresent({
-            mandatory: isMandatory,
-            value: v.value,
-            defaultValue: v.defaultValue,
-            kind: v.dataTypeKind,
-            config: resolveConfig(
-                v.dataTypeConfig as Record<string, unknown> | null,
-                v.ptConfig as Record<string, unknown> | null,
-            ),
-        })) {
-            continue;
-        }
-
-        // Check user has Approver role
-        const perms = await getEffectivePermissions(
-            tx, user, request[0]!.productType!, v.dataType!,
-        );
-        if (!perms.roles.includes("approver" as DataTypeGroupRoles)) continue;
-
-        // Validate previous-approval prerequisites
-        try {
-            await validatePreviousApprovals(tx, request[0]!.productType!, requestId, v.dataType!);
-        } catch (_) {
-            continue;
-        }
-
-        // Check optimistic locking: skip if knownUpdatedAt doesn't match
-        const knownUpdatedAt = knownValues[v.dataType!];
-        if (knownUpdatedAt && v.updatedAt !== null && v.updatedAt !== knownUpdatedAt) {
-            skippedDataTypeIdentifiers.push(v.dataType!);
-            continue;
-        }
-
-        // Approve (also update last-editor audit fields)
-        await tx
-            .update(ProductRequestsValues)
-            .set({
-                approvedBy: user.identifier,
-                approvedAt: sql`now()`,
-                updatedBy: user.identifier,
-                updatedAt: sql`now()`,
-            } as any)
-            .where(and(
-                eq(ProductRequestsValues.productRequest, requestId),
-                eq(ProductRequestsValues.dataType, v.dataType!),
-            ));
-
-        approvedCount++;
+    // Dependencies and the "effectively approved" set are kept in memory so a
+    // prerequisite approved earlier in this run (or a calculated prerequisite)
+    // satisfies its dependants without another database round-trip.
+    const previousApprovalsByDataType = new Map<string, string[]>();
+    for (const dep of await listPreviousApprovalsForProductTypes(tx, [request[0]!.productType!])) {
+        const deps = previousApprovalsByDataType.get(dep.dataType) ?? [];
+        deps.push(dep.dependsOnDataType);
+        previousApprovalsByDataType.set(dep.dataType, deps);
     }
+
+    const approvedForDependency = new Set<string>();
+    for (const v of values) {
+        if (v.dataType && isApprovedForDependency({ approvedBy: v.approvedBy ?? null, kind: v.dataTypeKind })) {
+            approvedForDependency.add(v.dataType);
+        }
+    }
+
+    // Values that fail the role, value, or optimistic-lock gate cannot succeed
+    // on a later pass; keep them out of the retry loop.
+    const excluded = new Set<string>();
+
+    // Retry in passes: a dependant may appear before its prerequisite in the
+    // row order. Stop once a pass approves nothing.
+    let approvedInPass = 0;
+    do {
+        approvedInPass = 0;
+        for (const v of values) {
+            const dt = v.dataType;
+            if (!dt) continue;
+            if (approvedForDependency.has(dt)) continue;
+            if (excluded.has(dt)) continue;
+
+            // Resolve mandatory; only require a value for mandatory fields
+            const isMandatory = await resolveMandatory(
+                tx,
+                v.dataTypeMandatory, v.dataTypeMandatoryScript,
+                v.ptMandatory, v.ptMandatoryScript,
+                approveAllCtx,
+                dt,
+            );
+            if (!isApprovableValuePresent({
+                mandatory: isMandatory,
+                value: v.value,
+                defaultValue: v.defaultValue,
+                kind: v.dataTypeKind,
+                config: resolveConfig(
+                    v.dataTypeConfig as Record<string, unknown> | null,
+                    v.ptConfig as Record<string, unknown> | null,
+                ),
+            })) {
+                excluded.add(dt);
+                continue;
+            }
+
+            // Check user has Approver role
+            const perms = await getEffectivePermissions(
+                tx, user, request[0]!.productType!, dt,
+            );
+            if (!perms.roles.includes("approver" as DataTypeGroupRoles)) {
+                excluded.add(dt);
+                continue;
+            }
+
+            // Wait for the next pass when a prerequisite is still unapproved.
+            const deps = previousApprovalsByDataType.get(dt) ?? [];
+            if (!deps.every((dependency) => approvedForDependency.has(dependency))) continue;
+
+            // Check optimistic locking: skip if knownUpdatedAt doesn't match
+            const knownUpdatedAt = knownValues[dt];
+            if (knownUpdatedAt && v.updatedAt !== null && v.updatedAt !== knownUpdatedAt) {
+                if (!skippedSet.has(dt)) {
+                    skippedSet.add(dt);
+                    skippedDataTypeIdentifiers.push(dt);
+                }
+                excluded.add(dt);
+                continue;
+            }
+
+            // Approve (also update last-editor audit fields)
+            await tx
+                .update(ProductRequestsValues)
+                .set({
+                    approvedBy: user.identifier,
+                    approvedAt: sql`now()`,
+                    updatedBy: user.identifier,
+                    updatedAt: sql`now()`,
+                } as any)
+                .where(and(
+                    eq(ProductRequestsValues.productRequest, requestId),
+                    eq(ProductRequestsValues.dataType, dt),
+                ));
+
+            approvedForDependency.add(dt);
+            approvedCount++;
+            approvedInPass++;
+        }
+    } while (approvedInPass > 0);
 
     if (approvedCount > 0) {
         PubSub.publish(message_ApproveProductRequestValue, { requestId, approvedCount });
@@ -2789,13 +2828,19 @@ async function validatePreviousApprovals(
 
     const depIdentifiers = deps.map(d => d.dependsOnDataType);
 
+    // Mirrors `isApprovedForDependency`: an approval exists when the
+    // prerequisite carries an approver or is a calculated (auto-approved) type.
     const approved = await tx
         .select({ dataType: ProductRequestsValues.dataType })
         .from(ProductRequestsValues)
+        .innerJoin(DataTypeSchema, eq(ProductRequestsValues.dataType, DataTypeSchema.identifier))
         .where(and(
             eq(ProductRequestsValues.productRequest, requestId),
             inArray(ProductRequestsValues.dataType, depIdentifiers),
-            isNotNull(ProductRequestsValues.approvedBy),
+            or(
+                isNotNull(ProductRequestsValues.approvedBy),
+                eq(DataTypeSchema.kind, DataTypeKind.Calculated),
+            ),
         ));
 
     const approvedSet = new Set(approved.map(r => r.dataType));

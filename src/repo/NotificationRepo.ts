@@ -17,6 +17,7 @@ import {
     formatHeaderValue,
     canProvideProductRequestValue,
     canApproveProductRequestValue,
+    isApprovedForDependency,
 } from "@/services/ProductRequestActions.ts";
 import { listPreviousApprovalsForProductTypes } from "@/repo/ProductTypeRepo.ts";
 import { DataTypeKind } from "@/types/DataTypeType.ts";
@@ -160,7 +161,9 @@ export async function getAwaitingPerUser(
 
         const isUpdateRequest = !!pr.productToUpdate;
         const approvedSet = new Set<string>(
-            values.filter((v) => v.approvedBy != null && v.dataType).map((v) => v.dataType!),
+            values
+                .filter((v) => v.dataType && isApprovedForDependency({ approvedBy: v.approvedBy ?? null, kind: v.dataTypeKind! }))
+                .map((v) => v.dataType!),
         );
 
         // Load previous-approval dependencies for this product type once per run.

@@ -289,6 +289,21 @@ export function isApprovableValuePresent(input: {
 }
 
 /**
+ * Whether a value satisfies a previous-approval prerequisite:
+ * `approvedBy !== null || kind === Calculated`.
+ *
+ * Calculated data types are auto-approved and never carry `approvedBy`, yet
+ * they must not block their dependants. Mirrors the SQL predicate in
+ * `validatePreviousApprovals`; keep both in sync.
+ */
+export function isApprovedForDependency(input: {
+    approvedBy: string | null;
+    kind: string;
+}): boolean {
+    return input.approvedBy !== null || input.kind === DataTypeKind.Calculated;
+}
+
+/**
  * `canApprove = hasApproverRole && approvedBy === null && kind !== Calculated
  *               && previousApprovalDepsMet !== false
  *               && isApprovableValuePresent(...)`
