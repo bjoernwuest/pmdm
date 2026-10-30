@@ -146,7 +146,11 @@ export function Component() {
 
         void getMyEffectivePermissions()
             .then((response) => {
-                if (!cancelled) setData(response);
+                if (cancelled) return;
+                setData(response);
+                setExpandedRows(
+                    Object.fromEntries(response.productTypes.map((productType) => [productType.identifier, true])),
+                );
             })
             .catch((e: unknown) => {
                 if (!cancelled) setError(e instanceof Error ? e.message : "Failed to load effective permissions.");
@@ -172,7 +176,7 @@ export function Component() {
 
             {!error && !loading && data && (
                 <>
-                    <PageSection title="Functional permissions">
+                    <PageSection title="Functional permissions" collapsible defaultOpen={false}>
                         {functionalPermissionGroups.length === 0 ? (
                             <Message severity="info" text="No functional permissions are assigned to your account." />
                         ) : (
@@ -211,6 +215,7 @@ export function Component() {
                                 size="small"
                                 stripedRows
                             >
+                                <Column expander style={{ width: "3rem" }} />
                                 <Column
                                     header="Product type"
                                     body={(productType: EffectiveProductTypePermission) => (

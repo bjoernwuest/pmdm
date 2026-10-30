@@ -1,4 +1,4 @@
-import type { ReactNode } from "react";
+import { useState, type ReactNode } from "react";
 
 type TemplateProps = {
     urn: string;
@@ -22,9 +22,45 @@ export function PageTemplate({ actions, children }: TemplateProps) {
 type SectionProps = {
     title: string;
     children: ReactNode;
+    /** When `true`, the section title toggles its content. */
+    collapsible?: boolean;
+    /** Initial open state for collapsible sections. Defaults to open. */
+    defaultOpen?: boolean;
 };
 
-export function PageSection({ title, children }: SectionProps) {
+export function PageSection({ title, children, collapsible = false, defaultOpen = true }: SectionProps) {
+    const [open, setOpen] = useState(defaultOpen);
+
+    if (collapsible) {
+        return (
+            <section className="template-page-section at-card">
+                <button
+                    type="button"
+                    className="template-page-section-header"
+                    onClick={() => setOpen((current) => !current)}
+                    aria-expanded={open}
+                    style={{
+                        display: "flex",
+                        alignItems: "center",
+                        justifyContent: "space-between",
+                        gap: "1rem",
+                        width: "100%",
+                        padding: 0,
+                        border: "none",
+                        background: "none",
+                        cursor: "pointer",
+                        textAlign: "left",
+                        marginBottom: open ? "0.7rem" : 0,
+                    }}
+                >
+                    <span className="template-page-section-title">{title}</span>
+                    <i className={`pi ${open ? "pi-chevron-up" : "pi-chevron-down"}`} aria-hidden="true" />
+                </button>
+                {open ? children : null}
+            </section>
+        );
+    }
+
     return (
         <section className="template-page-section at-card">
             <div className="template-page-section-header">
