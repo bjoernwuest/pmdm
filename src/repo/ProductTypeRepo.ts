@@ -46,7 +46,7 @@ import type { UUIDType } from "@/types/helpers.ts";
 import { and, asc, eq, inArray, or, sql } from "drizzle-orm";
 import PubSub from "@/services/PubSub.ts";
 import type { UserSelectType } from "@/types/UserType.ts";
-import { Group } from "@/schema/UserSchema.ts";
+import { Group, UserGroup } from "@/schema/UserSchema.ts";
 import * as ScriptEngine from "@/services/ScriptEngine.ts";
 import { ScriptCategory } from "@/types/ScriptEngineType.ts";
 
@@ -99,6 +99,72 @@ export async function getDataTypes(db: DBClient, productTypeIdentifier: UUIDType
         .orderBy(asc(DataTypeSchema.name));
 
     return rows as ProductTypeDataTypeWithDetails[];
+}
+
+/** Active DataType assignment for a product type, joined with the data type name/kind. */
+export type AssignedDataTypeForProductType = {
+    productType: string;
+    dataType: string;
+    dataTypeName: string;
+    dataTypeKind: string;
+    editableOnUpdate: boolean;
+};
+
+/**
+ * Lists active data type assignments for multiple product types in one query.
+ *
+ * Assignments referencing disabled data types are excluded. The result is sorted
+ * by data type name, then identifier.
+ */
+export async function getAssignedDataTypesForProductTypes(
+    db: DBClient,
+    productTypeIdentifiers: string[],
+): Promise<AssignedDataTypeForProductType[]> {
+    const uniqueProductTypes = [...new Set(productTypeIdentifiers)];
+    if (uniqueProductTypes.length === 0) return [];
+
+    const rows = await db
+        .select({
+            productType: ProductTypesDataTypes.productType,
+            dataType: ProductTypesDataTypes.dataType,
+            dataTypeName: DataTypeSchema.name,
+            dataTypeKind: DataTypeSchema.kind,
+            editableOnUpdate: ProductTypesDataTypes.editableOnUpdate,
+        })
+        .from(ProductTypesDataTypes)
+        .innerJoin(DataTypeSchema, eq(ProductTypesDataTypes.dataType, DataTypeSchema.identifier))
+        .where(and(
+            inArray(ProductTypesDataTypes.productType, uniqueProductTypes),
+            eq(DataTypeSchema.disabled, false),
+        ))
+        .orderBy(asc(DataTypeSchema.name), asc(DataTypeSchema.identifier));
+
+    return rows as AssignedDataTypeForProductType[];
+}
+
+/**
+ * Returns the identifiers of product types the user may cancel any request for,
+ * i.e. where one of the user's groups holds the `cancel` product-type-level role.
+ */
+export async function getProductTypesWithCancelPermission(
+    db: DBClient,
+    userId: string,
+    productTypeIdentifiers: string[],
+): Promise<Set<string>> {
+    const uniqueProductTypes = [...new Set(productTypeIdentifiers)];
+    if (uniqueProductTypes.length === 0) return new Set();
+
+    const rows = await db
+        .select({ productTypeIdentifier: ProductTypesPermission.productTypeIdentifier })
+        .from(UserGroup)
+        .innerJoin(ProductTypesPermission, eq(ProductTypesPermission.groupIdentifier, UserGroup.groupIdentifier))
+        .where(and(
+            eq(UserGroup.userIdentifier, userId),
+            inArray(ProductTypesPermission.productTypeIdentifier, uniqueProductTypes),
+            eq(ProductTypesPermission.role, "cancel"),
+        ));
+
+    return new Set(rows.map((row) => row.productTypeIdentifier));
 }
 
 /**
